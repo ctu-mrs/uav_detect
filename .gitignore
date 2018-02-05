@@ -1,0 +1,20 @@
+# vim swap files
+*.swp
+
+# build related files
+obj/
+objs/
+build/
+
+# weight files (too large to be included)
+*.weights*
+
+# testing images, videos etc.
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.avi
+*.mpg
+*.mpeg
+*.mp4
