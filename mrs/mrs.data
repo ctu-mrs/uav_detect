@@ -1,0 +1,6 @@
+classes= 1
+train  = data/mrs/training.txt
+valid  = data/mrs/testing.txt
+names = mrs/mrs.names
+backup = backup
+

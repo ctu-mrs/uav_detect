@@ -1,5 +1,12 @@
+# local backup files
+*.BAK
+
 # vim swap files
 *.swp
+
+# CodeBlocks temporary files
+*.layout
+*.depend
 
 # build related files
 obj/
