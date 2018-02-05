@@ -1,5 +1,5 @@
-#ifndef MRS_DETECT_H
-#define MRS_DETECT_H
+#ifndef DETECTOR_H
+#define DETECTOR_H
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -65,4 +65,4 @@ public:
 };
 
 
-#endif // MRS_DETECT_H
+#endif // DETECTOR_H

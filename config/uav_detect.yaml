@@ -1,0 +1,3 @@
+drone_names: [uav1, uav2, uav3]
+
+threshold: 0.1

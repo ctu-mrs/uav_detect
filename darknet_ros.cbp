@@ -19,6 +19,8 @@
 					<Add option="-DOPENCV" />
 					<Add option="-DOPENCL" />
 					<Add directory="../src" />
+					<Add directory="./include" />
+					<Add directory="./src" />
 				</Compiler>
 				<Linker>
 					<Add library="darknet-cpp-shared" />
@@ -47,10 +49,10 @@
 		<Compiler>
 			<Add option="-Wall" />
 		</Compiler>
-		<Unit filename="mrs_detect.cpp" />
-		<Unit filename="mrs_detect.h" />
-		<Unit filename="ros_uav_detect.cpp" />
-		<Unit filename="ros_uav_detect.h" />
+		<Unit filename="include/detector.h" />
+		<Unit filename="include/uav_detect.h" />
+		<Unit filename="src/detector.cpp" />
+		<Unit filename="src/uav_detect.cpp" />
 		<Extensions>
 			<code_completion />
 			<debugger />

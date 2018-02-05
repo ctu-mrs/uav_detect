@@ -1,4 +1,4 @@
-#include "mrs_detect.h"
+#include "uav_detect.h"
 
 MRS_Detector::MRS_Detector(
                             const char *data_fname,
