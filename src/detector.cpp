@@ -2,6 +2,7 @@
 
 MRS_Detector::MRS_Detector(
                             const char *data_fname,
+                            const char *names_fname,
                             const char *cfg_fname,
                             const char *weights_fname,
                             float nms,
@@ -12,6 +13,7 @@ MRS_Detector::MRS_Detector(
 
   setlocale(LC_NUMERIC,"C");
   _data_fname = std::string(data_fname);
+  _names_fname = std::string(names_fname);
   _cfg_fname = std::string(cfg_fname);
   printf("'%s'\n", weights_fname);
   _weights_fname = std::string(weights_fname);
@@ -23,7 +25,7 @@ MRS_Detector::MRS_Detector(
 
 MRS_Detector::~MRS_Detector()
 {
-  if(_boxes) 
+  if(_boxes)
       free(_boxes);
   if(_probs)
       free_ptrs((void **)_probs, _last_l.w*_last_l.h*_last_l.n);
@@ -40,26 +42,26 @@ bool MRS_Detector::initialize()
 
   printf("MRS_Detector: Reading data file '%s'\n", _data_fname.c_str());
   list *options = read_data_cfg((char*)_data_fname.c_str());
-  char *names_fname = option_find_str(options, "names", "mrs/mrs.names");
+  //char *names_fname = option_find_str(options, "names", (char*)_names_fname.c_str());
 
-  if(!names_fname)
+  /*if(!names_fname)
   {
     fprintf(stderr, "Names file not specified in data file '%s'\n", _data_fname.c_str());
     return false;
-  }
+  }*/
 
-  _class_names = get_labels(names_fname);
+  _class_names = get_labels((char*)_names_fname.c_str());
   if(!_class_names)
   {
-    fprintf(stderr, "Invalid names file '%s'\n", names_fname);
+    fprintf(stderr, "Invalid names file '%s'\n", _names_fname);
     return false;
   }
 
   printf("MRS_Detector: Creating network from file '%s'\n", _cfg_fname.c_str());
   _net = parse_network_cfg((char*)_cfg_fname.c_str());
-  /* DPRINTF("Setup: net.n = %d\n", net.n); */   
+  /* DPRINTF("Setup: net.n = %d\n", net.n); */
   /* DPRINTF("net.layers[0].batch = %d\n", net.layers[0].batch); */
-  
+
   printf("MRS_Detector: Loading weights from file '%s'\n", _weights_fname.c_str());
   load_weights(&_net, (char*)_weights_fname.c_str());
   set_batch_network(&_net, 1);
@@ -72,16 +74,16 @@ bool MRS_Detector::initialize()
     fprintf(stderr, "Last layer number of classes (%d) does not match labels file (%d)\n", _last_l.classes, _n_classes);
     return false;
   }
-  
+
   /* int expectedHeight = _net.h; */
   /* int expectedWidth = _net.w; */
-  /* DPRINTF("Image expected w,h = [%d][%d]!\n", net.w, net.h); */            
-  
+  /* DPRINTF("Image expected w,h = [%d][%d]!\n", net.w, net.h); */
+
   _boxes = (box*)calloc(_last_l.w*_last_l.h*_last_l.n, sizeof(box));
   _probs = (float**)calloc(_last_l.w*_last_l.h*_last_l.n, sizeof(float *));
-  
+
   // initialize probabilities
-  for(int it = 0; it < _last_l.w*_last_l.h*_last_l.n; ++it) 
+  for(int it = 0; it < _last_l.w*_last_l.h*_last_l.n; ++it)
   {
     _probs[it] = (float*)calloc(_last_l.classes + 1, sizeof(float));
   }
@@ -98,11 +100,11 @@ bool MRS_Detector::initialize()
 
 std::vector<Detection> MRS_Detector::detect(
             const cv::Mat &image,
-            float thresh, 
+            float thresh,
             float hier_thresh)
 {
   std::vector<Detection> ret;
-  
+
   // Input sanity checks
   if(!_init_OK)
   {
@@ -115,7 +117,7 @@ std::vector<Detection> MRS_Detector::detect(
     fprintf(stderr, "Input image is empty\n");
     return ret;
   }
-  
+
   /** Convert the input image to proper format for darknet **/
   // Convert the bytes to float
   cv::Mat image_f;
@@ -160,7 +162,7 @@ std::vector<Detection> MRS_Detector::detect(
   /** Get the detections **/
   int count = 0;
   ret.reserve(n_detections);
-  
+
   /* if(!_boxes || !probs || !outLabels || !outBoxes) */
   /* { */
   /*     EPRINTF("Error NULL boxes/probs, %p, %p !\n", boxes, probs); */

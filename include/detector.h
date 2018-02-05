@@ -31,6 +31,7 @@ class MRS_Detector
 public:
   MRS_Detector(
           const char *data_fname,
+          const char *names_fname,
           const char *cfg_fname,
           const char *weights_fname,
           float nms,
@@ -45,9 +46,10 @@ public:
                                  float hier_thresh);
   private:
     // Configuration variables
-    bool _init_OK;  
+    bool _init_OK;
 
     std::string _data_fname;
+    std::string _names_fname;
     std::string _cfg_fname;
     std::string _weights_fname;
 

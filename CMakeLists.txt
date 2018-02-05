@@ -17,6 +17,8 @@ find_package(catkin REQUIRED COMPONENTS
 
 set(CMAKE_CXX_FLAGS "-std=c++11 -DGPU -DOPENCV -DOPENCL -Wall -O2")
 
+find_package(OpenCV REQUIRED)
+
 add_message_files(DIRECTORY msgs FILES
   uav_detect.msg
 )
@@ -38,11 +40,17 @@ catkin_package(
 ## Your package locations should be listed before other locations
 include_directories(include
   ${catkin_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+  ~/git/darknet_ocl/src
 )
 
-add_executable(uav_detect src/uav_detect.cpp)
-add_dependencies(uav_detect ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(collision_flier
+add_executable(uav_detect src/uav_detect.cpp src/detector.cpp)
+add_dependencies(uav_detect
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+target_link_libraries(uav_detect
   ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
   darknet-cpp-shared
 )

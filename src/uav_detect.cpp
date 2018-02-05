@@ -3,10 +3,55 @@
 using namespace cv;
 using namespace std;
 
-int main(int argc, const char **argv)
+int main(int argc, char **argv)
 {
+  string uav_name, data_file, names_file, cfg_file, weights_file;
+
+  ros::init(argc, argv, "uav_detect");
+  ROS_INFO ("Node initialized.");
+
+  ros::NodeHandle nh = ros::NodeHandle("~");
+
+
+  // Load parameters from ROS
+  // UAV name
+  nh.param("uav_name", uav_name, string());
+  if (uav_name.empty())
+  {
+    ROS_ERROR("UAV_NAME is empty");
+    ros::shutdown();
+  }
+  // Data file of the neural network
+  nh.param("data_file", data_file, string());
+  if (data_file.empty())
+  {
+    ROS_ERROR("No *.data file specified!");
+    ros::shutdown();
+  }
+  // Names file of the neural network
+  nh.param("names_file", names_file, string());
+  if (names_file.empty())
+  {
+    ROS_ERROR("No *.names file specified!");
+    ros::shutdown();
+  }
+  // Configuration file of the neural network
+  nh.param("cfg_file", cfg_file, string());
+  if (cfg_file.empty())
+  {
+    ROS_ERROR("No *.cfg file specified!");
+    ros::shutdown();
+  }
+  // Weights file of the neural network
+  nh.param("weights_file", weights_file, string());
+  if (weights_file.empty())
+  {
+    ROS_ERROR("No *.weights file specified!");
+    ros::shutdown();
+  }
+
   printf("Creating detector object\n");
-  MRS_Detector detector("./mrs/mrs.data", "./mrs/tiny-yolo-mrs.cfg", "./mrs/tiny-yolo-mrs_final.weights", 0.2, 0.1, 1);
+  MRS_Detector detector(data_file.c_str(), names_file.c_str(), cfg_file.c_str(), weights_file.c_str(), 0.2, 0.1, 1);
   printf("Initializing detector object\n");
   detector.initialize();
 
