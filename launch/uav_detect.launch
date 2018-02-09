@@ -13,6 +13,8 @@
       <param name="cfg_file" value="$(find uav_detect)/mrs/tiny-yolo-mrs.cfg" />
       <param name="weights_file" value="$(find uav_detect)/mrs/tiny-yolo-mrs_final.weights" />
       <param name="uav_name" value="$(arg uav_name)" />
+
+      <remap from="~camera_input" to="mobius_front/image_raw" />
     
     </node>
   

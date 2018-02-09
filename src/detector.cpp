@@ -29,10 +29,6 @@ MRS_Detector::~MRS_Detector()
       free(_boxes);
   if(_probs)
       free_ptrs((void **)_probs, _last_l.w*_last_l.h*_last_l.n);
-  if(_class_names)
-  {
-      //TODO
-  }
   opencl_deinit();
 }
 
@@ -40,8 +36,8 @@ bool MRS_Detector::initialize()
 {
   opencl_init(NULL, NULL, NULL);
 
-  printf("MRS_Detector: Reading data file '%s'\n", _data_fname.c_str());
-  list *options = read_data_cfg((char*)_data_fname.c_str());
+  //printf("MRS_Detector: Reading data file '%s'\n", _data_fname.c_str());
+  //list *options = read_data_cfg((char*)_data_fname.c_str());
   //char *names_fname = option_find_str(options, "names", (char*)_names_fname.c_str());
 
   /*if(!names_fname)
@@ -50,12 +46,19 @@ bool MRS_Detector::initialize()
     return false;
   }*/
 
-  _class_names = get_labels((char*)_names_fname.c_str());
-  if(!_class_names)
+  char **class_names_tmp = get_labels((char*)_names_fname.c_str());
+  if(!class_names_tmp)
   {
-    fprintf(stderr, "Invalid names file '%s'\n", _names_fname);
+    fprintf(stderr, "Invalid names file '%s'\n", _names_fname.c_str());
     return false;
   }
+  _class_names.reserve(_n_classes);
+  for (int it = 0; it < _n_classes; it++)
+  {
+    _class_names.push_back(std::string(class_names_tmp[it]));
+    free(class_names_tmp[it]);
+  }
+  free(class_names_tmp);
 
   printf("MRS_Detector: Creating network from file '%s'\n", _cfg_fname.c_str());
   _net = parse_network_cfg((char*)_cfg_fname.c_str());
@@ -185,3 +188,7 @@ std::vector<Detection> MRS_Detector::detect(
   return ret;
 }
 
+std::string MRS_Detector::get_class_name(int class_ID)
+{
+  return _class_names.at(class_ID);
+}

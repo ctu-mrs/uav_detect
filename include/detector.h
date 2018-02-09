@@ -44,6 +44,7 @@ public:
   std::vector<Detection> detect(const cv::Mat &image,
                                  float thresh,
                                  float hier_thresh);
+  std::string get_class_name(int class_ID);
   private:
     // Configuration variables
     bool _init_OK;
@@ -56,7 +57,7 @@ public:
     float _nms;
     int _thresh;
     int _n_classes;
-    char **_class_names;
+    std::vector<std::string> _class_names;
 
     // Detection related variables
     box *_boxes;
