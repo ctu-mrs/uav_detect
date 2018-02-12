@@ -16,11 +16,15 @@ void camera_callback(const sensor_msgs::ImageConstPtr& image_msg)
 int main(int argc, char **argv)
 {
   string uav_name, data_file, names_file, cfg_file, weights_file;
+  float threshold, hier_threshold;
 
   ros::init(argc, argv, "uav_detect");
   ROS_INFO ("Node initialized.");
 
   ros::NodeHandle nh = ros::NodeHandle("~");
+
+  // Initialize cout to print with precision to two dec. places
+  cout << std::fixed << std::setprecision(2);
 
 
   /** Load parameters from ROS **/
@@ -59,21 +63,22 @@ int main(int argc, char **argv)
     ROS_ERROR("No *.weights file specified!");
     ros::shutdown();
   }
+  // Detection threshold
+  nh.param("threshold", threshold, 0.1f);
+  // Detection hier threshold
+  nh.param("hier_threshold", hier_threshold, 0.1f);
 
   /** Create publishers and subscribers **/
-  //ros::Publisher detections_pub = nh.advertise<uav_detect::Detections>("detections", 10);
+  ros::Publisher detections_pub = nh.advertise<uav_detect::Detections>("detections", 20);
   ros::Subscriber camera_sub = nh.subscribe("camera_input", 1, camera_callback, ros::TransportHints().tcpNoDelay());
-  //ros::Publisher dbg_pub = nh.advertise<collision_avoidance_tw::FutureCollisions>("detections_DBG", 1);
 
   printf("Creating detector object\n");
   MRS_Detector detector(data_file.c_str(), names_file.c_str(), cfg_file.c_str(), weights_file.c_str(), 0.2, 0.1, 1);
   printf("Initializing detector object\n");
   detector.initialize();
 
-  //VideoCapture cap(0); // open the default camera
-  //if(!cap.isOpened())  // check if we succeeded
-  //  return -1;
-
+  ros::Time last_frame = ros::Time::now();
+  ros::Time new_frame = ros::Time::now();
   while (ros::ok())
   {
     ros::spinOnce();
@@ -82,25 +87,35 @@ int main(int argc, char **argv)
     {
       new_cam_image = false;
       cout << "Got new camera image." << std::endl;
-      auto detections = detector.detect(
+
+      vector<uav_detect::Detection> detections = detector.detect(
               last_cam_image_ptr->image,
-              0.1,
-              0.1);
+              threshold,
+              hier_threshold);
       for (auto det : detections)
       {
         cout << "Object detected!" << std::endl;
         cout << "\t" << detector.get_class_name(det.class_ID) << ", p=" << det.probability << std::endl;
-        cout << "\t[" << det.bounding_box.x << "; " << det.bounding_box.y << "]" << std::endl;
-        /*Point pt1((det.bounding_box.x - det.bounding_box.w/2.0)*camera_frame.cols,
-                  (det.bounding_box.y - det.bounding_box.h/2.0)*camera_frame.rows);
-        Point pt2((det.bounding_box.x + det.bounding_box.w/2.0)*camera_frame.cols,
-                  (det.bounding_box.y + det.bounding_box.h/2.0)*camera_frame.rows);
-        rectangle(camera_frame, pt1, pt2, Scalar(0, 0, 255));*/
+        cout << "\t[" << det.x_relative << "; " << det.y_relative << "]" << std::endl;
+        cout << "\tw=" << det.w_relative << ", h=" << det.h_relative << std::endl;
       }
-      cout << "Image processed." << std::endl;
+
+      uav_detect::Detections msg;
+      msg.detections = detections;
+      msg.w_camera = last_cam_image_ptr->image.cols;
+      msg.h_camera = last_cam_image_ptr->image.rows;
+      detections_pub.publish(msg);
+
+      // Calculate FPS
+      new_frame = ros::Time::now();
+      ros::Duration frame_duration = new_frame-last_frame;
+      last_frame = new_frame;
+      cout << "Image processed (" << (1/frame_duration.toSec()) << "FPS)" << std::endl;
+    } else
+    {
+      // wait for a new camera image (this branch executing is quite unlikely)
+      ros::Rate r(20);
+      r.sleep();
     }
-    //imshow("edges", camera_frame);
-    //if(waitKey(30) >= 0) break;
-    // /uav1/mobius_front/image_raw
   }
 }

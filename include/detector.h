@@ -18,13 +18,15 @@
 // this actually include OpenCL related function definitions
 #include "cuda.h"
 
+#include <uav_detect/Detection.h>
 
-struct Detection
+
+/*struct Detection
 {
   float probability;
   box bounding_box;
   int class_ID;
-};
+};*/
 
 class MRS_Detector
 {
@@ -41,9 +43,9 @@ public:
 
   bool initialize();
 
-  std::vector<Detection> detect(const cv::Mat &image,
-                                 float thresh,
-                                 float hier_thresh);
+  std::vector<uav_detect::Detection> detect(const cv::Mat &image,
+                                            float thresh,
+                                            float hier_thresh);
   std::string get_class_name(int class_ID);
   private:
     // Configuration variables

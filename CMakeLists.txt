@@ -20,7 +20,8 @@ set(CMAKE_CXX_FLAGS "-std=c++11 -DGPU -DOPENCV -DOPENCL -Wall -O2")
 find_package(OpenCV REQUIRED)
 
 add_message_files(DIRECTORY msgs FILES
-  uav_detect.msg
+  Detection.msg
+  Detections.msg
 )
 
 generate_messages(DEPENDENCIES

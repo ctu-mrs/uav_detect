@@ -1,4 +1,4 @@
-#include "uav_detect.h"
+#include "detector.h"
 
 MRS_Detector::MRS_Detector(
                             const char *data_fname,
@@ -101,12 +101,12 @@ bool MRS_Detector::initialize()
 
 
 
-std::vector<Detection> MRS_Detector::detect(
+std::vector<uav_detect::Detection> MRS_Detector::detect(
             const cv::Mat &image,
             float thresh,
             float hier_thresh)
 {
-  std::vector<Detection> ret;
+  std::vector<uav_detect::Detection> ret;
 
   // Input sanity checks
   if(!_init_OK)
@@ -177,10 +177,13 @@ std::vector<Detection> MRS_Detector::detect(
       float prob = _probs[it][class_ID];
       if(prob > _thresh)
       {
-        Detection det;
+        uav_detect::Detection det;
         det.probability = prob;
         det.class_ID = class_ID;
-        det.bounding_box = _boxes[it];
+        det.x_relative = _boxes[it].x;
+        det.y_relative = _boxes[it].y;
+        det.w_relative = _boxes[it].w;
+        det.h_relative = _boxes[it].h;
         ret.push_back(det);
         count++;
       }
