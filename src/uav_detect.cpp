@@ -68,15 +68,30 @@ int main(int argc, char **argv)
   // Detection hier threshold
   nh.param("hier_threshold", hier_threshold, 0.1f);
 
+  cout << "Using parameters:" << std::endl;
+  cout << "\tuav name:\t" << uav_name << std::endl;
+  cout << "\tdata file:\t" << data_file << std::endl;
+  cout << "\tnames file:\t" << names_file << std::endl;
+  cout << "\tcfg file:\t" << cfg_file << std::endl;
+  cout << "\tweights file:\t" << weights_file << std::endl;
+  cout << "\tthreshold:\t" << threshold << std::endl;
+  cout << "\thier threshold:\t" << hier_threshold << std::endl;
+
   /** Create publishers and subscribers **/
   ros::Publisher detections_pub = nh.advertise<uav_detect::Detections>("detections", 20);
+  #ifdef DEBUG
+  // Debug only
+  #warning "Building with -DDEBUG (turn off in CMakeLists.txt)"
+  ros::Publisher det_imgs_pub = nh.advertise<sensor_msgs::Image>("det_imgs", 1);
+  #endif //DEBUG
   ros::Subscriber camera_sub = nh.subscribe("camera_input", 1, camera_callback, ros::TransportHints().tcpNoDelay());
 
-  printf("Creating detector object\n");
+  cout << "Creating detector object\n";
   MRS_Detector detector(data_file.c_str(), names_file.c_str(), cfg_file.c_str(), weights_file.c_str(), 0.2, 0.1, 1);
-  printf("Initializing detector object\n");
+  cout << "Initializing detector object\n";
   detector.initialize();
 
+  cout << "----------------------------------------------------------" << std::endl;
   ros::Time last_frame = ros::Time::now();
   ros::Time new_frame = ros::Time::now();
   while (ros::ok())
@@ -88,6 +103,8 @@ int main(int argc, char **argv)
       new_cam_image = false;
       cout << "Got new camera image." << std::endl;
 
+      int w_camera = last_cam_image_ptr->image.cols;
+      int h_camera = last_cam_image_ptr->image.rows;
       vector<uav_detect::Detection> detections = detector.detect(
               last_cam_image_ptr->image,
               threshold,
@@ -98,12 +115,24 @@ int main(int argc, char **argv)
         cout << "\t" << detector.get_class_name(det.class_ID) << ", p=" << det.probability << std::endl;
         cout << "\t[" << det.x_relative << "; " << det.y_relative << "]" << std::endl;
         cout << "\tw=" << det.w_relative << ", h=" << det.h_relative << std::endl;
+
+        #ifdef DEBUG
+        // Debug only
+        cv_bridge::CvImage det_image;
+        cv::Rect det_rect(
+                  det.x_relative,
+                  det.y_relative,
+                  det.w_relative,
+                  det.h_relative);
+        det_image.image = last_cam_image_ptr->image(det_rect);
+        det_imgs_pub.publish(det_image.toImageMsg());
+        #endif //DEBUG
       }
 
       uav_detect::Detections msg;
       msg.detections = detections;
-      msg.w_camera = last_cam_image_ptr->image.cols;
-      msg.h_camera = last_cam_image_ptr->image.rows;
+      msg.w_camera = w_camera;
+      msg.h_camera = h_camera;
       detections_pub.publish(msg);
 
       // Calculate FPS

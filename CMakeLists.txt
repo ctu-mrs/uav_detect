@@ -45,6 +45,18 @@ include_directories(include
   ~/git/darknet_ocl/src
 )
 
+
+add_executable(display_detections src/display_detections.cpp)
+add_dependencies(display_detections
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+target_link_libraries(display_detections
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+)
+
+add_definitions(-DDEBUG)
 add_executable(uav_detect src/uav_detect.cpp src/detector.cpp)
 add_dependencies(uav_detect
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
