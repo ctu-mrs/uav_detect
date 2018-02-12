@@ -56,7 +56,7 @@ target_link_libraries(display_detections
   ${OpenCV_LIBRARIES}
 )
 
-add_definitions(-DDEBUG)
+# add_definitions(-DDEBUG)
 add_executable(uav_detect src/uav_detect.cpp src/detector.cpp)
 add_dependencies(uav_detect
   ${${PROJECT_NAME}_EXPORTED_TARGETS}

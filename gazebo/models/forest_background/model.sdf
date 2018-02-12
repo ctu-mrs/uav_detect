@@ -1,0 +1,38 @@
+<?xml version="1.0" ?>
+<sdf version="1.5">
+  <model name="forest_background">
+    <static>1</static>
+    <link name="link">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>666</mass>
+        <inertia>
+          <ixx>0.08611666666666669</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.08611666666666669</iyy>
+          <iyz>0</iyz>
+          <izz>0.08611666666666669</izz>
+        </inertia>
+      </inertial>
+
+      <visual name="forest_plane">
+        <pose>0 0 15 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>40.0 0.1 30.0</size>
+          </box>
+        </geometry>
+        <material>
+          <script>
+            <uri>model://forest_background/scripts</uri>
+            <uri>model://forest_background/materials/textures</uri>
+            <name>ForestBackground/ForestTexture</name>
+          </script>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>
+
+

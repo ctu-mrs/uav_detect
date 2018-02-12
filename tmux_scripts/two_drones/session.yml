@@ -1,0 +1,68 @@
+name: simulation
+root: ~/
+
+startup_window: takeoff
+# startup_pane: 1
+
+windows:
+  - gazebo:
+      layout: even-vertical
+      panes:
+        - roslaunch simulation simulation.launch
+  - spawn:
+      layout: even-vertical
+      panes:
+        - sleep 5; spawn 1 --run --delete --enable-rangefinder --enable-ground-truth --enable-mobius-camera-front
+        - sleep 5; spawn 2 --run --delete --enable-rangefinder --enable-ground-truth --enable-mobius-camera-front
+  - odometry:
+      layout: even-vertical
+      panes:
+        - sleep 10; export UAV_NAME=uav1; roslaunch mrs_odometry simulation.launch
+        - sleep 10; export UAV_NAME=uav2; roslaunch mrs_odometry simulation.launch
+  - penn_controller:
+      layout: even-vertical
+      panes:
+        - sleep 10; export UAV_NAME=uav1; roslaunch penn_controller simulation.launch
+        - sleep 10; export UAV_NAME=uav2; roslaunch penn_controller simulation.launch
+  - takeoff:
+      layout: even-vertical
+      panes:
+        #{ takeoff uav1
+        - 'sleep 15;
+          export UAV_NAME=uav1;
+          rosservice call /$UAV_NAME/mavros/cmd/arming 1;
+          sleep 1;
+          rosservice call /$UAV_NAME/mav_manager_node/motors 1;
+          rosservice call /$UAV_NAME/mavros/set_mode 0 offboard;
+          sleep 1;
+          rosservice call /$UAV_NAME/mav_manager_node/takeoff;
+          sleep 7;
+          rosservice call /$UAV_NAME/trackers_manager/transition mrs_trackers/MpcTracker;
+          sleep 2;
+          rosservice call /$UAV_NAME/trackers_manager/mpc_tracker/goTo "goal: [0.0, 0.0, 5.0, 0.0]"'
+        #}
+        #{ takeoff uav2
+        - 'sleep 15;
+          export UAV_NAME=uav2;
+          rosservice call /$UAV_NAME/mavros/cmd/arming 1;
+          sleep 1;
+          rosservice call /$UAV_NAME/mav_manager_node/motors 1;
+          rosservice call /$UAV_NAME/mavros/set_mode 0 offboard;
+          sleep 1;
+          rosservice call /$UAV_NAME/mav_manager_node/takeoff;
+          sleep 7;
+          rosservice call /$UAV_NAME/trackers_manager/transition mrs_trackers/MpcTracker;
+          sleep 2;
+          rosservice call /$UAV_NAME/trackers_manager/mpc_tracker/goTo "goal: [5.0, 0.0, 5.0, 0.0]"'
+        #}
+  - random_flier:
+      layout: even-vertical
+      panes:
+        - export UAV_NAME=uav1;
+          history -s roslaunch uav_detect uav_detect.launch
+        - export UAV_NAME=uav2;
+          history -s rostopic echo /uav1/uav_detect/detections
+  - rviz:
+      layout: even-vertical
+      panes:
+        - sleep 12; rviz

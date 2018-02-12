@@ -1,0 +1,18 @@
+    material ForestBackground/ForestTexture
+    {
+      technique
+      {
+        pass
+        {
+          ambient 1.0 1.0 1.0 1.0
+          diffuse 1.0 1.0 1.0 1.0
+          specular 0.0 0.0 0.0 1.0 0.5
+
+          texture_unit
+          {
+            texture forest.jpg
+            scale 0.75 1
+          }
+        }
+      }
+    }
