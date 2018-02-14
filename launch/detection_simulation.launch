@@ -10,7 +10,8 @@
   <arg name="physics" default="ode"/>
   <arg name="verbose" default="true"/>
   <!-- <arg name="world_name" default="$(find simulation)/worlds/grass_plane.world"/> --> 
-  <arg name="world_name" default="$(find uav_detect)/gazebo/worlds/forest.world"/> 
+  <!-- <arg name="world_name" default="$(find uav_detect)/gazebo/worlds/forest.world"/> --> 
+  <arg name="world_name" default="$(find uav_detect)/gazebo/worlds/simple_trees.world"/> 
 
   <!-- set use_sim_time flag -->
   <group if="$(arg use_sim_time)">

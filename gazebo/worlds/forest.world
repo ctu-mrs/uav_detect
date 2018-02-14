@@ -98,7 +98,7 @@
     </model>
     <gui fullscreen='0'>
       <camera name='camera'>
-        <pose frame=''>-32.4277 -33.6601 27.179 0 0.316 1.066</pose>
+        <pose frame=''>-36.6555 -127.896 57.0852 0 0.316 1.066</pose>
         <view_controller>orbit</view_controller>
         <projection_type>perspective</projection_type>
       </camera>
@@ -143,15 +143,15 @@
       <pose frame=''>-6.14336 16.2476 0 0 -0 0</pose>
     </model>
     <state world_name='default'>
-      <sim_time>26 800000000</sim_time>
-      <real_time>26 921642862</real_time>
-      <wall_time>1518451015 230093691</wall_time>
-      <iterations>13400</iterations>
+      <sim_time>1003 864000000</sim_time>
+      <real_time>978 973263088</real_time>
+      <wall_time>1518453598 214244882</wall_time>
+      <iterations>488532</iterations>
       <model name='forest_background'>
-        <pose frame=''>-6.14336 16.2476 0 0 -0 0</pose>
+        <pose frame=''>35 0 0 0 -0 1.57</pose>
         <scale>1 1 1</scale>
         <link name='link'>
-          <pose frame=''>-6.14336 16.2476 0 0 -0 0</pose>
+          <pose frame=''>35 0 0 0 -0 1.57</pose>
           <velocity>0 0 0 0 -0 0</velocity>
           <acceleration>0 0 0 0 -0 0</acceleration>
           <wrench>0 0 0 0 -0 0</wrench>

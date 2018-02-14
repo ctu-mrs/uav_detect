@@ -19,12 +19,34 @@ using namespace cv;
 using namespace std;
 
 bool new_detections = false;
-uav_detect::Detections last_detections;
+uav_detect::Detections latest_detections;
 
 void detections_callback(const uav_detect::Detections& dets_msg)
 {
-  last_detections = dets_msg;
+  latest_detections = dets_msg;
   new_detections = true;
+}
+
+// TODO: implement IoU(det1, det2)
+vector<int> find_matching_detection(
+                  const uav_detect::Detection& ref_det,
+                  const uav_detect::Detections& dets,
+                  double IoU_threshold = 0.5)
+{
+  double IoUmax = 0.0;
+  int best_match = -1;  //indicates no match found
+  int it = 0;
+  for (const uav_detect::Detection det : dets)
+  {
+    double cur_IoU = IoU(ref_det, det);
+    if (cur_IoU > IoU_threshold && cur_IoU > IoUmax)
+    {
+      best_match = it;
+    }
+    it++;
+  }
+
+  return best_match;
 }
 
 int main(int argc, char **argv)
@@ -52,6 +74,8 @@ int main(int argc, char **argv)
 
   cout << "----------------------------------------------------------" << std::endl;
 
+  uav_detect::Detections prev_detections;
+  bool first_run = true;
   while (ros::ok())
   {
     ros::spinOnce();
@@ -59,15 +83,25 @@ int main(int argc, char **argv)
     ros::Rate r(10);
     if (new_detections)
     {
+      if (first_run)
+      {
+        prev_detections = latest_detections;
+        first_run = false;
+      }
       new_detections = false;
       cout << "Processing new detections" << std::endl;
 
-      for (auto det : last_detections.detections)
+      for (auto det : latest_detections.detections)
       {
         cout << "Processing one detection" << std::endl;
+        int match = find_matching_detection(det, prev_detections);
+        if (match < 0)
+          cout << "No previous matching detection found" << std::endl;
+
         // TODO: Actual processing...
       }
 
+      prev_detections = new_detections;
       cout << "Detection processed" << std::endl;
     } else
     {

@@ -8,7 +8,8 @@ windows:
   - gazebo:
       layout: even-vertical
       panes:
-        - roslaunch simulation simulation.launch
+        - roslaunch uav_detect detection_simulation.launch
+        # - roslaunch simulation simulation.launch
   - spawn:
       layout: even-vertical
       panes:
