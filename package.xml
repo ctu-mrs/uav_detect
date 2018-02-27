@@ -44,6 +44,8 @@
   <build_depend>mrs_msgs</build_depend>
   <build_depend>mavros_msgs</build_depend>
   <build_depend>cv_bridge</build_depend>
+  <build_depend>image_transport</build_depend>
+  <build_depend>image_geometry</build_depend>
   <build_depend>nav_msgs</build_depend>
   <build_depend>message_generation</build_depend> 
   
@@ -56,6 +58,8 @@
   <run_depend>tf</run_depend>
   <run_depend>mavros_msgs</run_depend>
   <run_depend>cv_bridge</run_depend>
+  <run_depend>image_transport</run_depend>
+  <run_depend>image_geometry</run_depend>
   <run_depend>nav_msgs</run_depend>
 
   <!-- The export tag contains other, unspecified, tags -->

@@ -9,11 +9,24 @@
 #include <image_transport/image_transport.h>
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
+
+#include <geometry_msgs/TransformStamped.h>
+#include <tf2/LinearMath/Matrix3x3.h>
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Transform.h>
+#include <tf2/LinearMath/Vector3.h>
+#include <tf2_eigen/tf2_eigen.h>
+#include <tf2_ros/transform_listener.h>
+
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 
+#include <list>
+
 #include <uav_detect/Detection.h>
 #include <uav_detect/Detections.h>
+
+#include "detected_uav.h"
 
 using namespace cv;
 using namespace std;
@@ -27,31 +40,12 @@ void detections_callback(const uav_detect::Detections& dets_msg)
   new_detections = true;
 }
 
-// TODO: implement IoU(det1, det2)
-vector<int> find_matching_detection(
-                  const uav_detect::Detection& ref_det,
-                  const uav_detect::Detections& dets,
-                  double IoU_threshold = 0.5)
-{
-  double IoUmax = 0.0;
-  int best_match = -1;  //indicates no match found
-  int it = 0;
-  for (const uav_detect::Detection det : dets)
-  {
-    double cur_IoU = IoU(ref_det, det);
-    if (cur_IoU > IoU_threshold && cur_IoU > IoUmax)
-    {
-      best_match = it;
-    }
-    it++;
-  }
-
-  return best_match;
-}
-
 int main(int argc, char **argv)
 {
-  string uav_name;
+  string uav_name, uav_frame, world_frame;
+  double camera_offset_x, camera_offset_y, camera_offset_z;
+  double camera_offset_roll, camera_offset_pitch, camera_offset_yaw;
+  double camera_delay;
 
   ros::init(argc, argv, "uav_detect_localize");
   ROS_INFO ("Node initialized.");
@@ -66,42 +60,173 @@ int main(int argc, char **argv)
     ROS_ERROR("UAV_NAME is empty");
     ros::shutdown();
   }
+  nh.param("world_frame", world_frame, std::string("local_origin"));
+  nh.param("uav_frame", uav_frame, std::string("fcu_uav1"));
+  // camera x offset
+  nh.param("camera_offset_x", camera_offset_x, numeric_limits<double>::infinity());
+  if (isinf(camera_offset_x))
+  {
+    ROS_ERROR("Camera X offset not specified");
+    ros::shutdown();
+  }
+  // camera y offset
+  nh.param("camera_offset_y", camera_offset_y, numeric_limits<double>::infinity());
+  if (isinf(camera_offset_y))
+  {
+    ROS_ERROR("Camera Y offset not specified");
+    ros::shutdown();
+  }
+  // camera z offset
+  nh.param("camera_offset_z", camera_offset_z, numeric_limits<double>::infinity());
+  if (isinf(camera_offset_z))
+  {
+    ROS_ERROR("Camera Z offset not specified");
+    ros::shutdown();
+  }
+  // camera roll rotation
+  nh.param("camera_offset_roll", camera_offset_roll, numeric_limits<double>::infinity());
+  if (isinf(camera_offset_roll))
+  {
+    ROS_ERROR("Camera roll not specified");
+    ros::shutdown();
+  }
+  // camera pitch rotation
+  nh.param("camera_offset_pitch", camera_offset_pitch, numeric_limits<double>::infinity());
+  if (isinf(camera_offset_pitch))
+  {
+    ROS_ERROR("Camera pitch not specified");
+    ros::shutdown();
+  }
+  // camera yaw rotation
+  nh.param("camera_offset_yaw", camera_offset_yaw, numeric_limits<double>::infinity());
+  if (isinf(camera_offset_yaw))
+  {
+    ROS_ERROR("Camera yaw not specified");
+    ros::shutdown();
+  }
+  // camera delay
+  nh.param("camera_delay", camera_delay, numeric_limits<double>::infinity());
+  if (isinf(camera_delay))
+  {
+    ROS_ERROR("Camera delay not specified");
+    ros::shutdown();
+  }
   cout << "Using parameters:" << std::endl;
   cout << "\tuav name:\t" << uav_name << std::endl;
+  cout << "\tuav frame:\t" << uav_frame << std::endl;
+  cout << "\tworld frame:\t" << world_frame << std::endl;
+  cout << "\tcamera X offset:\t" << camera_offset_x << "m" << std::endl;
+  cout << "\tcamera Y offset:\t" << camera_offset_y << "m" << std::endl;
+  cout << "\tcamera Z offset:\t" << camera_offset_z << "m" << std::endl;
+  cout << "\tcamera roll:\t" << camera_offset_roll << "°" << std::endl;
+  cout << "\tcamera pitch:\t" << camera_offset_pitch << "°" << std::endl;
+  cout << "\tcamera yaw:\t" << camera_offset_yaw << "°"  << std::endl;
+  cout << "\tcamera delay:\t" << camera_delay << "ms" << std::endl;
 
+  // build the UAV to camera transformation
+  tf2::Transform uav2camera_transform;
+  {
+    tf2::Quaternion q;
+    tf2::Vector3    origin;
+    // camera transformation
+    origin.setValue(camera_offset_x, camera_offset_y, camera_offset_z);
+    // camera rotation
+    q.setRPY(camera_offset_roll / 180.0 * M_PI, camera_offset_pitch / 180.0 * M_PI, camera_offset_yaw / 180.0 * M_PI);
+
+    uav2camera_transform.setOrigin(origin);
+    uav2camera_transform.setRotation(q);
+
+    camera_delay = camera_delay/1000.0; // recalculate to seconds
+  }
+
+  tf2_ros::Buffer tf_buffer;
   /** Create publishers and subscribers **/
   ros::Subscriber detections_sub = nh.subscribe("detections", 1, detections_callback, ros::TransportHints().tcpNoDelay());
+  // Initialize transform listener
+  tf2_ros::TransformListener* tf_listener = new tf2_ros::TransformListener(tf_buffer);
 
   cout << "----------------------------------------------------------" << std::endl;
 
-  uav_detect::Detections prev_detections;
-  bool first_run = true;
+  list<Detected_UAV> detUAVs;
   while (ros::ok())
   {
     ros::spinOnce();
 
     ros::Rate r(10);
+    // Check if we got a new message containing detections
     if (new_detections)
     {
-      if (first_run)
-      {
-        prev_detections = latest_detections;
-        first_run = false;
-      }
       new_detections = false;
       cout << "Processing new detections" << std::endl;
 
-      for (auto det : latest_detections.detections)
+      // First, update the transforms
+      geometry_msgs::TransformStamped transform;
+      tf2::Transform  world2uav_transform, camera2world_transform;
+      tf2::Vector3    origin;
+      tf2::Quaternion orientation;
+      try
       {
-        cout << "Processing one detection" << std::endl;
-        int match = find_matching_detection(det, prev_detections);
-        if (match < 0)
-          cout << "No previous matching detection found" << std::endl;
+        const ros::Duration timeout(1.0/6.0);
+        // Obtain transform from world into uav frame
+        transform = tf_buffer.lookupTransform(uav_frame, world_frame, latest_detections.stamp - ros::Duration(camera_delay), timeout);
+        origin.setValue(transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z);
 
-        // TODO: Actual processing...
+        orientation.setX(transform.transform.rotation.x);
+        orientation.setY(transform.transform.rotation.y);
+        orientation.setZ(transform.transform.rotation.z);
+        orientation.setW(transform.transform.rotation.w);
+
+        world2uav_transform.setOrigin(origin);
+        world2uav_transform.setRotation(orientation);
+
+        // Obtain transform from world into camera frame
+        camera2world_transform = (uav2camera_transform * world2uav_transform).inverse();
+      }
+      catch (tf2::TransformException& ex)
+      {
+        ROS_ERROR("Error during transform from \"%s\" frame to \"%s\" frame. MSG: %s", world_frame.c_str(), "usb_cam", ex.what());
+        continue;
       }
 
-      prev_detections = new_detections;
+      // Process the detections
+      vector<bool> used_detections; // bools correspond to new detections
+      used_detections.resize(latest_detections.detections.size(), false);
+      for (auto &detUAV : detUAVs)
+      {
+        int used = detUAV.update(latest_detections, camera2world_transform);
+        if (used >= 0)
+        {
+          //cout << "Redetected " << used << ". detection" << std::endl;
+          used_detections.at(used) = true;
+        }
+      }
+
+      for (size_t it = 0; it < latest_detections.detections.size(); it++)
+      {
+        if (!used_detections.at(it))
+        {
+          detUAVs.push_back(Detected_UAV(latest_detections.detections.at(it), camera2world_transform));
+          //cout << "Adding new detected UAV!" << std::endl;
+        }
+      }
+
+      for (auto det_it = detUAVs.begin(); det_it != detUAVs.end(); det_it++)
+      {
+        //cout << "An UAV is detected with " << det_it->get_prob() << " probability" << std::endl;
+        if (det_it->get_prob() < 0.15)
+        {
+          det_it = detUAVs.erase(det_it);
+          //cout << "\tkicking it out" << std::endl;
+        } else if (det_it->get_prob() > 0.75)
+        {
+          cout << "\tAn UAV is reliably detected with " << det_it->get_prob() << " probability" << std::endl;
+          cout << "\testimated relative position: [" << det_it->est_x() << ", " << det_it->est_y() << ", " << det_it->est_z() << "]" << std::endl;
+        } else
+        {
+          cout << "\tPotential UAV reliably detected with " << det_it->get_prob() << " probability" << std::endl;
+        }
+      }
+
       cout << "Detection processed" << std::endl;
     } else
     {

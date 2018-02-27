@@ -49,10 +49,14 @@
 		<Compiler>
 			<Add option="-Wall" />
 		</Compiler>
+		<Unit filename="include/detected_uav.h" />
 		<Unit filename="include/detector.h" />
 		<Unit filename="include/uav_detect.h" />
+		<Unit filename="src/detected_uav.cpp" />
 		<Unit filename="src/detector.cpp" />
+		<Unit filename="src/display_detections.cpp" />
 		<Unit filename="src/uav_detect.cpp" />
+		<Unit filename="src/uav_detect_localize.cpp" />
 		<Extensions>
 			<code_completion />
 			<debugger />

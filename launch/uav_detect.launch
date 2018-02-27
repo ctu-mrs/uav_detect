@@ -15,6 +15,7 @@
       <param name="uav_name" value="$(arg uav_name)" />
 
       <remap from="~camera_input" to="mobius_front/image_raw" />
+      <remap from="~camera_info" to="mobius_front/camera_info" />
     
     </node>
   

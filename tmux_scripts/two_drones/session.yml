@@ -8,12 +8,13 @@ windows:
   - gazebo:
       layout: even-vertical
       panes:
-        - roslaunch simulation simulation.launch
+        - roslaunch uav_detect detection_simulation.launch
+        # - roslaunch simulation simulation.launch
   - spawn:
       layout: even-vertical
       panes:
         - sleep 5; spawn 1 --run --delete --enable-rangefinder --enable-ground-truth --enable-mobius-camera-front
-        - sleep 5; spawn 2 --run --delete --enable-rangefinder --enable-ground-truth --enable-mobius-camera-front
+        - sleep 5; spawn 2 --run --delete --enable-rangefinder --enable-ground-truth --enable-mobius-camera-front --enable-scanse
   - odometry:
       layout: even-vertical
       panes:
@@ -60,8 +61,10 @@ windows:
       panes:
         - export UAV_NAME=uav1;
           history -s roslaunch uav_detect uav_detect.launch
-        - export UAV_NAME=uav2;
-          history -s rostopic echo /uav1/uav_detect/detections
+        - export UAV_NAME=uav1;
+          history -s roslaunch uav_detect display_detections.launch
+        - export UAV_NAME=uav1;
+          history -s roslaunch uav_detect estimate_location.launch
   - rviz:
       layout: even-vertical
       panes:

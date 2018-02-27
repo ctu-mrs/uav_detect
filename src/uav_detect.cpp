@@ -5,18 +5,28 @@ using namespace std;
 
 bool new_cam_image = false;
 cv_bridge::CvImageConstPtr last_cam_image_ptr;
+bool got_cam_info = false;
+sensor_msgs::CameraInfoConstPtr last_cam_info_ptr;
 
-void camera_callback(const sensor_msgs::ImageConstPtr& image_msg)
+void camera_image_callback(const sensor_msgs::ImageConstPtr& image_msg)
 {
-  cout << "Camera callback OK" << std::endl;
+  cout << "Camera image callback OK" << std::endl;
   last_cam_image_ptr = cv_bridge::toCvShare(image_msg, sensor_msgs::image_encodings::BGR8);
   new_cam_image = true;
+}
+
+void camera_info_callback(const sensor_msgs::CameraInfoConstPtr& info_msg)
+{
+  cout << "Camera info callback OK" << std::endl;
+  last_cam_info_ptr = info_msg;
+  got_cam_info = true;
 }
 
 int main(int argc, char **argv)
 {
   string uav_name, data_file, names_file, cfg_file, weights_file;
   float threshold, hier_threshold;
+  bool only_subsquare;
 
   ros::init(argc, argv, "uav_detect");
   ROS_INFO ("Node initialized.");
@@ -67,6 +77,8 @@ int main(int argc, char **argv)
   nh.param("threshold", threshold, 0.1f);
   // Detection hier threshold
   nh.param("hier_threshold", hier_threshold, 0.1f);
+  // Whether to use only subsquare from the image
+  nh.param("only_subsquare", only_subsquare, true);
 
   cout << "Using parameters:" << std::endl;
   cout << "\tuav name:\t" << uav_name << std::endl;
@@ -76,6 +88,7 @@ int main(int argc, char **argv)
   cout << "\tweights file:\t" << weights_file << std::endl;
   cout << "\tthreshold:\t" << threshold << std::endl;
   cout << "\thier threshold:\t" << hier_threshold << std::endl;
+  cout << "\tonly subsquare:\t" << only_subsquare << std::endl;
 
   /** Create publishers and subscribers **/
   ros::Publisher detections_pub = nh.advertise<uav_detect::Detections>("detections", 20);
@@ -84,7 +97,11 @@ int main(int argc, char **argv)
   #warning "Building with -DDEBUG (turn off in CMakeLists.txt)"
   ros::Publisher det_imgs_pub = nh.advertise<sensor_msgs::Image>("det_imgs", 1);
   #endif //DEBUG
-  ros::Subscriber camera_sub = nh.subscribe("camera_input", 1, camera_callback, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber camera_image_sub = nh.subscribe("camera_input", 1, camera_image_callback, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber camera_info_sub = nh.subscribe("camera_info", 1, camera_info_callback, ros::TransportHints().tcpNoDelay());
+//  image_transport::ImageTransport it(nh);
+//  std::string image_topic = nh.resolveName("camera_image");
+//  image_transport::CameraSubscriber camera_sub = it.subscribeCamera(image_topic, 1, camera_callback);
 
   cout << "Creating detector object\n";
   MRS_Detector detector(data_file.c_str(), names_file.c_str(), cfg_file.c_str(), weights_file.c_str(), 0.2, 0.1, 1);
@@ -98,48 +115,50 @@ int main(int argc, char **argv)
   {
     ros::spinOnce();
 
-    if (new_cam_image)
+    if (new_cam_image && got_cam_info)
     {
       new_cam_image = false;
       cout << "Got new camera image." << std::endl;
 
-      int w_camera = last_cam_image_ptr->image.cols;
-      int h_camera = last_cam_image_ptr->image.rows;
+      cv::Mat det_image = last_cam_image_ptr->image;
+      int h_used = det_image.rows;
+      int w_used = det_image.cols;
+
+      if (only_subsquare)
+      {
+        w_used = h_used;
+        cv::Rect sub_rect((det_image.cols - w_used)/2, 0, h_used, w_used);
+        det_image = det_image(sub_rect);  // a SHALLOW copy! sub_image shares pixels
+      }
+
       vector<uav_detect::Detection> detections = detector.detect(
-              last_cam_image_ptr->image,
+              det_image,
               threshold,
               hier_threshold);
-      for (auto det : detections)
+      for (const auto &det : detections)
       {
         cout << "Object detected!" << std::endl;
         cout << "\t" << detector.get_class_name(det.class_ID) << ", p=" << det.probability << std::endl;
         cout << "\t[" << det.x_relative << "; " << det.y_relative << "]" << std::endl;
         cout << "\tw=" << det.w_relative << ", h=" << det.h_relative << std::endl;
-
-        #ifdef DEBUG
-        // Debug only
-        cv_bridge::CvImage det_image;
-        cv::Rect det_rect(
-                  det.x_relative,
-                  det.y_relative,
-                  det.w_relative,
-                  det.h_relative);
-        det_image.image = last_cam_image_ptr->image(det_rect);
-        det_imgs_pub.publish(det_image.toImageMsg());
-        #endif //DEBUG
       }
 
       uav_detect::Detections msg;
       msg.detections = detections;
-      msg.w_camera = w_camera;
-      msg.h_camera = h_camera;
+      msg.w_used = w_used;
+      msg.h_used = h_used;
+      msg.camera_info = sensor_msgs::CameraInfo(*last_cam_info_ptr);
+      msg.stamp = last_cam_image_ptr->header.stamp;
       detections_pub.publish(msg);
 
       // Calculate FPS
       new_frame = ros::Time::now();
       ros::Duration frame_duration = new_frame-last_frame;
       last_frame = new_frame;
-      cout << "Image processed (" << (1/frame_duration.toSec()) << "FPS)" << std::endl;
+      float freq = -1.0;
+      if (frame_duration.toSec() != 0.0)
+        freq = 1/frame_duration.toSec();
+      cout << "Image processed (" << freq << "FPS)" << std::endl;
     } else
     {
       // wait for a new camera image (this branch executing is quite unlikely)

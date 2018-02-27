@@ -9,15 +9,29 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   nav_msgs
   mavros_msgs
+  sensor_msgs
   dynamic_reconfigure
   cv_bridge
+  image_transport
+  image_geometry
   message_generation
   mrs_msgs
+  tf2
+  tf2_ros
+  tf2_msgs
+  tf2_sensor_msgs
+  tf2_eigen
+  tf2_geometry_msgs
 )
 
 set(CMAKE_CXX_FLAGS "-std=c++11 -DGPU -DOPENCV -DOPENCL -Wall -O2")
 
 find_package(OpenCV REQUIRED)
+
+# include Eigen3
+find_package(Eigen3 REQUIRED)
+set(Eigen_INCLUDE_DIRS ${EIGEN3_INCLUDE_DIRS})
+set(Eigen_LIBRARIES ${Eigen_LIBRARIES})
 
 add_message_files(DIRECTORY msgs FILES
   Detection.msg
@@ -27,10 +41,11 @@ add_message_files(DIRECTORY msgs FILES
 generate_messages(DEPENDENCIES
   std_msgs
   geometry_msgs
+  sensor_msgs
 )
 
 catkin_package(
-  CATKIN_DEPENDS message_runtime # image_transport roscpp rospy std_msgs
+  CATKIN_DEPENDS message_runtime image_transport # roscpp rospy std_msgs
 )
 
 ###########
@@ -42,10 +57,12 @@ catkin_package(
 include_directories(include
   ${catkin_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
+  ${Eigen_INCLUDE_DIRS}
   ~/git/darknet_ocl/src
 )
 
 
+add_definitions(-g)
 add_executable(display_detections src/display_detections.cpp)
 add_dependencies(display_detections
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
@@ -66,4 +83,14 @@ target_link_libraries(uav_detect
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
   darknet-cpp-shared
+)
+
+add_executable(uav_detect_localize src/uav_detect_localize.cpp src/detected_uav.cpp)
+add_dependencies(uav_detect_localize
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+target_link_libraries(uav_detect_localize
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
 )
