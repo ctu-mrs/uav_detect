@@ -99,9 +99,6 @@ int main(int argc, char **argv)
   #endif //DEBUG
   ros::Subscriber camera_image_sub = nh.subscribe("camera_input", 1, camera_image_callback, ros::TransportHints().tcpNoDelay());
   ros::Subscriber camera_info_sub = nh.subscribe("camera_info", 1, camera_info_callback, ros::TransportHints().tcpNoDelay());
-//  image_transport::ImageTransport it(nh);
-//  std::string image_topic = nh.resolveName("camera_image");
-//  image_transport::CameraSubscriber camera_sub = it.subscribeCamera(image_topic, 1, camera_callback);
 
   cout << "Creating detector object\n";
   MRS_Detector detector(data_file.c_str(), names_file.c_str(), cfg_file.c_str(), weights_file.c_str(), 0.2, 0.1, 1);

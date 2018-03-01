@@ -2,21 +2,212 @@
 
 using namespace uav_detect;
 using namespace std;
+using namespace Eigen;
+using namespace ros;
 
-static float gauss(float x, float mu, float sigma)
+//static float gauss(float x, float mu, float sigma)
+//{
+//  return 1.0/(sigma*sqrt(2.0*M_PI))*exp(-(x-mu)*(x-mu)/(sigma*sigma*2.0));
+//}
+
+static Eigen::Affine3d tf2_to_eigen(const tf2::Transform& tf2_t)
 {
-  return 1.0/(sigma*sqrt(2.0*M_PI))*exp(-(x-mu)*(x-mu)/(sigma*sigma*2.0));
+  Eigen::Affine3d eig_t;
+  for (int r_it = 0; r_it < 3; r_it++)
+    for (int c_it = 0; c_it < 3; c_it++)
+      eig_t(r_it, c_it) = tf2_t.getBasis()[r_it][c_it];
+  eig_t(3, 0) = tf2_t.getOrigin().getX();
+  eig_t(3, 1) = tf2_t.getOrigin().getY();
+  eig_t(3, 2) = tf2_t.getOrigin().getZ();
+  return eig_t;
 }
 
-Detected_UAV::Detected_UAV(uav_detect::Detection det, tf2::Transform camera2world_tf, float IoU_threshold) : _UAV_width(0.5)
+Detected_UAV::Detected_UAV(
+                            float IoU_threshold,
+                            double UAV_width,
+                            NodeHandle *nh
+                            ) : _UAV_width(UAV_width),
+                                _tol(1e-9),
+                                _max_det_dist(15.0),
+                                _max_dist_est(2.0)
 {
-  _ref_det = det;
-  _c2w_tf = camera2world_tf;
-  _prob = 0.5;
   _IoU_threshold = IoU_threshold;
-  _cur_x = std::numeric_limits<double>::infinity();
-  _cur_y = std::numeric_limits<double>::infinity();
-  _cur_z = std::numeric_limits<double>::infinity();
+  double est_dt = 0.2;
+  const unsigned n = 6; // number of states
+  const unsigned m = 0; // number of inputs
+  const unsigned p = 3; // number of measurements
+  Matrix<double, n, n> A; // state transition matrix
+  A << 1.0, 0.0, 0.0, est_dt, 0.0, 0.0,
+       0.0, 1.0, 0.0, 0.0, est_dt, 0.0,
+       0.0, 0.0, 1.0, 0.0, 0.0, est_dt,
+       0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+       0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+       0.0, 0.0, 0.0, 0.0, 0.0, 1.0;
+  MatrixXd B; // input matrix (empty)
+  Matrix<double, p, n> H; // measurement matrix
+  H << 1.0, 0.0, 0.0,
+       0.0, 1.0, 0.0,
+       0.0, 0.0, 1.0,
+       0.0, 0.0, 0.0,
+       0.0, 0.0, 0.0,
+       0.0, 0.0, 0.0;
+  Matrix<double, n, n> R; // process covariance matrix
+  R = Matrix<double, n, n>::Zero();
+  R(0, 0) = R(1, 1) = R(2, 2) = 0.2;
+  R(3, 3) = R(4, 4) = R(5, 5) = 0.3;
+  Matrix<double, n, n> Q; // measurement covariance matrix
+  Q = Matrix<double, n, n>::Identity(); // this will change depending on the measurement!
+
+  if (nh == nullptr)
+  {
+    _dbg_on = false;
+  } else
+  {
+    _dbg_pub = nh->advertise<nav_msgs::Odometry>("dbg", 1);
+    _dbg_on = true;
+  }
+  _KF = new LinearKF(n, m, p, A, B, R, Q, H);
+}
+
+void Detected_UAV::detection_to_position(
+                        const uav_detect::Detection &det,
+                        Eigen::Vector3d &out_meas_position,
+                        Eigen::Matrix3d &out_meas_covariance)
+{
+  int w_used = _w_used;
+  int h_used = _h_used;
+  int cam_image_w = _w_camera;
+  int cam_image_h = _h_camera;
+
+  // Calculate pixel position of the detection
+  int px_x = (int)round(
+                    (cam_image_w-w_used)/2.0 +  // offset between the detection rectangle and camera image
+                    (det.x_relative)*w_used);
+  int px_y = (int)round(
+                    (cam_image_h-h_used)/2.0 +  // offset between the detection rectangle and camera image
+                    (det.y_relative)*h_used);
+  int px_w = (int)round(det.w_relative*w_used);
+  cv::Point2d center_pt = _camera_model.rectifyPoint(cv::Point2d(px_x, px_y));
+  cv::Point2d left_pt = _camera_model.rectifyPoint(cv::Point2d(px_x-px_w/2, px_y));
+  cv::Point2d right_pt = _camera_model.rectifyPoint(cv::Point2d(px_x+px_w/2, px_y));
+
+  // Calculate projections of the center, left and right points of the detected bounding box
+  cv::Point3d ray_vec = _camera_model.projectPixelTo3dRay(center_pt);
+  cv::Point3d left_vec = _camera_model.projectPixelTo3dRay(left_pt);
+  cv::Point3d right_vec = _camera_model.projectPixelTo3dRay(right_pt);
+
+  // Width of the projection (on a plane 1.0m distant)
+  double proj_width = sqrt((left_vec.x-right_vec.x)*(left_vec.x-right_vec.x)
+                         +(left_vec.y-right_vec.y)*(left_vec.y-right_vec.y));
+                         //+(left_vec.z-right_vec.z)*(left_vec.z-right_vec.z)); // z coordinate should be 1.0
+  // Estimate distance from the BB width
+  double est_dist = _UAV_width/proj_width;
+  double ray_vec_norm = sqrt(ray_vec.x*ray_vec.x + ray_vec.y*ray_vec.y + ray_vec.z*ray_vec.z);
+  Eigen::Vector3d cur_position_estimate(ray_vec.x/ray_vec_norm,
+                                        ray_vec.y/ray_vec_norm,
+                                        ray_vec.z/ray_vec_norm);
+  Eigen::Matrix3d pos_cov = Eigen::Matrix3d::Identity();  // prepare the covariance matrix
+  if (est_dist > _max_dist_est) // further than very close distances the distance estimation is very unreliable
+  {
+    cur_position_estimate *= _max_det_dist-_max_dist_est;
+    pos_cov(2, 2) = (_max_det_dist-_max_dist_est)/3.0;
+  } else
+  {
+    cur_position_estimate *= est_dist;
+    pos_cov(2, 2) = 1.0;
+  }
+
+  // Rotation matrix to rotate the covariance matrix and position vector
+  Eigen::Matrix3d c2w_rot = _c2w_tf.rotation();
+  // Find the rotation matrix to rotate the covariance to point in the direction of the estimated position
+  Eigen::Vector3d a(0.0, 0.0, 1.0);
+  Eigen::Vector3d b = cur_position_estimate.normalized();
+  Eigen::Vector3d v = a.cross(b);
+  double sin_ab = v.norm();
+  double cos_ab = a.dot(b);
+  Eigen::Matrix3d vec_rot = Eigen::Matrix3d::Identity();
+  if (sin_ab < _tol)  // unprobable, but possible - then it is identity or 180deg
+  {
+    if (cos_ab + 1.0 < _tol)  // that would be 180deg
+    {
+      vec_rot << -1.0, 0.0, 0.0,
+                 0.0, -1.0, 0.0,
+                 0.0, 0.0, 1.0;
+    } // otherwise its identity
+  } else  // otherwise just construct the matrix
+  {
+    Eigen::Matrix3d v_x; v_x << 0.0, -v(2), v(1),
+                                v(2), 0.0, -v(0),
+                                -v(1), v(0  ), 0.0;
+    vec_rot = Eigen::Matrix3d::Identity() + v_x + (1-cos_ab)/(sin_ab*sin_ab)*(v_x*v_x);
+  }
+  pos_cov = vec_rot*pos_cov*vec_rot.transpose();  // rotate the covariance to point in direction of est. position
+  pos_cov = c2w_rot*pos_cov*c2w_rot.transpose();  // rotate the covariance into local_origin tf
+  cur_position_estimate = _c2w_tf*cur_position_estimate; // transform the position estimate to world coordinate system
+
+  /** for debug only **/
+  if (_dbg_on)
+  {
+    Eigen::Matrix3d rot_mat = Eigen::Matrix3d::Identity();
+    rot_mat = c2w_rot*rot_mat;
+    Eigen::Matrix3d rot_cov = 0.1*Eigen::Matrix3d::Identity();
+    rot_cov = c2w_rot*rot_cov*c2w_rot.transpose();
+    // Fill the covariance array
+    nav_msgs::Odometry dbg_msg;
+    for (int r_it = 0; r_it < 6; r_it++)
+      for (int c_it = 0; c_it < 6; c_it++)
+        if (r_it < 3 && c_it < 3)
+          dbg_msg.pose.covariance[r_it + c_it*6] = pos_cov(r_it, c_it);
+        else if (r_it >= 3 && c_it >= 3)
+          dbg_msg.pose.covariance[r_it + c_it*6] = rot_cov(r_it-3, c_it-3);
+        else
+          dbg_msg.pose.covariance[r_it + c_it*6] = 0.0;
+    dbg_msg.header.stamp = ros::Time::now();
+    dbg_msg.header.frame_id = "local_origin";
+    dbg_msg.pose.pose.position.x = cur_position_estimate(0);
+    dbg_msg.pose.pose.position.y = cur_position_estimate(1);
+    dbg_msg.pose.pose.position.z = cur_position_estimate(2);
+    Eigen::Quaterniond tmp(rot_mat);
+    dbg_msg.pose.pose.orientation.x = tmp.x();
+    dbg_msg.pose.pose.orientation.y = tmp.y();
+    dbg_msg.pose.pose.orientation.z = tmp.z();
+    dbg_msg.pose.pose.orientation.w = tmp.w();
+    _dbg_pub.publish(dbg_msg);
+    cout << "Debug published!" << std::endl;
+  } else
+  {
+    cout << "Debug disabled" << std::endl;
+  }
+  /** end of debug **/
+
+  // assign output variables
+  out_meas_covariance = pos_cov;
+  out_meas_position = cur_position_estimate;
+}
+
+void Detected_UAV::initialize(
+                  const uav_detect::Detection& det,
+                  int w_used,
+                  int h_used,
+                  const sensor_msgs::CameraInfo& camera_info,
+                  const tf2::Transform& camera2world_tf)
+{
+  _camera_model.fromCameraInfo(camera_info);
+  _w_used = w_used;
+  _h_used = h_used;
+  _w_camera = camera_info.width;
+  _h_camera = camera_info.height;
+  _c2w_tf = tf2_to_eigen(camera2world_tf);
+
+  Eigen::Vector3d meas_position;
+  Eigen::Matrix3d meas_covariance;
+  detection_to_position(det, meas_position, meas_covariance);
+  _est_cov = 2.5*Eigen::Matrix<double, 6, 6>::Identity();
+  _est_state = Eigen::Matrix<double, 6, 1>::Zero();
+  _est_cov.block<3, 3>(0, 0) = meas_covariance;
+  _est_state.block<3, 1>(0, 0) = meas_position;
+
+  cout << "Initial state: " << meas_position(0) << ", " << meas_position(1) << ", " << meas_position(2) << std::endl;
 }
 
 // Intersection over Union
@@ -46,9 +237,40 @@ float Detected_UAV::IoU(const uav_detect::Detection &det1, const uav_detect::Det
   return AoO/AoU;
 }
 
-int Detected_UAV::update(const uav_detect::Detections& new_detections, tf2::Transform camera2world_tf)
+Detection Detected_UAV::get_reference_detection()
 {
-  _c2w_tf = camera2world_tf;
+  Detection ret;
+
+  // This will be center point of the detected UAV
+  Eigen::Vector3d pt3d_center = _est_state.block<3, 1>(0, 0);
+  pt3d_center = _c2w_tf.inverse()*pt3d_center;
+  cv::Point3d cvpt3d_center(pt3d_center(0, 0), pt3d_center(1, 0), pt3d_center(2, 0));
+  cv::Point2d cvpt2d_center = _camera_model.project3dToPixel(cvpt3d_center);
+  double dist = pt3d_center.norm();
+  double width = _UAV_width/dist;
+
+  ret.x_relative = cvpt2d_center.x/_w_used;
+  ret.y_relative = cvpt2d_center.y/_h_used;
+  ret.w_relative = width/_w_used;
+  ret.h_relative = width/2.0/_h_used;
+
+  return ret;
+}
+
+int Detected_UAV::update(const uav_detect::Detections& new_detections, const tf2::Transform& camera2world_tf)
+{
+  _c2w_tf = tf2_to_eigen(camera2world_tf);
+  _camera_model.fromCameraInfo(new_detections.camera_info);
+  _w_used = new_detections.w_used;
+  _h_used = new_detections.h_used;
+  _w_camera = new_detections.camera_info.width;
+  _h_camera = new_detections.camera_info.height;
+
+
+  // update the Kalman Filter (prediction step)
+  // TODO: fill code
+
+
   // Find matching detection
   double best_IoU = 0.0;
   int best_match_it = -1; // -1 indicates no match found
@@ -56,9 +278,10 @@ int Detected_UAV::update(const uav_detect::Detections& new_detections, tf2::Tran
   double cur_IoU = 0.0;
 
   //cout << "Checking IoUs" << std::endl;
+  Detection ref_det = get_reference_detection();
   for (const uav_detect::Detection det : new_detections.detections)
   {
-    cur_IoU = IoU(_ref_det, det);
+    cur_IoU = IoU(ref_det, det);
     //cout << cur_IoU << std::endl;
     if (cur_IoU > _IoU_threshold && cur_IoU > best_IoU)
     {
@@ -69,74 +292,24 @@ int Detected_UAV::update(const uav_detect::Detections& new_detections, tf2::Tran
   }
 
   if (best_match_it >= 0)
-  {
+  { // Found some match with more than IoU > min_IoU
     Detection best_match = new_detections.detections.at(best_match_it);
-    _prob = 0.95*_prob + 0.04*gauss(best_IoU, 0.8, 0.4) + 0.01*best_match.probability;
-//    float total_area = (best_match.w_relative*best_match.h_relative)
-//                     + (_ref_det.w_relative*_ref_det.h_relative);
-    //float N_dets = new_detections.detections.size();
 
-//    float p_e_h = gauss(cur_IoU, 0.8, 0.4);
-//    //p_h   = 1.0/N_dets;
-//    float p_h   = _prob;
-//    float p_e   = total_area;
-//    _prob       = (p_e_h * p_h)/p_e;
+    Eigen::Vector3d meas_position;
+    Eigen::Matrix3d meas_covariance;
 
-    _ref_det.x_relative = 0.9*_ref_det.x_relative + 0.1*best_match.x_relative;
-    _ref_det.y_relative = 0.9*_ref_det.y_relative + 0.1*best_match.y_relative;
-    _ref_det.w_relative = 0.9*_ref_det.w_relative + 0.1*best_match.w_relative;
-    _ref_det.h_relative = 0.9*_ref_det.h_relative + 0.1*best_match.h_relative;
+    detection_to_position(best_match, meas_position, meas_covariance);
 
-    image_geometry::PinholeCameraModel cam_model;
-    cam_model.fromCameraInfo(new_detections.camera_info);
+    // update the Kalman Filter (data step)
+    // TODO: fill code
 
-    int w_used = new_detections.w_used;
-    int h_used = new_detections.h_used;
-    int cam_image_w = new_detections.camera_info.width;
-    int cam_image_h = new_detections.camera_info.height;
-
-    int px_x = (int)round(
-                      (cam_image_w-w_used)/2.0 +  // offset between the detection rectangle and camera image
-                      (_ref_det.x_relative)*w_used);
-    int px_y = (int)round(
-                      (cam_image_h-h_used)/2.0 +  // offset between the detection rectangle and camera image
-                      (_ref_det.y_relative)*h_used);
-    int px_w = (int)round(_ref_det.w_relative*w_used);
-    cv::Point2d center_pt = cam_model.rectifyPoint(cv::Point2d(px_x, px_y));
-    cv::Point2d left_pt = cam_model.rectifyPoint(cv::Point2d(px_x-px_w/2, px_y));
-    cv::Point2d right_pt = cam_model.rectifyPoint(cv::Point2d(px_x+px_w/2, px_y));
-//    cv::Point2d center_pt(px_x, px_y);
-//    cv::Point2d left_pt(px_x-px_w, px_y);
-//    cv::Point2d right_pt(px_x+px_w, px_y);
-
-    cv::Point3d ray_vec = cam_model.projectPixelTo3dRay(center_pt);
-    cv::Point3d left_vec = cam_model.projectPixelTo3dRay(left_pt);
-    cv::Point3d right_vec = cam_model.projectPixelTo3dRay(right_pt);
-
-    float proj_width = sqrt((left_vec.x-right_vec.x)*(left_vec.x-right_vec.x)
-                           +(left_vec.y-right_vec.y)*(left_vec.y-right_vec.y));
-                           //+(left_vec.z-right_vec.z)*(left_vec.z-right_vec.z)); // z coordinate should be 1.0
-//    float proj_width = _ref_det.w_relative;
-    // cout << "Projection width: " << proj_width << ", x-focal length: " << cam_model.fx() << std::endl;
-    cout << "Max. camera width: " << cam_image_w << std::endl;
-    cout << "Used camera width: " << w_used << std::endl;
-    cout << "Projection width: " << proj_width << std::endl;
-    float est_dist = _UAV_width/proj_width;
-    tf2::Vector3 cur_pt(ray_vec.x*est_dist, ray_vec.y*est_dist, est_dist);
-    cur_pt = _c2w_tf*cur_pt; // transform to world coordinate system
-
-    _cur_x = cur_pt.getX();
-    _cur_y = cur_pt.getY();
-    _cur_z = cur_pt.getZ();
-  } else
-  {
-//    float area  = _ref_det.w_relative*_ref_det.h_relative;
-//    float p_e_h = 0.2;
-//    //p_h   = 1.0/N_dets;
-//    float p_h   = _prob;
-//    float p_e   = area;
-//    _prob       = (p_e_h * p_h)/p_e;
   }
 
   return best_match_it;
+}
+
+
+Detected_UAV::~Detected_UAV()
+{
+  delete _KF;
 }

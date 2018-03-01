@@ -9,6 +9,7 @@
 #include <image_transport/image_transport.h>
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
+#include <nav_msgs/Odometry.h>
 
 #include <geometry_msgs/TransformStamped.h>
 #include <tf2/LinearMath/Matrix3x3.h>
@@ -205,7 +206,14 @@ int main(int argc, char **argv)
       {
         if (!used_detections.at(it))
         {
-          detUAVs.push_back(Detected_UAV(latest_detections.detections.at(it), camera2world_transform));
+          Detected_UAV n_det(0.0, 0.58, &nh);
+          n_det.initialize(
+                  latest_detections.detections.at(it),
+                  latest_detections.w_used,
+                  latest_detections.h_used,
+                  latest_detections.camera_info,
+                  camera2world_transform);
+          detUAVs.push_back(n_det);
           //cout << "Adding new detected UAV!" << std::endl;
         }
       }
@@ -213,18 +221,19 @@ int main(int argc, char **argv)
       for (auto det_it = detUAVs.begin(); det_it != detUAVs.end(); det_it++)
       {
         //cout << "An UAV is detected with " << det_it->get_prob() << " probability" << std::endl;
-        if (det_it->get_prob() < 0.15)
-        {
-          det_it = detUAVs.erase(det_it);
-          //cout << "\tkicking it out" << std::endl;
-        } else if (det_it->get_prob() > 0.75)
-        {
-          cout << "\tAn UAV is reliably detected with " << det_it->get_prob() << " probability" << std::endl;
-          cout << "\testimated relative position: [" << det_it->est_x() << ", " << det_it->est_y() << ", " << det_it->est_z() << "]" << std::endl;
-        } else
-        {
-          cout << "\tPotential UAV reliably detected with " << det_it->get_prob() << " probability" << std::endl;
-        }
+        cout << "\testimated relative position: [" << det_it->est_x() << ", " << det_it->est_y() << ", " << det_it->est_z() << "]" << std::endl;
+//        if (det_it->get_prob() < 0.15)
+//        {
+//          det_it = detUAVs.erase(det_it);
+//          //cout << "\tkicking it out" << std::endl;
+//        } else if (det_it->get_prob() > 0.75)
+//        {
+//          cout << "\tAn UAV is reliably detected with " << det_it->get_prob() << " probability" << std::endl;
+//          cout << "\testimated relative position: [" << det_it->est_x() << ", " << det_it->est_y() << ", " << det_it->est_z() << "]" << std::endl;
+//        } else
+//        {
+//          cout << "\tPotential UAV reliably detected with " << det_it->get_prob() << " probability" << std::endl;
+//        }
       }
 
       cout << "Detection processed" << std::endl;
@@ -233,4 +242,5 @@ int main(int argc, char **argv)
       r.sleep();
     }
   }
+  delete tf_listener;
 }

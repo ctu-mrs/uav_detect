@@ -2,6 +2,7 @@
 #include <cmath>
 #include <limits>
 
+#include <ros/ros.h>
 #include <uav_detect/Detection.h>
 #include <uav_detect/Detections.h>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -15,30 +16,58 @@
 #include <tf2/LinearMath/Vector3.h>
 #include <tf2_eigen/tf2_eigen.h>
 #include <tf2_ros/transform_listener.h>
+#include <nav_msgs/Odometry.h>
+#include <sensor_msgs/CameraInfo.h>
+
+#include <mrs_estimation/lkf.h>
 
 class Detected_UAV
 {
   public:
-    Detected_UAV(uav_detect::Detection det, tf2::Transform camera2world_tf, float IoU_threshold = 0.0);
+    Detected_UAV(
+                  float IoU_threshold = 0.0,
+                  double UAV_width = 0.55,
+                  ros::NodeHandle *nh = nullptr
+                  );
+    ~Detected_UAV();
 
+    void initialize(
+                  const uav_detect::Detection& det,
+                  int w_used,
+                  int h_used,
+                  const sensor_msgs::CameraInfo& camera_info,
+                  const tf2::Transform& camera2world_tf);
     // returns index of the matching detection or -1 if no matching was found
-    int update(const uav_detect::Detections& new_detections, tf2::Transform camera2world_tf);
-    float get_prob() {return _prob;};
-    float est_x() {return _cur_x;};
-    float est_y() {return _cur_y;};
-    float est_z() {return _cur_z;};
+    int update(const uav_detect::Detections& new_detections, const tf2::Transform& camera2world_tf);
+    //float get_prob() {return _prob;};
+    float est_x() {return _est_state(0);};
+    float est_y() {return _est_state(1);};
+    float est_z() {return _est_state(2);};
   private:
     // Parameters
     float _IoU_threshold;
-    const float _UAV_width;  // in meters
+    const double _UAV_width;  // in meters
+    const double _tol;
+    const double _max_det_dist; // meters - maximal distance for the drone detection
+    const double _max_dist_est; // meters - maximal distance for "kind of precise" distance estimation from b.b. width
 
     // Internal variables
-    float _prob;
-    float _cur_x;
-    float _cur_y;
-    float _cur_z;
-    uav_detect::Detection _ref_det;
-    tf2::Transform _c2w_tf;
+    LinearKF *_KF;
+    Eigen::Matrix<double, 6, 6> _est_cov;
+    Eigen::Matrix<double, 6, 1>  _est_state;
 
-    float IoU(const uav_detect::Detection &det1, const uav_detect::Detection &det2);
+    int _w_used, _h_used;
+    int _w_camera, _h_camera;
+    image_geometry::PinholeCameraModel _camera_model;
+    Eigen::Affine3d _c2w_tf;
+
+    bool _dbg_on;
+    ros::Publisher _dbg_pub;
+
+    uav_detect::Detection get_reference_detection();
+    void detection_to_position(
+                        const uav_detect::Detection& det,
+                        Eigen::Vector3d& out_meas_position,
+                        Eigen::Matrix3d& out_meas_covariance);
+    float IoU(const uav_detect::Detection& det1, const uav_detect::Detection& det2);
 };

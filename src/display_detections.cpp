@@ -43,9 +43,6 @@ void detections_callback(const uav_detect::Detections& dets_msg)
 int main(int argc, char **argv)
 {
   string uav_name, uav_frame, world_frame;
-//  double camera_offset_x, camera_offset_y, camera_offset_z;
-//  double camera_offset_roll, camera_offset_pitch, camera_offset_yaw;
-//  double camera_delay;
 
   ros::init(argc, argv, "display_detections");
   ROS_INFO ("Node initialized.");
@@ -61,41 +58,13 @@ int main(int argc, char **argv)
     ros::shutdown();
   }
 
-//  nh.param("world_frame", world_frame, std::string("local_origin"));
-//  nh.param("uav_frame", uav_frame, std::string("fcu_uav1"));
-//  nh.param("camera_offset_x", camera_offset_x, numeric_limits<double>::infinity());
-//  nh.param("camera_offset_y", camera_offset_y, numeric_limits<double>::infinity());
-//  nh.param("camera_offset_z", camera_offset_z, numeric_limits<double>::infinity());
-//  nh.param("camera_offset_roll", camera_offset_roll, numeric_limits<double>::infinity());
-//  nh.param("camera_offset_pitch", camera_offset_pitch, numeric_limits<double>::infinity());
-//  nh.param("camera_offset_yaw", camera_offset_yaw, numeric_limits<double>::infinity());
-//  nh.param("camera_delay", camera_delay, numeric_limits<double>::infinity());
-
   cout << "Using parameters:" << std::endl;
   cout << "\tuav name:\t" << uav_name << std::endl;
 
-//  // build the UAV to camera transformation
-//  tf2::Transform uav2camera_transform;
-//  {
-//    tf2::Quaternion q;
-//    tf2::Vector3    origin;
-//    // camera transformation
-//    origin.setValue(camera_offset_x, camera_offset_y, camera_offset_z);
-//    // camera rotation
-//    q.setRPY(camera_offset_roll / 180.0 * M_PI, camera_offset_pitch / 180.0 * M_PI, camera_offset_yaw / 180.0 * M_PI);
-//
-//    uav2camera_transform.setOrigin(origin);
-//    uav2camera_transform.setRotation(q);
-//
-//    camera_delay = camera_delay/1000.0; // recalculate to seconds
-//  }
-
-//  tf2_ros::Buffer tf_buffer;
   /** Create publishers and subscribers **/
   ros::Subscriber camera_sub = nh.subscribe("camera_input", 1, camera_callback, ros::TransportHints().tcpNoDelay());
   ros::Subscriber detections_sub = nh.subscribe("detections", 1, detections_callback, ros::TransportHints().tcpNoDelay());
   ros::Publisher det_imgs_pub = nh.advertise<sensor_msgs::Image>("det_imgs", 1);
-//  tf2_ros::TransformListener* tf_listener = new tf2_ros::TransformListener(tf_buffer);
 
   cout << "----------------------------------------------------------" << std::endl;
 
@@ -109,35 +78,6 @@ int main(int argc, char **argv)
       new_cam_image = false;
       new_detections = false;
       cout << "Processing new detections" << std::endl;
-
-//      // First, update the transforms
-//      geometry_msgs::TransformStamped transform;
-//      tf2::Transform  world2uav_transform, world2cam_transform;
-//      tf2::Vector3    origin;
-//      tf2::Quaternion orientation;
-//      try
-//      {
-//        const ros::Duration timeout(1.0/6.0);
-//        // Obtain transform from world into uav frame
-//        transform = tf_buffer.lookupTransform(uav_frame, world_frame, last_detections.stamp - ros::Duration(camera_delay), timeout);
-//        origin.setValue(transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z);
-//
-//        orientation.setX(transform.transform.rotation.x);
-//        orientation.setY(transform.transform.rotation.y);
-//        orientation.setZ(transform.transform.rotation.z);
-//        orientation.setW(transform.transform.rotation.w);
-//
-//        world2uav_transform.setOrigin(origin);
-//        world2uav_transform.setRotation(orientation);
-//
-//        // Obtain transform from world into camera frame
-//        world2cam_transform = uav2camera_transform * world2uav_transform;
-//      }
-//      catch (tf2::TransformException& ex)
-//      {
-//        ROS_ERROR("Error during transform from \"%s\" frame to \"%s\" frame. MSG: %s", world_frame.c_str(), "usb_cam", ex.what());
-//        continue;
-//      }
 
       int cam_image_w = last_cam_image_ptr->image.cols;
       int cam_image_h = last_cam_image_ptr->image.rows;
@@ -164,10 +104,6 @@ int main(int argc, char **argv)
                   w,
                   h);
         cv::rectangle(last_cam_image_ptr->image, det_rect, Scalar(0, 0, 255), 5);
-
-//        tf2::Vector3 tst(-5.0, 0.0, 5.0);
-//        tst = world2cam_transform*tst;
-//        cv::circle(last_cam_image_ptr->image, tst, 5, Scalar(0, 0, 255), 5);
       }
 
       det_imgs_pub.publish(last_cam_image_ptr->toImageMsg());

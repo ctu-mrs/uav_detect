@@ -4,7 +4,7 @@
 
   <group ns="$(arg uav_name)">
     
-    <node name="estimate_location" pkg="uav_detect" type="uav_detect_localize" output="screen">
+    <node name="estimate_location" pkg="uav_detect" type="uav_detect_localize" output="screen" launch-prefix="gdb -ex run --args" >
       
       <rosparam file="$(find mrs_trackers)/config/f550.yaml" />
       <rosparam file="$(find uav_detect)/config/simulation.yaml" />
