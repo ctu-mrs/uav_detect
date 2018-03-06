@@ -43,8 +43,8 @@ Detected_UAV::Detected_UAV(
        0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
        0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
        0.0, 0.0, 0.0, 0.0, 0.0, 1.0;
-  MatrixXd B; // input matrix (empty)
-  Matrix<double, p, n> H; // measurement matrix
+  Matrix<double, n, m> B; // input matrix (empty)
+  Matrix<double, n, p> H; // measurement matrix
   H << 1.0, 0.0, 0.0,
        0.0, 1.0, 0.0,
        0.0, 0.0, 1.0,
@@ -67,6 +67,7 @@ Detected_UAV::Detected_UAV(
     _dbg_on = true;
   }
   _KF = new LinearKF(n, m, p, A, B, R, Q, H);
+  _KF->setInput(Matrix<double, m, 1>());
 }
 
 void Detected_UAV::detection_to_position(
@@ -268,7 +269,7 @@ int Detected_UAV::update(const uav_detect::Detections& new_detections, const tf2
 
 
   // update the Kalman Filter (prediction step)
-  // TODO: fill code
+  _KF->iterateWithoutCorrection();
 
 
   // Find matching detection
@@ -301,7 +302,8 @@ int Detected_UAV::update(const uav_detect::Detections& new_detections, const tf2
     detection_to_position(best_match, meas_position, meas_covariance);
 
     // update the Kalman Filter (data step)
-    // TODO: fill code
+    _KF->setMeasurement(meas_position, meas_covariance);
+    _KF->doCorrection();
 
   }
 
