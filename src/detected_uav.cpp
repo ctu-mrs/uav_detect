@@ -147,9 +147,8 @@ void Detected_UAV::detection_to_position(
   }
   pos_cov = vec_rot*pos_cov*vec_rot.transpose();  // rotate the covariance to point in direction of est. position
   pos_cov = c2w_rot*pos_cov*c2w_rot.transpose();  // rotate the covariance into local_origin tf
-  cur_position_estimate = _c2w_tf.linear()*cur_position_estimate + _c2w_tf.translation(); // transform the position estimate to world coordinate system
-  for (int tmpit = 0; tmpit < 3; tmpit ++)
-    cout << _c2w_tf.translation()[tmpit] << "," << std::endl;
+  /* cur_position_estimate = _c2w_tf.linear()*cur_position_estimate + _c2w_tf.translation(); // transform the position estimate to world coordinate system */
+  cur_position_estimate = _c2w_tf*cur_position_estimate; // transform the position estimate to world coordinate system
 
   /** for debug only **/
   if (_dbg_on)
@@ -208,14 +207,19 @@ void Detected_UAV::initialize(
   Eigen::Vector3d meas_position;
   Eigen::Matrix3d meas_covariance;
   detection_to_position(det, meas_position, meas_covariance);
-  _KF->setMeasurement(meas_position, meas_covariance);
-  _KF->doCorrection();
+  for (int st_it = 0; st_it < 3; st_it++)
+    _KF->setState(st_it, meas_position(st_it));
+  Eigen::Matrix<double, 6, 6> tot_covariance = 2.0*Eigen::Matrix<double, 6, 6>::Identity();
+  tot_covariance.block<3, 3>(0, 0) = meas_covariance;
+  _KF->setCovariance(tot_covariance);
+  /* _KF->setMeasurement(meas_position, meas_covariance); */
+  /* _KF->doCorrection(); */
   /* _est_cov = 2.5*Eigen::Matrix<double, 6, 6>::Identity(); */
   /* _est_state = Eigen::Matrix<double, 6, 1>::Zero(); */
   /* _est_cov.block<3, 3>(0, 0) = meas_covariance; */
   /* _est_state.block<3, 1>(0, 0) = meas_position; */
 
-  cout << "Initial state: " << meas_position(0) << ", " << meas_position(1) << ", " << meas_position(2) << std::endl;
+  cout << "Initial state: " << get_x() << ", " << get_y() << ", " << get_z() << std::endl;
 }
 
 // Intersection over Union

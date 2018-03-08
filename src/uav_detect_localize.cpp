@@ -221,7 +221,7 @@ int main(int argc, char **argv)
       for (auto det_it = detUAVs.begin(); det_it != detUAVs.end(); det_it++)
       {
         //cout << "An UAV is detected with " << det_it->get_prob() << " probability" << std::endl;
-        cout << "\testimated relative position: [" << det_it->est_x() << ", " << det_it->est_y() << ", " << det_it->est_z() << "]" << std::endl;
+        cout << "\testimated relative position: [" << det_it->get_x() << ", " << det_it->get_y() << ", " << det_it->get_z() << "]" << std::endl;
 //        if (det_it->get_prob() < 0.15)
 //        {
 //          det_it = detUAVs.erase(det_it);

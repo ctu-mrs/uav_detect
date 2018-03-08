@@ -40,9 +40,9 @@ class Detected_UAV
     // returns index of the matching detection or -1 if no matching was found
     int update(const uav_detect::Detections& new_detections, const tf2::Transform& camera2world_tf);
     //float get_prob() {return _prob;};
-    double est_x() {return _KF->getState(0);};
-    double est_y() {return _KF->getState(1);};
-    double est_z() {return _KF->getState(2);};
+    double get_x() {return _KF->getState(0);};
+    double get_y() {return _KF->getState(1);};
+    double get_z() {return _KF->getState(2);};
   private:
     // Parameters
     float _IoU_threshold;
