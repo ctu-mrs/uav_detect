@@ -1,6 +1,7 @@
 
 #include <cmath>
 #include <limits>
+#include <memory>
 
 #include <ros/ros.h>
 #include <uav_detect/Detection.h>
@@ -29,7 +30,6 @@ class Detected_UAV
                   double UAV_width = 0.55,
                   ros::NodeHandle *nh = nullptr
                   );
-    ~Detected_UAV();
 
     void initialize(
                   const uav_detect::Detection& det,
@@ -52,7 +52,7 @@ class Detected_UAV
     const double _max_dist_est; // meters - maximal distance for "kind of precise" distance estimation from b.b. width
 
     // Internal variables
-    LinearKF *_KF;
+    std::unique_ptr<LinearKF> _KF;
     Eigen::Matrix<double, 6, 6> _est_cov;
     Eigen::Matrix<double, 6, 1>  _est_state;
 

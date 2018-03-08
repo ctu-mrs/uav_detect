@@ -33,9 +33,9 @@ Detected_UAV::Detected_UAV(
 {
   _IoU_threshold = IoU_threshold;
   double est_dt = 0.2;
-  const unsigned n = 6; // number of states
-  const unsigned m = 0; // number of inputs
-  const unsigned p = 3; // number of measurements
+  const int n = 6; // number of states
+  const int m = 0; // number of inputs
+  const int p = 3; // number of measurements
   Matrix<double, n, n> A; // state transition matrix
   A << 1.0, 0.0, 0.0, est_dt, 0.0, 0.0,
        0.0, 1.0, 0.0, 0.0, est_dt, 0.0,
@@ -44,13 +44,16 @@ Detected_UAV::Detected_UAV(
        0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
        0.0, 0.0, 0.0, 0.0, 0.0, 1.0;
   Matrix<double, n, m> B; // input matrix (empty)
-  Matrix<double, n, p> H; // measurement matrix
-  H << 1.0, 0.0, 0.0,
-       0.0, 1.0, 0.0,
-       0.0, 0.0, 1.0,
-       0.0, 0.0, 0.0,
-       0.0, 0.0, 0.0,
-       0.0, 0.0, 0.0;
+  Matrix<double, p, n> H; // measurement matrix
+  H << 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+       0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+       0.0, 0.0, 1.0, 0.0, 0.0, 0.0;
+//  H << 1.0, 0.0, 0.0,
+//       0.0, 1.0, 0.0,
+//       0.0, 0.0, 1.0,
+//       0.0, 0.0, 0.0,
+//       0.0, 0.0, 0.0,
+//       0.0, 0.0, 0.0;
   Matrix<double, n, n> R; // process covariance matrix
   R = Matrix<double, n, n>::Zero();
   R(0, 0) = R(1, 1) = R(2, 2) = 0.2;
@@ -66,8 +69,8 @@ Detected_UAV::Detected_UAV(
     _dbg_pub = nh->advertise<nav_msgs::Odometry>("dbg", 1);
     _dbg_on = true;
   }
-  _KF = new LinearKF(n, m, p, A, B, R, Q, H);
-  _KF->setInput(Matrix<double, m, 1>());
+  _KF = unique_ptr<LinearKF>(new LinearKF(n, m, p, A, B, R, Q, H));
+  //_KF->setInput(Matrix<double, m, 1>());
 }
 
 void Detected_UAV::detection_to_position(
@@ -203,10 +206,12 @@ void Detected_UAV::initialize(
   Eigen::Vector3d meas_position;
   Eigen::Matrix3d meas_covariance;
   detection_to_position(det, meas_position, meas_covariance);
-  _est_cov = 2.5*Eigen::Matrix<double, 6, 6>::Identity();
-  _est_state = Eigen::Matrix<double, 6, 1>::Zero();
-  _est_cov.block<3, 3>(0, 0) = meas_covariance;
-  _est_state.block<3, 1>(0, 0) = meas_position;
+  _KF->setMeasurement(meas_position, meas_covariance);
+  _KF->doCorrection();
+  /* _est_cov = 2.5*Eigen::Matrix<double, 6, 6>::Identity(); */
+  /* _est_state = Eigen::Matrix<double, 6, 1>::Zero(); */
+  /* _est_cov.block<3, 3>(0, 0) = meas_covariance; */
+  /* _est_state.block<3, 1>(0, 0) = meas_position; */
 
   cout << "Initial state: " << meas_position(0) << ", " << meas_position(1) << ", " << meas_position(2) << std::endl;
 }
@@ -308,10 +313,4 @@ int Detected_UAV::update(const uav_detect::Detections& new_detections, const tf2
   }
 
   return best_match_it;
-}
-
-
-Detected_UAV::~Detected_UAV()
-{
-  delete _KF;
 }

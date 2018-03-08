@@ -213,7 +213,7 @@ int main(int argc, char **argv)
                   latest_detections.h_used,
                   latest_detections.camera_info,
                   camera2world_transform);
-          detUAVs.push_back(n_det);
+          detUAVs.push_back(std::move(n_det));
           //cout << "Adding new detected UAV!" << std::endl;
         }
       }
