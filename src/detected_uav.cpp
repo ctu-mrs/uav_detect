@@ -16,9 +16,9 @@ static Eigen::Affine3d tf2_to_eigen(const tf2::Transform& tf2_t)
   for (int r_it = 0; r_it < 3; r_it++)
     for (int c_it = 0; c_it < 3; c_it++)
       eig_t(r_it, c_it) = tf2_t.getBasis()[r_it][c_it];
-  eig_t(3, 0) = tf2_t.getOrigin().getX();
-  eig_t(3, 1) = tf2_t.getOrigin().getY();
-  eig_t(3, 2) = tf2_t.getOrigin().getZ();
+  eig_t(0, 3) = tf2_t.getOrigin().getX();
+  eig_t(1, 3) = tf2_t.getOrigin().getY();
+  eig_t(2, 3) = tf2_t.getOrigin().getZ();
   return eig_t;
 }
 
@@ -142,12 +142,14 @@ void Detected_UAV::detection_to_position(
   {
     Eigen::Matrix3d v_x; v_x << 0.0, -v(2), v(1),
                                 v(2), 0.0, -v(0),
-                                -v(1), v(0  ), 0.0;
+                                -v(1), v(0), 0.0;
     vec_rot = Eigen::Matrix3d::Identity() + v_x + (1-cos_ab)/(sin_ab*sin_ab)*(v_x*v_x);
   }
   pos_cov = vec_rot*pos_cov*vec_rot.transpose();  // rotate the covariance to point in direction of est. position
   pos_cov = c2w_rot*pos_cov*c2w_rot.transpose();  // rotate the covariance into local_origin tf
-  cur_position_estimate = _c2w_tf*cur_position_estimate; // transform the position estimate to world coordinate system
+  cur_position_estimate = _c2w_tf.linear()*cur_position_estimate + _c2w_tf.translation(); // transform the position estimate to world coordinate system
+  for (int tmpit = 0; tmpit < 3; tmpit ++)
+    cout << _c2w_tf.translation()[tmpit] << "," << std::endl;
 
   /** for debug only **/
   if (_dbg_on)
@@ -248,17 +250,18 @@ Detection Detected_UAV::get_reference_detection()
   Detection ret;
 
   // This will be center point of the detected UAV
-  Eigen::Vector3d pt3d_center = _est_state.block<3, 1>(0, 0);
+  /* Eigen::Vector3d pt3d_center = _est_state.block<3, 1>(0, 0); */
+  Eigen::Vector3d pt3d_center = _KF->getStates().block<3, 1>(0, 0);
   pt3d_center = _c2w_tf.inverse()*pt3d_center;
   cv::Point3d cvpt3d_center(pt3d_center(0, 0), pt3d_center(1, 0), pt3d_center(2, 0));
   cv::Point2d cvpt2d_center = _camera_model.project3dToPixel(cvpt3d_center);
   double dist = pt3d_center.norm();
   double width = _UAV_width/dist;
 
-  ret.x_relative = cvpt2d_center.x/_w_used;
-  ret.y_relative = cvpt2d_center.y/_h_used;
-  ret.w_relative = width/_w_used;
-  ret.h_relative = width/2.0/_h_used;
+  ret.x_relative = cvpt2d_center.x/double(_w_used);
+  ret.y_relative = cvpt2d_center.y/double(_h_used);
+  ret.w_relative = width/double(_w_used);
+  ret.h_relative = width/2.0/double(_h_used);
 
   return ret;
 }
