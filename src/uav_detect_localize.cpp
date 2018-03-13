@@ -47,6 +47,7 @@ int main(int argc, char **argv)
   double camera_offset_x, camera_offset_y, camera_offset_z;
   double camera_offset_roll, camera_offset_pitch, camera_offset_yaw;
   double camera_delay;
+  double ass_thresh, sim_thresh;
 
   ros::init(argc, argv, "uav_detect_localize");
   ROS_INFO ("Node initialized.");
@@ -54,6 +55,7 @@ int main(int argc, char **argv)
   ros::NodeHandle nh = ros::NodeHandle("~");
 
   /** Load parameters from ROS **/
+  //{
   // UAV name
   nh.param("uav_name", uav_name, string());
   if (uav_name.empty())
@@ -112,6 +114,22 @@ int main(int argc, char **argv)
     ROS_ERROR("Camera delay not specified");
     ros::shutdown();
   }
+
+  // detection association threshold
+  nh.param("ass_thresh", ass_thresh, numeric_limits<double>::infinity());
+  if (isinf(ass_thresh))
+  {
+    ROS_ERROR("Detection association threshold not specified");
+    ros::shutdown();
+  }
+  // similarity of detected UAVs threshold
+  nh.param("sim_thresh", sim_thresh, numeric_limits<double>::infinity());
+  if (isinf(sim_thresh))
+  {
+    ROS_ERROR("Detection association threshold not specified");
+    ros::shutdown();
+  }
+
   cout << "Using parameters:" << std::endl;
   cout << "\tuav name:\t" << uav_name << std::endl;
   cout << "\tuav frame:\t" << uav_frame << std::endl;
@@ -123,6 +141,9 @@ int main(int argc, char **argv)
   cout << "\tcamera pitch:\t" << camera_offset_pitch << "°" << std::endl;
   cout << "\tcamera yaw:\t" << camera_offset_yaw << "°"  << std::endl;
   cout << "\tcamera delay:\t" << camera_delay << "ms" << std::endl;
+  cout << "\tassociation threshold:\t" << ass_thresh << "ms" << std::endl;
+  cout << "\tsimilarity threshold:\t" << sim_thresh << "ms" << std::endl;
+  //}
 
   // build the UAV to camera transformation
   tf2::Transform uav2camera_transform;
@@ -197,7 +218,7 @@ int main(int argc, char **argv)
         int used = detUAV.update(latest_detections, camera2world_transform);
         if (used >= 0)
         {
-          //cout << "Redetected " << used << ". detection" << std::endl;
+          cout << "Redetected " << used << ". detection" << std::endl;
           used_detections.at(used) = true;
         }
       }
@@ -206,7 +227,7 @@ int main(int argc, char **argv)
       {
         if (!used_detections.at(it))
         {
-          Detected_UAV n_det(0.0, 0.58, &nh);
+          Detected_UAV n_det(ass_thresh, sim_thresh, 0.58, &nh);
           n_det.initialize(
                   latest_detections.detections.at(it),
                   latest_detections.w_used,
@@ -214,7 +235,7 @@ int main(int argc, char **argv)
                   latest_detections.camera_info,
                   camera2world_transform);
           detUAVs.push_back(std::move(n_det));
-          //cout << "Adding new detected UAV!" << std::endl;
+          cout << "Adding new detected UAV!" << std::endl;
         }
       }
 

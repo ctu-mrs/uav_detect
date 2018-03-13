@@ -26,7 +26,8 @@ class Detected_UAV
 {
   public:
     Detected_UAV(
-                  double IoU_threshold = 0.0,
+                  double association_threshold = 0.0,
+                  double similarity_threshold = 0.001,
                   double UAV_width = 0.55,
                   ros::NodeHandle *nh = nullptr
                   );
@@ -46,8 +47,8 @@ class Detected_UAV
     double get_z() {return _KF->getState(2);};
   private:
     // Parameters
-    double _IoU_threshold;
-    double _similarity_threshold;
+    const double _association_threshold;
+    const double _similarity_threshold;
     const double _UAV_width;  // in meters
     const double _tol;
     const double _max_det_dist; // meters - maximal distance for the drone detection

@@ -16,3 +16,7 @@ camera_offset_pitch: -90  #degrees
 camera_offset_yaw: 45  #degrees
 
 camera_delay: 0 #ms
+
+############### position estimation parameters ###############
+ass_thresh: 0.0     # threshold for associating detections to detected UAVs
+sim_thresh: 0.001   # threshold for erasing similar detected UAVs

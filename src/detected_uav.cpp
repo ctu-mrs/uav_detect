@@ -37,16 +37,17 @@ static Eigen::Affine3d tf2_to_eigen(const tf2::Transform& tf2_t)
 }
 
 Detected_UAV::Detected_UAV(
-                            double IoU_threshold,
+                            double association_threshold,
+                            double similarity_threshold,
                             double UAV_width,
                             NodeHandle *nh
-                            ) : _similarity_threshold(0.6),
+                            ) : _association_threshold(association_threshold),
+                                _similarity_threshold(similarity_threshold),
                                 _UAV_width(UAV_width),
                                 _tol(1e-9),
                                 _max_det_dist(15.0),
                                 _max_dist_est(2.0)
 {
-  _IoU_threshold = IoU_threshold;
   double est_dt = 0.2;
   const int n = 6; // number of states
   const int m = 0; // number of inputs
@@ -309,42 +310,43 @@ int Detected_UAV::update(const uav_detect::Detections& new_detections, const tf2
   _w_camera = new_detections.camera_info.width;
   _h_camera = new_detections.camera_info.height;
 
-
   // update the Kalman Filter (prediction step)
   _KF->iterateWithoutCorrection();
 
-
   // Find matching detection
-  double best_IoU = 0.0;
+  double best_likelihood = 0.0;
   int best_match_it = -1; // -1 indicates no match found
   int it = 0;
-  double cur_IoU = 0.0;
+  Eigen::Vector3d best_position;
+  Eigen::Matrix3d best_covariance;
 
   //cout << "Checking IoUs" << std::endl;
-  Detection ref_det = get_reference_detection();
+  /* Detection ref_det = get_reference_detection(); */
   for (const uav_detect::Detection det : new_detections.detections)
   {
-    cur_IoU = IoU(ref_det, det);
-    //cout << cur_IoU << std::endl;
-    if (cur_IoU > _IoU_threshold && cur_IoU > best_IoU)
+    Vector3d mean = _KF->getStates().block<3, 1>(0, 0);
+    Matrix3d cov = _KF->getCovariance().block<3, 3>(0, 0);
+
+    Eigen::Vector3d meas_position;
+    Eigen::Matrix3d meas_covariance;
+    detection_to_position(det, meas_position, meas_covariance);
+
+    double cur_likelihood = mgauss(meas_position, mean, cov);
+    cout << "Cur_likelihood: " << cur_likelihood << std::endl;
+    if (cur_likelihood > _association_threshold && cur_likelihood > best_likelihood)
     {
-      best_IoU = cur_IoU;
+      best_likelihood = cur_likelihood;
       best_match_it = it;
+      best_position = meas_position;
+      best_covariance = meas_covariance;
     }
     it++;
   }
 
   if (best_match_it >= 0)
   { // Found some match with more than IoU > min_IoU
-    Detection best_match = new_detections.detections.at(best_match_it);
-
-    Eigen::Vector3d meas_position;
-    Eigen::Matrix3d meas_covariance;
-
-    detection_to_position(best_match, meas_position, meas_covariance);
-
     // update the Kalman Filter (data step)
-    _KF->setMeasurement(meas_position, meas_covariance);
+    _KF->setMeasurement(best_position, best_covariance);
     _KF->doCorrection();
 
   }
