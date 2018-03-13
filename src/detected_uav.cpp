@@ -5,10 +5,24 @@ using namespace std;
 using namespace Eigen;
 using namespace ros;
 
-//static float gauss(float x, float mu, float sigma)
-//{
-//  return 1.0/(sigma*sqrt(2.0*M_PI))*exp(-(x-mu)*(x-mu)/(sigma*sigma*2.0));
-//}
+/* static float gauss(float x, float mu, float sigma) */
+/* { */
+/*   return 1.0/(sigma*sqrt(2.0*M_PI))*exp(-(x-mu)*(x-mu)/(sigma*sigma*2.0)); */
+/* } */
+
+// from https://stackoverflow.com/questions/41538095/evaluate-multivariate-normal-gaussian-density-in-c
+static double mgauss(VectorXd x, VectorXd mu, MatrixXd sigma)
+{
+  // avoid magic numbers in your code. Compilers will be able to compute this at compile time:
+  const double logSqrt2Pi = 0.5*std::log(2*M_PI);
+  typedef Eigen::LLT<Eigen::MatrixXd> Chol;
+  Chol chol(sigma);
+  // Handle non positive definite covariance somehow:
+  if(chol.info()!=Eigen::Success) throw "decomposition failed!";
+  const Chol::Traits::MatrixL& L = chol.matrixL();
+  double quadform = (L.solve(x - mu)).squaredNorm();
+  return std::exp(-x.rows()*logSqrt2Pi - 0.5*quadform) / L.determinant();
+}
 
 static Eigen::Affine3d tf2_to_eigen(const tf2::Transform& tf2_t)
 {
@@ -26,7 +40,7 @@ Detected_UAV::Detected_UAV(
                             double IoU_threshold,
                             double UAV_width,
                             NodeHandle *nh
-                            ) : _similarity_threshold(1.0),
+                            ) : _similarity_threshold(0.6),
                                 _UAV_width(UAV_width),
                                 _tol(1e-9),
                                 _max_det_dist(15.0),
@@ -223,7 +237,19 @@ bool Detected_UAV::similar_to(const Detected_UAV &candidate)
 {
   // fuck the IoU method, does not make much sense if the MAV moves
   /* return IoU(get_reference_detection(), candidate.get_reference_detection()) > _similarity_threshold; */
-  return (_KF->getStates().block<3, 1>(0, 0) - candidate._KF->getStates().block<3, 1>(0, 0)).norm() < _similarity_threshold;
+  Vector3d mean_1 = _KF->getStates().block<3, 1>(0, 0);
+  Matrix3d cov_1 = _KF->getCovariance().block<3, 3>(0, 0);
+  Vector3d mean_2 = candidate._KF->getStates().block<3, 1>(0, 0);
+  Matrix3d cov_2 = candidate._KF->getCovariance().block<3, 3>(0, 0);
+
+  double likelihood_1 = mgauss(mean_1, mean_2, cov_2);  // likelihood that mean_1 is from N_2
+  double likelihood_2 = mgauss(mean_2, mean_1, cov_1);  // likelihood that mean_2 is from N_1
+  double likelihood = likelihood_1*likelihood_2;        // total likelihood
+
+  /* double MSE = (x_1 - x_2).norm(); */
+  /* cout << "MSE: " << MSE << std::endl; */
+  cout << "likelihood: " << likelihood << std::endl;
+  return likelihood > _similarity_threshold;
 }
 
 // Intersection over Union

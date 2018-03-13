@@ -62,7 +62,7 @@ include_directories(include
   ~/git/darknet_ocl/src
 )
 
-
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O0")
 add_definitions(-g)
 add_executable(display_detections src/display_detections.cpp)
 add_dependencies(display_detections
