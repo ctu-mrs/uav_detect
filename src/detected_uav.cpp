@@ -23,10 +23,11 @@ static Eigen::Affine3d tf2_to_eigen(const tf2::Transform& tf2_t)
 }
 
 Detected_UAV::Detected_UAV(
-                            float IoU_threshold,
+                            double IoU_threshold,
                             double UAV_width,
                             NodeHandle *nh
-                            ) : _UAV_width(UAV_width),
+                            ) : _similarity_threshold(1.0),
+                                _UAV_width(UAV_width),
                                 _tol(1e-9),
                                 _max_det_dist(15.0),
                                 _max_dist_est(2.0)
@@ -207,23 +208,26 @@ void Detected_UAV::initialize(
   Eigen::Vector3d meas_position;
   Eigen::Matrix3d meas_covariance;
   detection_to_position(det, meas_position, meas_covariance);
+  // The initial KF state is set directly from the estimated position
   for (int st_it = 0; st_it < 3; st_it++)
     _KF->setState(st_it, meas_position(st_it));
+  // The covariance of the speed is unknown - position covariance is calculated standardly as for measurement
   Eigen::Matrix<double, 6, 6> tot_covariance = 2.0*Eigen::Matrix<double, 6, 6>::Identity();
   tot_covariance.block<3, 3>(0, 0) = meas_covariance;
   _KF->setCovariance(tot_covariance);
-  /* _KF->setMeasurement(meas_position, meas_covariance); */
-  /* _KF->doCorrection(); */
-  /* _est_cov = 2.5*Eigen::Matrix<double, 6, 6>::Identity(); */
-  /* _est_state = Eigen::Matrix<double, 6, 1>::Zero(); */
-  /* _est_cov.block<3, 3>(0, 0) = meas_covariance; */
-  /* _est_state.block<3, 1>(0, 0) = meas_position; */
 
   cout << "Initial state: " << get_x() << ", " << get_y() << ", " << get_z() << std::endl;
 }
 
+bool Detected_UAV::similar_to(const Detected_UAV &candidate)
+{
+  // fuck the IoU method, does not make much sense if the MAV moves
+  /* return IoU(get_reference_detection(), candidate.get_reference_detection()) > _similarity_threshold; */
+  return (_KF->getStates().block<3, 1>(0, 0) - candidate._KF->getStates().block<3, 1>(0, 0)).norm() < _similarity_threshold;
+}
+
 // Intersection over Union
-float Detected_UAV::IoU(const uav_detect::Detection &det1, const uav_detect::Detection &det2)
+double Detected_UAV::IoU(const uav_detect::Detection &det1, const uav_detect::Detection &det2)
 {
   float det1_l = det1.x_relative-det1.w_relative/2.0;
   float det1_r = det1.x_relative+det1.w_relative/2.0;
@@ -249,7 +253,7 @@ float Detected_UAV::IoU(const uav_detect::Detection &det1, const uav_detect::Det
   return AoO/AoU;
 }
 
-Detection Detected_UAV::get_reference_detection()
+Detection const Detected_UAV::get_reference_detection() const
 {
   Detection ret;
 

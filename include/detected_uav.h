@@ -26,7 +26,7 @@ class Detected_UAV
 {
   public:
     Detected_UAV(
-                  float IoU_threshold = 0.0,
+                  double IoU_threshold = 0.0,
                   double UAV_width = 0.55,
                   ros::NodeHandle *nh = nullptr
                   );
@@ -39,13 +39,15 @@ class Detected_UAV
                   const tf2::Transform& camera2world_tf);
     // returns index of the matching detection or -1 if no matching was found
     int update(const uav_detect::Detections& new_detections, const tf2::Transform& camera2world_tf);
-    //float get_prob() {return _prob;};
+    // calculates whether the two detected UAVs could actually be the same one (to erase duplicates)
+    bool similar_to(const Detected_UAV &candidate);
     double get_x() {return _KF->getState(0);};
     double get_y() {return _KF->getState(1);};
     double get_z() {return _KF->getState(2);};
   private:
     // Parameters
-    float _IoU_threshold;
+    double _IoU_threshold;
+    double _similarity_threshold;
     const double _UAV_width;  // in meters
     const double _tol;
     const double _max_det_dist; // meters - maximal distance for the drone detection
@@ -62,10 +64,10 @@ class Detected_UAV
     bool _dbg_on;
     ros::Publisher _dbg_pub;
 
-    uav_detect::Detection get_reference_detection();
+    uav_detect::Detection const get_reference_detection() const;
     void detection_to_position(
                         const uav_detect::Detection& det,
                         Eigen::Vector3d& out_meas_position,
                         Eigen::Matrix3d& out_meas_covariance);
-    float IoU(const uav_detect::Detection& det1, const uav_detect::Detection& det2);
+    double IoU(const uav_detect::Detection& det1, const uav_detect::Detection& det2);
 };

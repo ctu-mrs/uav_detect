@@ -221,6 +221,14 @@ int main(int argc, char **argv)
       for (auto det_it = detUAVs.begin(); det_it != detUAVs.end(); det_it++)
       {
         //cout << "An UAV is detected with " << det_it->get_prob() << " probability" << std::endl;
+        // Erase similar elements to avoid duplicates (will this syntax work??) TODO:
+        for (auto det2_it = std::next(det_it); det2_it != detUAVs.end(); det2_it++)
+        {
+          if (det2_it->similar_to(*det_it))
+          {
+            det2_it = detUAVs.erase(det2_it);
+          }
+        }
         cout << "\testimated relative position: [" << det_it->get_x() << ", " << det_it->get_y() << ", " << det_it->get_z() << "]" << std::endl;
 //        if (det_it->get_prob() < 0.15)
 //        {
