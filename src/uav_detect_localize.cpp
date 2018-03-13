@@ -54,8 +54,7 @@ int main(int argc, char **argv)
 
   ros::NodeHandle nh = ros::NodeHandle("~");
 
-  /** Load parameters from ROS **/
-  //{
+  /** Load parameters from ROS *//*//{*/
   // UAV name
   nh.param("uav_name", uav_name, string());
   if (uav_name.empty())
@@ -143,9 +142,9 @@ int main(int argc, char **argv)
   cout << "\tcamera delay:\t" << camera_delay << "ms" << std::endl;
   cout << "\tassociation threshold:\t" << ass_thresh << "ms" << std::endl;
   cout << "\tsimilarity threshold:\t" << sim_thresh << "ms" << std::endl;
-  //}
+  /*//}*/
 
-  // build the UAV to camera transformation
+  // build the UAV to camera transformation//{
   tf2::Transform uav2camera_transform;
   {
     tf2::Quaternion q;
@@ -159,13 +158,13 @@ int main(int argc, char **argv)
     uav2camera_transform.setRotation(q);
 
     camera_delay = camera_delay/1000.0; // recalculate to seconds
-  }
+  }/*//}*/
 
+  /** Create publishers and subscribers **//*//{*/
   tf2_ros::Buffer tf_buffer;
-  /** Create publishers and subscribers **/
   ros::Subscriber detections_sub = nh.subscribe("detections", 1, detections_callback, ros::TransportHints().tcpNoDelay());
   // Initialize transform listener
-  tf2_ros::TransformListener* tf_listener = new tf2_ros::TransformListener(tf_buffer);
+  tf2_ros::TransformListener* tf_listener = new tf2_ros::TransformListener(tf_buffer);//}
 
   cout << "----------------------------------------------------------" << std::endl;
 

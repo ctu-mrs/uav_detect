@@ -5,11 +5,13 @@ using namespace std;
 using namespace Eigen;
 using namespace ros;
 
-/* static float gauss(float x, float mu, float sigma) */
-/* { */
-/*   return 1.0/(sigma*sqrt(2.0*M_PI))*exp(-(x-mu)*(x-mu)/(sigma*sigma*2.0)); */
-/* } */
+/* /* gauss - univariate gaussian distribution *//*//{*/*/
+/* static float gauss(float x, float mu, float sigma)*/
+/* {*/
+/*   return 1.0/(sigma*sqrt(2.0*M_PI))*exp(-(x-mu)*(x-mu)/(sigma*sigma*2.0));*/
+/* }/*//}*/*/
 
+/* mgauss - implementation of multivariate gaussian distribution *//*//{*/
 // from https://stackoverflow.com/questions/41538095/evaluate-multivariate-normal-gaussian-density-in-c
 static double mgauss(VectorXd x, VectorXd mu, MatrixXd sigma)
 {
@@ -22,8 +24,9 @@ static double mgauss(VectorXd x, VectorXd mu, MatrixXd sigma)
   const Chol::Traits::MatrixL& L = chol.matrixL();
   double quadform = (L.solve(x - mu)).squaredNorm();
   return std::exp(-x.rows()*logSqrt2Pi - 0.5*quadform) / L.determinant();
-}
+}/*//}*/
 
+/* tf2_to_eigen - helper function to convert tf2::Transform to Eigen::Affine3d *//*//{*/
 static Eigen::Affine3d tf2_to_eigen(const tf2::Transform& tf2_t)
 {
   Eigen::Affine3d eig_t;
@@ -34,8 +37,9 @@ static Eigen::Affine3d tf2_to_eigen(const tf2::Transform& tf2_t)
   eig_t(1, 3) = tf2_t.getOrigin().getY();
   eig_t(2, 3) = tf2_t.getOrigin().getZ();
   return eig_t;
-}
+}/*//}*/
 
+/* Detected_UAV constructor *//*//{*/
 Detected_UAV::Detected_UAV(
                             double association_threshold,
                             double similarity_threshold,
@@ -87,8 +91,9 @@ Detected_UAV::Detected_UAV(
   }
   _KF = unique_ptr<LinearKF>(new LinearKF(n, m, p, A, B, R, Q, H));
   //_KF->setInput(Matrix<double, m, 1>());
-}
+}/*//}*/
 
+/* Detected_UAV::detection_to_position - calculates a 3D position from a detected bounding box *//*//{*/
 void Detected_UAV::detection_to_position(
                         const uav_detect::Detection &det,
                         Eigen::Vector3d &out_meas_position,
@@ -163,10 +168,9 @@ void Detected_UAV::detection_to_position(
   }
   pos_cov = vec_rot*pos_cov*vec_rot.transpose();  // rotate the covariance to point in direction of est. position
   pos_cov = c2w_rot*pos_cov*c2w_rot.transpose();  // rotate the covariance into local_origin tf
-  /* cur_position_estimate = _c2w_tf.linear()*cur_position_estimate + _c2w_tf.translation(); // transform the position estimate to world coordinate system */
   cur_position_estimate = _c2w_tf*cur_position_estimate; // transform the position estimate to world coordinate system
 
-  /** for debug only **/
+  /** for debug only **//*//{*/
   if (_dbg_on)
   {
     Eigen::Matrix3d rot_mat = Eigen::Matrix3d::Identity();
@@ -199,13 +203,14 @@ void Detected_UAV::detection_to_position(
   {
     cout << "Debug disabled" << std::endl;
   }
-  /** end of debug **/
+  /** end of debug **//*//}*/
 
   // assign output variables
   out_meas_covariance = pos_cov;
   out_meas_position = cur_position_estimate;
-}
+}/*//}*/
 
+/* Detected_UAV::initialize - initializes this detected UAV with a first detection and camera information *//*//{*/
 void Detected_UAV::initialize(
                   const uav_detect::Detection& det,
                   int w_used,
@@ -232,8 +237,9 @@ void Detected_UAV::initialize(
   _KF->setCovariance(tot_covariance);
 
   cout << "Initial state: " << get_x() << ", " << get_y() << ", " << get_z() << std::endl;
-}
+}/*//}*/
 
+/* Detected_UAV::similar_to - returns true if the candidate is similar to this detected UAV *//*//{*/
 bool Detected_UAV::similar_to(const Detected_UAV &candidate)
 {
   // fuck the IoU method, does not make much sense if the MAV moves
@@ -251,9 +257,9 @@ bool Detected_UAV::similar_to(const Detected_UAV &candidate)
   /* cout << "MSE: " << MSE << std::endl; */
   cout << "likelihood: " << likelihood << std::endl;
   return likelihood > _similarity_threshold;
-}
+}/*//}*/
 
-// Intersection over Union
+/* Detected_UAV::IoU - calculates Intersection over Union of two detections *//*//{*/
 double Detected_UAV::IoU(const uav_detect::Detection &det1, const uav_detect::Detection &det2)
 {
   float det1_l = det1.x_relative-det1.w_relative/2.0;
@@ -278,8 +284,9 @@ double Detected_UAV::IoU(const uav_detect::Detection &det1, const uav_detect::De
   float AoU = det1.w_relative*det1.h_relative + det2.w_relative*det2.h_relative - AoO;
 
   return AoO/AoU;
-}
+}/*//}*/
 
+/* Detected_UAV::get_reference_detection - generates a bounding box from the current state estimate *//*//{*/
 Detection const Detected_UAV::get_reference_detection() const
 {
   Detection ret;
@@ -299,10 +306,12 @@ Detection const Detected_UAV::get_reference_detection() const
   ret.h_relative = width/2.0/double(_h_used);
 
   return ret;
-}
+}/*//}*/
 
+/* Detected_UAV::update - processes detections into a KF update *//*//{*/
 int Detected_UAV::update(const uav_detect::Detections& new_detections, const tf2::Transform& camera2world_tf)
 {
+  // update camera-related stuff
   _c2w_tf = tf2_to_eigen(camera2world_tf);
   _camera_model.fromCameraInfo(new_detections.camera_info);
   _w_used = new_detections.w_used;
@@ -310,18 +319,17 @@ int Detected_UAV::update(const uav_detect::Detections& new_detections, const tf2
   _w_camera = new_detections.camera_info.width;
   _h_camera = new_detections.camera_info.height;
 
-  // update the Kalman Filter (prediction step)
+  // update the Kalman Filter (prediction step) TODO: this should be done periodically (another thread?)
   _KF->iterateWithoutCorrection();
 
-  // Find matching detection
+  /* Find the best matching detection */
+  // prepare variables
   double best_likelihood = 0.0;
   int best_match_it = -1; // -1 indicates no match found
   int it = 0;
   Eigen::Vector3d best_position;
   Eigen::Matrix3d best_covariance;
-
-  //cout << "Checking IoUs" << std::endl;
-  /* Detection ref_det = get_reference_detection(); */
+  // search for a detection with highest likelihood
   for (const uav_detect::Detection det : new_detections.detections)
   {
     Vector3d mean = _KF->getStates().block<3, 1>(0, 0);
@@ -343,13 +351,13 @@ int Detected_UAV::update(const uav_detect::Detections& new_detections, const tf2
     it++;
   }
 
+  // If a matching detection was found, update the KF with it
   if (best_match_it >= 0)
-  { // Found some match with more than IoU > min_IoU
+  {
     // update the Kalman Filter (data step)
     _KF->setMeasurement(best_position, best_covariance);
     _KF->doCorrection();
-
   }
 
   return best_match_it;
-}
+}/*//}*/
