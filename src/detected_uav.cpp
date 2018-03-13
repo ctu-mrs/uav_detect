@@ -5,12 +5,6 @@ using namespace std;
 using namespace Eigen;
 using namespace ros;
 
-/* /* gauss - univariate gaussian distribution *//*//{*/*/
-/* static float gauss(float x, float mu, float sigma)*/
-/* {*/
-/*   return 1.0/(sigma*sqrt(2.0*M_PI))*exp(-(x-mu)*(x-mu)/(sigma*sigma*2.0));*/
-/* }/*//}*/*/
-
 /* mgauss - implementation of multivariate gaussian distribution *//*//{*/
 // from https://stackoverflow.com/questions/41538095/evaluate-multivariate-normal-gaussian-density-in-c
 static double mgauss(VectorXd x, VectorXd mu, MatrixXd sigma)
@@ -42,10 +36,12 @@ static Eigen::Affine3d tf2_to_eigen(const tf2::Transform& tf2_t)
 /* Detected_UAV constructor *//*//{*/
 Detected_UAV::Detected_UAV(
                             double association_threshold,
+                            double unreliable_threshold,
                             double similarity_threshold,
                             double UAV_width,
                             NodeHandle *nh
                             ) : _association_threshold(association_threshold),
+                                _unreliable_threshold(unreliable_threshold),
                                 _similarity_threshold(similarity_threshold),
                                 _UAV_width(UAV_width),
                                 _tol(1e-9),
@@ -135,7 +131,7 @@ void Detected_UAV::detection_to_position(
   if (est_dist > _max_dist_est) // further than very close distances the distance estimation is very unreliable
   {
     cur_position_estimate *= _max_det_dist-_max_dist_est;
-    pos_cov(2, 2) = (_max_det_dist-_max_dist_est)/3.0;
+    pos_cov(2, 2) = (_max_det_dist-_max_dist_est)*2.0;
   } else
   {
     cur_position_estimate *= est_dist;
@@ -258,6 +254,27 @@ bool Detected_UAV::similar_to(const Detected_UAV &candidate)
   cout << "likelihood: " << likelihood << std::endl;
   return likelihood > _similarity_threshold;
 }/*//}*/
+
+/* Detected_UAV::more_uncertain_than - returns true if this detected UAV is more uncertain that the candidate *//*//{*/
+bool Detected_UAV::more_uncertain_than(const Detected_UAV &candidate)
+{
+  Matrix<double, 6, 6> cov_1 = _KF->getCovariance();
+  Matrix<double, 6, 6> cov_2 = candidate._KF->getCovariance();
+  Matrix<double, 6, 6> diff = cov_1 - cov_2;
+  // now we have to find out if diff is positive definite
+  Eigen::LLT<Matrix<double, 6, 6>> lltOfA(diff);
+  if (lltOfA.info() == Eigen::NumericalIssue)
+    return true;
+  else return false;
+}/*//}*/
+
+bool Detected_UAV::unreliable()
+{
+  // only the position covariance is important... we don't care about the speed as much
+  Matrix3d pos_cov = _KF->getCovariance().block<3, 3>(0, 0);
+  double pos_cov_norm = pos_cov.norm();
+  return pos_cov_norm > _unreliable_threshold;
+}
 
 /* Detected_UAV::IoU - calculates Intersection over Union of two detections *//*//{*/
 double Detected_UAV::IoU(const uav_detect::Detection &det1, const uav_detect::Detection &det2)

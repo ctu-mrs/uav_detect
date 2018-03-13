@@ -19,4 +19,5 @@ camera_delay: 0 #ms
 
 ############### position estimation parameters ###############
 ass_thresh: 0.0     # threshold for associating detections to detected UAVs
+unr_thresh: 60   # threshold for erasing similar detected UAVs
 sim_thresh: 0.001   # threshold for erasing similar detected UAVs

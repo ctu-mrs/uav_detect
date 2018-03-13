@@ -27,6 +27,7 @@ class Detected_UAV
   public:
     Detected_UAV(
                   double association_threshold = 0.0,
+                  double unreliable_threshold = 10.0,
                   double similarity_threshold = 0.001,
                   double UAV_width = 0.55,
                   ros::NodeHandle *nh = nullptr
@@ -42,12 +43,17 @@ class Detected_UAV
     int update(const uav_detect::Detections& new_detections, const tf2::Transform& camera2world_tf);
     // calculates whether the two detected UAVs could actually be the same one (to erase duplicates)
     bool similar_to(const Detected_UAV &candidate);
+    // calculates whether this detected UAV is more uncertaing than the candidate (to determine which one to erase)
+    bool more_uncertain_than(const Detected_UAV &candidate);
+    // returns true if this detected UAVs covariance grows beyond a certain limit
+    bool unreliable();
     double get_x() {return _KF->getState(0);};
     double get_y() {return _KF->getState(1);};
     double get_z() {return _KF->getState(2);};
   private:
     // Parameters
     const double _association_threshold;
+    const double _unreliable_threshold;
     const double _similarity_threshold;
     const double _UAV_width;  // in meters
     const double _tol;

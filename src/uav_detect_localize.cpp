@@ -47,7 +47,7 @@ int main(int argc, char **argv)
   double camera_offset_x, camera_offset_y, camera_offset_z;
   double camera_offset_roll, camera_offset_pitch, camera_offset_yaw;
   double camera_delay;
-  double ass_thresh, sim_thresh;
+  double ass_thresh, unr_thresh, sim_thresh;
 
   ros::init(argc, argv, "uav_detect_localize");
   ROS_INFO ("Node initialized.");
@@ -121,6 +121,13 @@ int main(int argc, char **argv)
     ROS_ERROR("Detection association threshold not specified");
     ros::shutdown();
   }
+  // unreliability of detected UAVs threshold
+  nh.param("unr_thresh", unr_thresh, numeric_limits<double>::infinity());
+  if (isinf(unr_thresh))
+  {
+    ROS_ERROR("Detection unreliability threshold not specified");
+    ros::shutdown();
+  }
   // similarity of detected UAVs threshold
   nh.param("sim_thresh", sim_thresh, numeric_limits<double>::infinity());
   if (isinf(sim_thresh))
@@ -141,6 +148,7 @@ int main(int argc, char **argv)
   cout << "\tcamera yaw:\t" << camera_offset_yaw << "°"  << std::endl;
   cout << "\tcamera delay:\t" << camera_delay << "ms" << std::endl;
   cout << "\tassociation threshold:\t" << ass_thresh << "ms" << std::endl;
+  cout << "\tunreliability threshold:\t" << unr_thresh << "ms" << std::endl;
   cout << "\tsimilarity threshold:\t" << sim_thresh << "ms" << std::endl;
   /*//}*/
 
@@ -178,7 +186,7 @@ int main(int argc, char **argv)
     if (new_detections)
     {
       new_detections = false;
-      cout << "Processing new detections" << std::endl;
+      cout << "Processing new detections ---------------------------------" << std::endl;
 
       // First, update the transforms
       geometry_msgs::TransformStamped transform;
@@ -202,8 +210,7 @@ int main(int argc, char **argv)
 
         // Obtain transform from world into camera frame
         camera2world_transform = (uav2camera_transform * world2uav_transform).inverse();
-      }
-      catch (tf2::TransformException& ex)
+      } catch (tf2::TransformException& ex)
       {
         ROS_ERROR("Error during transform from \"%s\" frame to \"%s\" frame. MSG: %s", world_frame.c_str(), "usb_cam", ex.what());
         continue;
@@ -226,7 +233,7 @@ int main(int argc, char **argv)
       {
         if (!used_detections.at(it))
         {
-          Detected_UAV n_det(ass_thresh, sim_thresh, 0.58, &nh);
+          Detected_UAV n_det(ass_thresh, unr_thresh, sim_thresh, 0.58, &nh);
           n_det.initialize(
                   latest_detections.detections.at(it),
                   latest_detections.w_used,
@@ -241,31 +248,38 @@ int main(int argc, char **argv)
       for (auto det_it = std::begin(detUAVs); det_it != std::end(detUAVs); det_it++)
       {
         //cout << "An UAV is detected with " << det_it->get_prob() << " probability" << std::endl;
-        // Erase similar elements to avoid duplicates (will this syntax work??) TODO:
-        // TODO: erase the element with higher covariance matrix (more unsure)
+        cout << "UAV detected with estimated relative position: ["
+             << det_it->get_x() << ", "
+             << det_it->get_y() << ", "
+             << det_it->get_z() << "]" << std::endl;
+        if (det_it->unreliable())
+        {
+          det_it = detUAVs.erase(det_it);
+          cout << "\tkicking out uncertain UAV detection" << std::endl;
+          // check if it wasn't the last element
+          if (det_it == std::end(detUAVs))
+              break;
+        }
+
+        // Erase similar elements to avoid duplicates
         for (auto det2_it = std::next(det_it); det2_it != std::end(detUAVs); det2_it++)
         {
           if (det2_it->similar_to(*det_it))
           {
             cout << "\terasing similar UAV detection" << std::endl;
-            det2_it = detUAVs.erase(det2_it);
-            if (det2_it == std::end(detUAVs))
-              break;
+            if (det2_it->more_uncertain_than(*det_it))
+            {
+              det2_it = detUAVs.erase(det2_it);
+              if (det2_it == std::end(detUAVs))
+                break;
+            } else
+            {
+              det_it = detUAVs.erase(det_it);
+              if (det_it == std::end(detUAVs))
+                break;
+            }
           }
         }
-        cout << "\testimated relative position: [" << det_it->get_x() << ", " << det_it->get_y() << ", " << det_it->get_z() << "]" << std::endl;
-//        if (det_it->get_prob() < 0.15)
-//        {
-//          det_it = detUAVs.erase(det_it);
-//          //cout << "\tkicking it out" << std::endl;
-//        } else if (det_it->get_prob() > 0.75)
-//        {
-//          cout << "\tAn UAV is reliably detected with " << det_it->get_prob() << " probability" << std::endl;
-//          cout << "\testimated relative position: [" << det_it->est_x() << ", " << det_it->est_y() << ", " << det_it->est_z() << "]" << std::endl;
-//        } else
-//        {
-//          cout << "\tPotential UAV reliably detected with " << det_it->get_prob() << " probability" << std::endl;
-//        }
       }
 
       cout << "Detection processed" << std::endl;
