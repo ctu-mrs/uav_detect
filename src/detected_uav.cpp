@@ -268,13 +268,14 @@ bool Detected_UAV::more_uncertain_than(const Detected_UAV &candidate)
   else return false;
 }/*//}*/
 
+/* Detected_UAV::unreliable - returns true if this UAV detection is unreliable according to specified parameters *//*//{*/
 bool Detected_UAV::unreliable()
 {
   // only the position covariance is important... we don't care about the speed as much
   Matrix3d pos_cov = _KF->getCovariance().block<3, 3>(0, 0);
   double pos_cov_norm = pos_cov.norm();
   return pos_cov_norm > _unreliable_threshold;
-}
+}/*//}*/
 
 /* Detected_UAV::IoU - calculates Intersection over Union of two detections *//*//{*/
 double Detected_UAV::IoU(const uav_detect::Detection &det1, const uav_detect::Detection &det2)
@@ -325,6 +326,11 @@ Detection const Detected_UAV::get_reference_detection() const
   return ret;
 }/*//}*/
 
+void Detected_UAV::update()
+{
+  _KF->iterateWithoutCorrection();
+}
+
 /* Detected_UAV::update - processes detections into a KF update *//*//{*/
 int Detected_UAV::update(const uav_detect::Detections& new_detections, const tf2::Transform& camera2world_tf)
 {
@@ -357,7 +363,7 @@ int Detected_UAV::update(const uav_detect::Detections& new_detections, const tf2
     detection_to_position(det, meas_position, meas_covariance);
 
     double cur_likelihood = mgauss(meas_position, mean, cov);
-    cout << "Cur_likelihood: " << cur_likelihood << std::endl;
+    /* cout << "Cur_likelihood: " << cur_likelihood << std::endl; */
     if (cur_likelihood > _association_threshold && cur_likelihood > best_likelihood)
     {
       best_likelihood = cur_likelihood;

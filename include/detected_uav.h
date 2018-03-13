@@ -39,6 +39,7 @@ class Detected_UAV
                   int h_used,
                   const sensor_msgs::CameraInfo& camera_info,
                   const tf2::Transform& camera2world_tf);
+    void update();
     // returns index of the matching detection or -1 if no matching was found
     int update(const uav_detect::Detections& new_detections, const tf2::Transform& camera2world_tf);
     // calculates whether the two detected UAVs could actually be the same one (to erase duplicates)
@@ -47,6 +48,8 @@ class Detected_UAV
     bool more_uncertain_than(const Detected_UAV &candidate);
     // returns true if this detected UAVs covariance grows beyond a certain limit
     bool unreliable();
+    Eigen::Vector3d getPosition() const {return _KF->getStates().block<3, 1>(0, 0);};
+    Eigen::Matrix3d getCovariance() const {return _KF->getCovariance().block<3, 3>(0, 0);};
     double get_x() {return _KF->getState(0);};
     double get_y() {return _KF->getState(1);};
     double get_z() {return _KF->getState(2);};

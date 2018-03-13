@@ -171,8 +171,9 @@ int main(int argc, char **argv)
   /** Create publishers and subscribers **//*//{*/
   tf2_ros::Buffer tf_buffer;
   ros::Subscriber detections_sub = nh.subscribe("detections", 1, detections_callback, ros::TransportHints().tcpNoDelay());
+  ros::Publisher detected_UAV_pub = nh.advertise<nav_msgs::Odometry>("detected_UAVs", 10);
   // Initialize transform listener
-  tf2_ros::TransformListener* tf_listener = new tf2_ros::TransformListener(tf_buffer);//}
+  tf2_ros::TransformListener tf_listener(tf_buffer);//}
 
   cout << "----------------------------------------------------------" << std::endl;
 
@@ -285,8 +286,41 @@ int main(int argc, char **argv)
       cout << "Detection processed" << std::endl;
     } else
     {
+      for (auto& det_UAV : detUAVs)
+      {
+        det_UAV.update();
+      }
       r.sleep();
     }
+
+    // publish the detections
+    for (const auto& det_UAV : detUAVs)
+    {
+      Eigen::Vector3d pos_vec = det_UAV.getPosition();
+      Eigen::Matrix3d pos_cov = det_UAV.getCovariance();
+      Eigen::Matrix3d rot_mat = Eigen::Matrix3d::Identity();
+      Eigen::Matrix3d rot_cov = 0.1*Eigen::Matrix3d::Identity();
+      // Fill the covariance array
+      nav_msgs::Odometry det_msg;
+      for (int r_it = 0; r_it < 6; r_it++)
+        for (int c_it = 0; c_it < 6; c_it++)
+          if (r_it < 3 && c_it < 3)
+            det_msg.pose.covariance[r_it + c_it*6] = pos_cov(r_it, c_it);
+          else if (r_it >= 3 && c_it >= 3)
+            det_msg.pose.covariance[r_it + c_it*6] = rot_cov(r_it-3, c_it-3);
+          else
+            det_msg.pose.covariance[r_it + c_it*6] = 0.0;
+      det_msg.header.stamp = ros::Time::now();
+      det_msg.header.frame_id = "local_origin";
+      det_msg.pose.pose.position.x = pos_vec(0);
+      det_msg.pose.pose.position.y = pos_vec(1);
+      det_msg.pose.pose.position.z = pos_vec(2);
+      Eigen::Quaterniond tmp(rot_mat);
+      det_msg.pose.pose.orientation.x = tmp.x();
+      det_msg.pose.pose.orientation.y = tmp.y();
+      det_msg.pose.pose.orientation.z = tmp.z();
+      det_msg.pose.pose.orientation.w = tmp.w();
+      detected_UAV_pub.publish(det_msg);
+    }
   }
-  delete tf_listener;
 }
