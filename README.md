@@ -9,5 +9,8 @@ The variants are separated in different branches:
  - testing: code for testing on a dataset or in a simulation
  - testing_distance: out of date code for testing on a dataset or in a simulation
 
-For details on how to install darknet with OpenCL on MRS MAV platform, see https://mrs.felk.cvut.cz/gitlab/vrbamato/yolo_ocl_install.
+All the variants are meant to be compiled as a ROS package using the catkin build system.
+The tested ROS version is ROS Kinetic.
+
+For details on how to install Darknet with OpenCL on MRS MAV platform, see https://mrs.felk.cvut.cz/gitlab/vrbamato/yolo_ocl_install.
 
