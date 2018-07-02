@@ -6,7 +6,7 @@ using namespace std;
 bool new_cam_image = false;
 cv_bridge::CvImageConstPtr last_cam_image_ptr;
 bool got_cam_info = false;
-sensor_msgs::CameraInfoConstPtr last_cam_info_ptr;
+sensor_msgs::CameraInfo last_cam_info;
 
 void camera_image_callback(const sensor_msgs::ImageConstPtr& image_msg)
 {
@@ -15,19 +15,38 @@ void camera_image_callback(const sensor_msgs::ImageConstPtr& image_msg)
   new_cam_image = true;
 }
 
-void camera_info_callback(const sensor_msgs::CameraInfoConstPtr& info_msg)
+string preset_calib_name;
+string preset_distortion_model;
+int preset_width, preset_height;
+std::vector<double> preset_camera_matrix;
+std::vector<double> preset_distortion_coefficients;
+std::vector<double> preset_rectification_matrix;
+std::vector<double> preset_projection_matrix;
+ 
+void camera_info_callback(sensor_msgs::CameraInfo info_msg)
 {
-  cout << "Camera info callback OK" << std::endl;
-  last_cam_info_ptr = info_msg;
+  if (info_msg.distortion_model.empty())
+  {
+    cout << "Camera not calibrated. Using preset '" << preset_calib_name << "' calibration instead" << std::endl;
+    info_msg.distortion_model = preset_distortion_model;
+    info_msg.D = preset_distortion_coefficients;
+    std::copy(std::begin(preset_camera_matrix), std::end(preset_camera_matrix), std::begin(info_msg.K));
+    std::copy(std::begin(preset_rectification_matrix), std::end(preset_rectification_matrix), std::begin(info_msg.R));
+    std::copy(std::begin(preset_projection_matrix), std::end(preset_projection_matrix), std::begin(info_msg.P));
+    if ((int)info_msg.width != preset_width || (int)info_msg.height != preset_height)
+    {
+      cout << "Warning: the camera size does not match preset values!" << std::endl;
+    }
+  } else
+  {
+    cout << "Camera info callback OK" << std::endl;
+  }
+  last_cam_info = info_msg;
   got_cam_info = true;
 }
 
 int main(int argc, char **argv)
 {
-  string uav_name, data_file, names_file, cfg_file, weights_file;
-  float threshold, hier_threshold;
-  bool only_subsquare;
-
   ros::init(argc, argv, "uav_detect");
   ROS_INFO ("Node initialized.");
 
@@ -37,7 +56,11 @@ int main(int argc, char **argv)
   cout << std::fixed << std::setprecision(2);
 
 
-  /** Load parameters from ROS **/
+  /**Load parameters from ROS* //{*/
+  string uav_name, data_file, names_file, cfg_file, weights_file;
+  float threshold, hier_threshold;
+  bool only_subsquare, double_detection;
+
   // UAV name
   nh.param("uav_name", uav_name, string());
   if (uav_name.empty())
@@ -79,6 +102,17 @@ int main(int argc, char **argv)
   nh.param("hier_threshold", hier_threshold, 0.1f);
   // Whether to use only subsquare from the image
   nh.param("only_subsquare", only_subsquare, true);
+  nh.param("double_detection", double_detection, true);
+
+  // Load preset camera calibration parameters
+  nh.param("image_width", preset_width, -1);
+  nh.param("image_height", preset_height, -1);
+  nh.param("camera_name", preset_calib_name, string("NONE"));
+  nh.param("distortion_model", preset_distortion_model, string("NONE"));
+  nh.getParam("camera_matrix/data", preset_camera_matrix);
+  nh.getParam("distortion_coefficients/data", preset_distortion_coefficients);
+  nh.getParam("rectification_matrix/data", preset_rectification_matrix);
+  nh.getParam("projection_matrix/data", preset_projection_matrix);
 
   cout << "Using parameters:" << std::endl;
   cout << "\tuav name:\t" << uav_name << std::endl;
@@ -89,8 +123,11 @@ int main(int argc, char **argv)
   cout << "\tthreshold:\t" << threshold << std::endl;
   cout << "\thier threshold:\t" << hier_threshold << std::endl;
   cout << "\tonly subsquare:\t" << only_subsquare << std::endl;
+  cout << "\tdouble detection:\t" << double_detection << std::endl;
+  cout << "\tpreset camera calibration:\t" << preset_calib_name << std::endl;
+  //}
 
-  /** Create publishers and subscribers **/
+  /**Create publishers and subscribers* //{*/
   ros::Publisher detections_pub = nh.advertise<uav_detect::Detections>("detections", 20);
   #ifdef DEBUG
   // Debug only
@@ -99,9 +136,12 @@ int main(int argc, char **argv)
   #endif //DEBUG
   ros::Subscriber camera_image_sub = nh.subscribe("camera_input", 1, camera_image_callback, ros::TransportHints().tcpNoDelay());
   ros::Subscriber camera_info_sub = nh.subscribe("camera_info", 1, camera_info_callback, ros::TransportHints().tcpNoDelay());
+  //}
 
   cout << "Creating detector object\n";
   MRS_Detector detector(data_file.c_str(), names_file.c_str(), cfg_file.c_str(), weights_file.c_str(), 0.2, 0.1, 1);
+  int w_cnn = 416;
+  int h_cnn = 416;
   cout << "Initializing detector object\n";
   detector.initialize();
 
@@ -132,9 +172,62 @@ int main(int argc, char **argv)
               det_image,
               threshold,
               hier_threshold);
-      for (const auto &det : detections)
+      for (auto &det : detections)
       {
         cout << "Object detected!" << std::endl;
+
+        if (double_detection)
+        {
+          // find top-left corner of an area around the detection with width and height in pixels
+          // equal to width and height of the CNN so that it is in bounds of the image
+          int l = det.x_relative*w_used-w_cnn/2;
+          if (l < 0)
+            l = 0;
+          int t = det.y_relative*h_used-h_cnn/2;
+          if (t < 0)
+            t = 0;
+          int r = l+w_cnn;
+          if (r >= w_used)
+          {
+            r = w_used-1;
+            l = r-w_cnn;
+          }
+          int b = t+h_cnn;
+          if (b >= h_used)
+          {
+            b = h_used-1;
+            t = b-h_cnn;
+          }
+
+          cv::Rect around_det(l, t, w_cnn, h_cnn);
+          cv::Mat sub_image = det_image(around_det);
+
+          vector<uav_detect::Detection> subdetections = detector.detect(
+                sub_image,
+                threshold,
+                hier_threshold);
+
+          double max_prob = 0.0;
+          bool redetected = false;
+          uav_detect::Detection best_det;
+          for (const auto& subdet : subdetections)
+          {
+            if (subdet.probability > max_prob)
+            {
+              max_prob = subdet.probability;
+              best_det = subdet;
+              redetected = true;
+            }
+          }
+          if (redetected)
+          {
+            best_det.x_relative = (best_det.x_relative*double(w_cnn) + l)/double(w_used);
+            best_det.y_relative = (best_det.y_relative*double(h_cnn) + t)/double(h_used);
+            best_det.w_relative = best_det.w_relative*double(w_cnn)/double(w_used);
+            best_det.h_relative = best_det.h_relative*double(h_cnn)/double(h_used);
+            det = best_det;
+          }
+        }
         cout << "\t" << detector.get_class_name(det.class_ID) << ", p=" << det.probability << std::endl;
         cout << "\t[" << det.x_relative << "; " << det.y_relative << "]" << std::endl;
         cout << "\tw=" << det.w_relative << ", h=" << det.h_relative << std::endl;
@@ -144,7 +237,7 @@ int main(int argc, char **argv)
       msg.detections = detections;
       msg.w_used = w_used;
       msg.h_used = h_used;
-      msg.camera_info = sensor_msgs::CameraInfo(*last_cam_info_ptr);
+      msg.camera_info = sensor_msgs::CameraInfo(last_cam_info);
       msg.stamp = last_cam_image_ptr->header.stamp;
       detections_pub.publish(msg);
 

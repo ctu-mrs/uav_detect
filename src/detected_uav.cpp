@@ -112,17 +112,23 @@ void Detected_UAV::detection_to_position(
   cv::Point2d left_pt = _camera_model.rectifyPoint(cv::Point2d(px_x-px_w/2, px_y));
   cv::Point2d right_pt = _camera_model.rectifyPoint(cv::Point2d(px_x+px_w/2, px_y));
 
-  // Calculate projections of the center, left and right points of the detected bounding box
-  cv::Point3d ray_vec = _camera_model.projectPixelTo3dRay(center_pt);
+  // Calculate projections of the left and right points of the detected bounding box
   cv::Point3d left_vec = _camera_model.projectPixelTo3dRay(left_pt);
   cv::Point3d right_vec = _camera_model.projectPixelTo3dRay(right_pt);
+  // Calculate the direction of center of the detected UAV
+  cv::Point3d ray_vec( (left_vec.x+right_vec.x)/2.0, (left_vec.y+right_vec.y)/2.0, (left_vec.z+right_vec.z)/2.0 );
 
-  // Width of the projection (on a plane 1.0m distant)
-  double proj_width = sqrt((left_vec.x-right_vec.x)*(left_vec.x-right_vec.x)
-                         +(left_vec.y-right_vec.y)*(left_vec.y-right_vec.y));
-                         //+(left_vec.z-right_vec.z)*(left_vec.z-right_vec.z)); // z coordinate should be 1.0
-  // Estimate distance from the BB width
-  double est_dist = _UAV_width/proj_width;
+  /**Calculate the estimated distance using pinhole camera model projection and using rectification* //{*/
+  // left point on the other UAV
+  Eigen::Vector3d l_ray(left_vec.x, left_vec.y, left_vec.z);
+  // right point on the other UAV
+  Eigen::Vector3d r_ray(right_vec.x, right_vec.y, right_vec.z);
+  // now calculate the estimated distance
+  double alpha = acos(l_ray.dot(r_ray)/(l_ray.norm()*r_ray.norm()))/2.0;
+  double est_dist = _UAV_width*sin(M_PI - alpha)*(tan(alpha) + cot(alpha));
+  cout << "Estimated distance: " << est_dist << std::endl;
+  //}
+   
   double ray_vec_norm = sqrt(ray_vec.x*ray_vec.x + ray_vec.y*ray_vec.y + ray_vec.z*ray_vec.z);
   Eigen::Vector3d cur_position_estimate(ray_vec.x/ray_vec_norm,
                                         ray_vec.y/ray_vec_norm,
