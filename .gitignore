@@ -4,9 +4,25 @@
 # vim swap files
 *.swp
 
+# extra large files
+*.bag
+
 # CodeBlocks temporary files
 *.layout
 *.depend
+
+# PyCharm bullshit
+.idea
+
+# python cache
+*.pyc
+
+# other data files
+*.csv
+*.pdf
+
+# Catkin bullshit
+.catkin_tools
 
 # build related files
 obj/
