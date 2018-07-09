@@ -192,7 +192,7 @@ int main(int argc, char **argv)
   tf2_ros::TransformListener *tf_listener = new tf2_ros::TransformListener(tf_buffer);
   // Initialize other subs and pubs
   ros::Subscriber detections_sub = nh.subscribe("detections", 1, detections_callback, ros::TransportHints().tcpNoDelay());
-  ros::Publisher detected_UAV_pub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("detected_UAV", 10);
+  ros::Publisher detected_UAV_pub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("detected_uav", 10);
   //}
 
   cout << "----------------------------------------------------------" << std::endl;
