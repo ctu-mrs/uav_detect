@@ -1,0 +1,30 @@
+# frame names
+frame_ids: [local_origin]
+
+############### Camera parameters (for top-mounted Mobius cam) ###############
+## MOBIUS camera parameters ##
+# camera_delay: 130 # ms
+
+# camera_offset_x: 0.0
+# camera_offset_y: 0.24
+# camera_offset_z: -0.11
+
+# camera_offset_roll: 90.0
+# camera_offset_pitch: -120.0
+# camera_offset_yaw: 0.0
+# camera_offset_angle: 30.0 # degrees
+
+## SIMULATION camera parameters ##
+camera_delay: 0 # ms
+
+camera_offset_x: 0.0
+camera_offset_y: -0.04
+camera_offset_z: -0.2
+
+camera_offset_roll: 45 #degrees
+camera_offset_pitch: -90  #degrees
+camera_offset_yaw: 45  #degrees
+
+############### Distance estimation parameters ###############
+dist_filter_window: 3
+max_dist: 15.0

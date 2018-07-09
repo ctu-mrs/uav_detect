@@ -2,6 +2,8 @@
 frame_ids: [local_origin]
 
 ############### Camera parameters (for top-mounted Mobius cam) ###############
+camera_delay: 130 # ms
+
 camera_offset_x: 0.0
 camera_offset_y: 0.24
 camera_offset_z: -0.11
