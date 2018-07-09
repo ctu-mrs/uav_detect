@@ -1,5 +1,7 @@
 #include "detected_uav.h"
 
+#define cot(x) tan(M_PI_2 - x)
+
 using namespace uav_detect;
 using namespace std;
 using namespace Eigen;
