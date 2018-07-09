@@ -2,7 +2,7 @@
 #include <image_transport/image_transport.h>
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
-#include <nav_msgs/Odometry.h>
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
 
 #include <geometry_msgs/TransformStamped.h>
 #include <tf2/LinearMath/Matrix3x3.h>
@@ -192,7 +192,7 @@ int main(int argc, char **argv)
   tf2_ros::TransformListener *tf_listener = new tf2_ros::TransformListener(tf_buffer);
   // Initialize other subs and pubs
   ros::Subscriber detections_sub = nh.subscribe("detections", 1, detections_callback, ros::TransportHints().tcpNoDelay());
-  ros::Publisher detected_UAV_pub = nh.advertise<nav_msgs::Odometry>("detected_UAV", 10);
+  ros::Publisher detected_UAV_pub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("detected_UAV", 10);
   //}
 
   cout << "----------------------------------------------------------" << std::endl;
@@ -354,7 +354,7 @@ int main(int argc, char **argv)
       Eigen::Matrix3d rot_mat = Eigen::Matrix3d::Identity();
       Eigen::Matrix3d rot_cov = 666*Eigen::Matrix3d::Identity();
       // Fill the covariance array
-      nav_msgs::Odometry est_pos;
+      geometry_msgs::PoseWithCovarianceStamped est_pos;
       for (int r_it = 0; r_it < 6; r_it++)
         for (int c_it = 0; c_it < 6; c_it++)
           if (r_it < 3 && c_it < 3)
