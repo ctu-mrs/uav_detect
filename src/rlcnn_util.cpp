@@ -8,13 +8,11 @@ namespace rlcnn
   /* Globals used for calculations */
   Eigen::Affine3d c2w_tf;
   image_geometry::PinholeCameraModel camera_model;
-  bool camera_model_absolute;
   int w_camera, h_camera, w_used, h_used;
 
   void update_camera_info(const uav_detect::Detections& dets_msg)
   {
     camera_model.fromCameraInfo(dets_msg.camera_info);
-    camera_model_absolute = dets_msg.camera_model_absolute;
     w_camera = dets_msg.camera_info.width;
     h_camera = dets_msg.camera_info.height;
     w_used = dets_msg.w_used;

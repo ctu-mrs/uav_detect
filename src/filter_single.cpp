@@ -5,7 +5,6 @@
 #include <nav_msgs/Odometry.h>
 
 #include <geometry_msgs/TransformStamped.h>
-#include <geometry_msgs/PoseStamped.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Transform.h>
@@ -21,10 +20,20 @@
 #include <uav_detect/Detection.h>
 #include <uav_detect/Detections.h>
 
-#include "detected_uav.h"
+#include "rlcnn_util.h"
+
+#define cot(x) tan(M_PI_2 - x)
 
 using namespace cv;
 using namespace std;
+using namespace rlcnn;
+using namespace uav_detect;
+
+extern Eigen::Affine3d rlcnn::c2w_tf;
+extern int rlcnn::w_camera;
+extern int rlcnn::h_camera;
+extern int rlcnn::w_used;
+extern int rlcnn::h_used;
 
 bool new_detections = false;
 uav_detect::Detections latest_detections;
@@ -35,20 +44,42 @@ void detections_callback(const uav_detect::Detections& dets_msg)
   new_detections = true;
 }
 
+/** Utility functions //{**/
+double *dist_filter;
+int dist_filter_window;
+bool filter_initialized;
+double do_filter(double new_val)
+{
+  if (!filter_initialized)
+    for (int it = 0; it < dist_filter_window; it++)
+      dist_filter[it] = new_val;
+  filter_initialized = true;
+  double ret = 0.0;
+  for (int it = 0; it < dist_filter_window; it++)
+    ret += dist_filter[it];
+  for (int it = 0; it < dist_filter_window-1; it++)
+    dist_filter[it] = dist_filter[it+1];
+  dist_filter[dist_filter_window-1] = new_val;
+  return ret/dist_filter_window;
+}
+//}
+
 int main(int argc, char **argv)
 {
   string uav_name, uav_frame, world_frame;
+  double UAV_width;
+  double max_dist;
+  double camera_offset_angle;
   double camera_offset_x, camera_offset_y, camera_offset_z;
   double camera_offset_roll, camera_offset_pitch, camera_offset_yaw;
   double camera_delay;
-  double ass_thresh, unr_thresh, sim_thresh;
 
   ros::init(argc, argv, "uav_detect_localize");
   ROS_INFO ("Node initialized.");
 
   ros::NodeHandle nh = ros::NodeHandle("~");
 
-  /** Load parameters from ROS *//*//{*/
+  /** Load parameters from ROS * //{*/
   // UAV name
   nh.param("uav_name", uav_name, string());
   if (uav_name.empty())
@@ -58,6 +89,17 @@ int main(int argc, char **argv)
   }
   nh.param("world_frame", world_frame, std::string("local_origin"));
   nh.param("uav_frame", uav_frame, std::string("fcu_uav1"));
+
+  nh.param("UAV_width", UAV_width, 0.28*2.0);
+  nh.param("max_dist", max_dist, 15.0);
+  // offset camera yaw angle
+  nh.param("camera_offset_angle", camera_offset_angle, numeric_limits<double>::infinity());
+  if (isinf(camera_offset_angle))
+  {
+    ROS_ERROR("Offset camera yaw angle not specified");
+    ros::shutdown();
+  }
+
   // camera x offset
   nh.param("camera_offset_x", camera_offset_x, numeric_limits<double>::infinity());
   if (isinf(camera_offset_x))
@@ -107,33 +149,15 @@ int main(int argc, char **argv)
     ROS_ERROR("Camera delay not specified");
     ros::shutdown();
   }
-
-  // detection association threshold
-  nh.param("ass_thresh", ass_thresh, numeric_limits<double>::infinity());
-  if (isinf(ass_thresh))
-  {
-    ROS_ERROR("Detection association threshold not specified");
-    ros::shutdown();
-  }
-  // unreliability of detected UAVs threshold
-  nh.param("unr_thresh", unr_thresh, numeric_limits<double>::infinity());
-  if (isinf(unr_thresh))
-  {
-    ROS_ERROR("Detection unreliability threshold not specified");
-    ros::shutdown();
-  }
-  // similarity of detected UAVs threshold
-  nh.param("sim_thresh", sim_thresh, numeric_limits<double>::infinity());
-  if (isinf(sim_thresh))
-  {
-    ROS_ERROR("Detection association threshold not specified");
-    ros::shutdown();
-  }
+  nh.param("dist_filter_window", dist_filter_window, 3);
 
   cout << "Using parameters:" << std::endl;
   cout << "\tuav name:\t" << uav_name << std::endl;
   cout << "\tuav frame:\t" << uav_frame << std::endl;
   cout << "\tworld frame:\t" << world_frame << std::endl;
+  cout << "\tUAV width:\t" << UAV_width << "m" << std::endl;
+  cout << "\tmax. detection dist.:\t" << max_dist << "m" << std::endl;
+  cout << "\tcamera offset yaw angle:\t" << camera_offset_angle << "°" << std::endl;
   cout << "\tcamera X offset:\t" << camera_offset_x << "m" << std::endl;
   cout << "\tcamera Y offset:\t" << camera_offset_y << "m" << std::endl;
   cout << "\tcamera Z offset:\t" << camera_offset_z << "m" << std::endl;
@@ -141,12 +165,13 @@ int main(int argc, char **argv)
   cout << "\tcamera pitch:\t" << camera_offset_pitch << "°" << std::endl;
   cout << "\tcamera yaw:\t" << camera_offset_yaw << "°"  << std::endl;
   cout << "\tcamera delay:\t" << camera_delay << "ms" << std::endl;
-  cout << "\tassociation threshold:\t" << ass_thresh << "ms" << std::endl;
-  cout << "\tunreliability threshold:\t" << unr_thresh << "ms" << std::endl;
-  cout << "\tsimilarity threshold:\t" << sim_thresh << "ms" << std::endl;
-  /*//}*/
+  cout << "\tdist. filter size:\t" << dist_filter_window << std::endl;
 
-  /**Build the UAV to camera transformation* //{*/
+  filter_initialized = false;
+  dist_filter = new double[dist_filter_window];
+  //}
+
+  /** Build the UAV to camera transformation * //{*/
   tf2::Transform uav2camera_transform;
   {
     tf2::Quaternion q;
@@ -160,39 +185,53 @@ int main(int argc, char **argv)
     uav2camera_transform.setRotation(q);
   }
   //}
-  double uav_yaw = (camera_desired_angle-camera_offset_angle)/180.0*M_PI;
 
-  /** Create publishers and subscribers **//*//{*/
+  /** Create publishers and subscribers //{**/
   tf2_ros::Buffer tf_buffer;
-  ros::Subscriber detections_sub = nh.subscribe("detections", 1, detections_callback, ros::TransportHints().tcpNoDelay());
-  ros::Publisher detected_UAV_pub = nh.advertise<geometry_msgs::PoseStamped>("detected_UAV", 10);
   // Initialize transform listener
-  tf2_ros::TransformListener tf_listener(tf_buffer);//}
+  tf2_ros::TransformListener *tf_listener = new tf2_ros::TransformListener(tf_buffer);
+  // Initialize other subs and pubs
+  ros::Subscriber detections_sub = nh.subscribe("detections", 1, detections_callback, ros::TransportHints().tcpNoDelay());
+  ros::Publisher detected_UAV_pub = nh.advertise<nav_msgs::Odometry>("detected_UAV", 10);
+  //}
 
   cout << "----------------------------------------------------------" << std::endl;
 
+  ros::Rate r(10);
   while (ros::ok())
   {
     ros::spinOnce();
 
-    ros::Rate r(10);
     // Check if we got a new message containing detections
     if (new_detections)
     {
       new_detections = false;
-      cout << "Processing new detections ---------------------------------" << std::endl;
+      cout << "Processing "
+           << latest_detections.detections.size()
+           << " new detections ---------------------------------"
+           << std::endl;
 
-      // First, update the transforms
+      /** Update the transforms //{**/
       geometry_msgs::TransformStamped transform;
-      tf2::Transform  world2uav_transform, camera2world_transform;
+      tf2::Transform  world2uav_transform;
       tf2::Vector3    origin;
       tf2::Quaternion orientation;
       try
       {
         const ros::Duration timeout(1.0/6.0);
         // Obtain transform from world into uav frame
-        transform = tf_buffer.lookupTransform(uav_frame, world_frame, latest_detections.stamp - ros::Duration(camera_delay), timeout);
-        origin.setValue(transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z);
+        transform = tf_buffer.lookupTransform(
+            uav_frame,
+            world_frame,
+            latest_detections.stamp,
+            timeout
+            );
+        /* tf2::convert(transform, world2uav_transform); */
+        origin.setValue(
+            transform.transform.translation.x,
+            transform.transform.translation.y,
+            transform.transform.translation.z
+            );
 
         orientation.setX(transform.transform.rotation.x);
         orientation.setY(transform.transform.rotation.y);
@@ -202,118 +241,150 @@ int main(int argc, char **argv)
         world2uav_transform.setOrigin(origin);
         world2uav_transform.setRotation(orientation);
 
-        // Obtain transform from world into camera frame
-        camera2world_transform = (uav2camera_transform * world2uav_transform).inverse();
+        // Obtain transform from camera frame into world
+        c2w_tf = tf2_to_eigen((uav2camera_transform * world2uav_transform).inverse());
       } catch (tf2::TransformException& ex)
       {
-        ROS_ERROR("Error during transform from \"%s\" frame to \"%s\" frame. MSG: %s", world_frame.c_str(), "usb_cam", ex.what());
+        ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", world_frame.c_str(), "usb_cam", ex.what());
         continue;
       }
+      //}
 
-      // Process the detections
-      vector<bool> used_detections; // bools correspond to new detections
-      used_detections.resize(latest_detections.detections.size(), false);
-      for (auto &detUAV : detUAVs)
+      // updates the following variables:
+      // camera_model
+      // camera_model_absolute (unused)
+      // w_camera
+      // h_camera
+      // w_used
+      // h_used
+      update_camera_info(latest_detections);
+
+      ros::Time cur_t = ros::Time::now();
+
+      /** Pick the detection to be used (according to highest probability) //{**/
+      Detection ref_det;
+      double max_prob;
+      bool max_prob_set;
+      for (const auto& det : latest_detections.detections)
       {
-        int used = detUAV.update(latest_detections, camera2world_transform);
-        if (used >= 0)
+        if (!max_prob_set || det.probability > max_prob)
         {
-          cout << "Redetected " << used << ". detection" << std::endl;
-          used_detections.at(used) = true;
+          max_prob = det.probability;
+          max_prob_set = true;
+          ref_det = det;
         }
       }
+      //}
 
-      for (size_t it = 0; it < latest_detections.detections.size(); it++)
+      /** Calculate the estimated distance using pinhole camera model projection and using camera rectification //{**/
+      bool dist_valid = true;
+      // left point on the other UAV
+      cv::Point2d det_l_pt((ref_det.x_relative-ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0,
+                           (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0);
+      det_l_pt = camera_model.rectifyPoint(det_l_pt);  // do not forget to rectify the points!
+      cv::Point3d cvl_ray = camera_model.projectPixelTo3dRay(det_l_pt);
+      Eigen::Vector3d l_ray(cvl_ray.x, cvl_ray.y, cvl_ray.z);
+      // right point on the other UAV
+      cv::Point2d det_r_pt((ref_det.x_relative+ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0,
+                           (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0);
+      det_r_pt = camera_model.rectifyPoint(det_r_pt);
+      cv::Point3d cvr_ray = camera_model.projectPixelTo3dRay(det_r_pt);
+      Eigen::Vector3d r_ray(cvr_ray.x, cvr_ray.y, cvr_ray.z);
+      // now calculate the estimated distance
+      double alpha = acos(l_ray.dot(r_ray)/(l_ray.norm()*r_ray.norm()))/2.0;
+      /* double est_dist = dist_corr_p0 + dist_corr_p1*UAV_width/(2.0*tan(ray_angle/2.0)); */
+      double est_dist = UAV_width*sin(M_PI - alpha)*(tan(alpha) + cot(alpha));
+      if (isnan(est_dist) || est_dist < 0.0 || est_dist > max_dist)
+        dist_valid = false;
+      if (dist_valid)
+        est_dist = do_filter(est_dist);
+      cout << "Estimated distance: " << est_dist << std::endl;
+      //}
+      
+      /** Calculate the estimated position of the other UAV //{**/
+      // left point on the other UAV
+      cv::Point2d det_pt((ref_det.x_relative)*w_used + (w_camera-w_used)/2.0,
+                         (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0);
+      det_pt = camera_model.rectifyPoint(det_pt);  // do not forget to rectify the points!
+      cv::Point3d cv_ray = camera_model.projectPixelTo3dRay(det_pt);
+      Eigen::Vector3d ray(cv_ray.x, cv_ray.y, cv_ray.z);
+      ray = est_dist*ray;
+      // now calculate the estimated location
+      cout << "Estimated location (camera CS): [" << ray(0) << ", " << ray(1) << ", " << ray(2) << "]" << std::endl;
+      Eigen::Vector3d pos_vec = c2w_tf*ray;
+      cout << "Estimated location (world  CS): [" << pos_vec(0) << ", " << pos_vec(1) << ", " << pos_vec(2) << "]" << std::endl;
+      //}
+      
+      /** Calculate the corresponding covariance matrix of the estimated position //{**/
+      Eigen::Matrix3d pos_cov = Eigen::Matrix3d::Identity();  // prepare the covariance matrix
+      double tol = 1e-9;
+      if (est_dist < 3.0)
+        pos_cov(2, 2) = 1.0;
+      else
+        pos_cov(2, 2) = est_dist*0.33;
+      // Rotation matrix from the camera CS to the world CS
+      Eigen::Matrix3d c2w_rot = c2w_tf.rotation();
+      // Find the rotation matrix to rotate the covariance to point in the direction of the estimated position
+      Eigen::Vector3d a(0.0, 0.0, 1.0);
+      Eigen::Vector3d b = ray.normalized();
+      Eigen::Vector3d v = a.cross(b);
+      double sin_ab = v.norm();
+      double cos_ab = a.dot(b);
+      Eigen::Matrix3d vec_rot = Eigen::Matrix3d::Identity();
+      if (sin_ab < tol)  // unprobable, but possible - then it is identity or 180deg
       {
-        if (!used_detections.at(it))
+        if (cos_ab + 1.0 < tol)  // that would be 180deg
         {
-          Detected_UAV n_det(ass_thresh, unr_thresh, sim_thresh, 0.58, &nh);
-          n_det.initialize(
-                  latest_detections.detections.at(it),
-                  latest_detections.w_used,
-                  latest_detections.h_used,
-                  latest_detections.camera_info,
-                  camera2world_transform);
-          detUAVs.push_back(std::move(n_det));
-          cout << "Adding new detected UAV!" << std::endl;
-        }
-      }
-
-      for (auto det_it = std::begin(detUAVs); det_it != std::end(detUAVs); det_it++)
+          vec_rot << -1.0, 0.0, 0.0,
+                     0.0, -1.0, 0.0,
+                     0.0, 0.0, 1.0;
+        } // otherwise its identity
+      } else  // otherwise just construct the matrix
       {
-        //cout << "An UAV is detected with " << det_it->get_prob() << " probability" << std::endl;
-        cout << "UAV detected with estimated relative position: ["
-             << det_it->get_x() << ", "
-             << det_it->get_y() << ", "
-             << det_it->get_z() << "]" << std::endl;
-        if (det_it->unreliable())
-        {
-          det_it = detUAVs.erase(det_it);
-          cout << "\tkicking out uncertain UAV detection" << std::endl;
-          // check if it wasn't the last element
-          if (det_it == std::end(detUAVs))
-              break;
-        }
-
-        // Erase similar elements to avoid duplicates
-        for (auto det2_it = std::next(det_it); det2_it != std::end(detUAVs); det2_it++)
-        {
-          if (det2_it->similar_to(*det_it))
-          {
-            cout << "\terasing similar UAV detection" << std::endl;
-            if (det2_it->more_uncertain_than(*det_it))
-            {
-              det2_it = detUAVs.erase(det2_it);
-              if (det2_it == std::end(detUAVs))
-                break;
-            } else
-            {
-              det_it = detUAVs.erase(det_it);
-              if (det_it == std::end(detUAVs))
-                break;
-            }
-          }
-        }
+        Eigen::Matrix3d v_x; v_x << 0.0, -v(2), v(1),
+                                    v(2), 0.0, -v(0),
+                                    -v(1), v(0), 0.0;
+        vec_rot = Eigen::Matrix3d::Identity() + v_x + (1-cos_ab)/(sin_ab*sin_ab)*(v_x*v_x);
       }
+      pos_cov = vec_rot*pos_cov*vec_rot.transpose();  // rotate the covariance to point in direction of est. position
+      pos_cov = c2w_rot*pos_cov*c2w_rot.transpose();  // rotate the covariance into local_origin tf
+      //}
 
-      cout << "Detection processed" << std::endl;
-    } else
-    {
-      for (auto& det_UAV : detUAVs)
-      {
-        det_UAV.update();
-      }
-      r.sleep();
-    }
-
-    // publish the detections
-    for (const auto& det_UAV : detUAVs)
-    {
-      Eigen::Vector3d pos_vec = det_UAV.getPosition();
-      Eigen::Matrix3d pos_cov = det_UAV.getCovariance();
+      /** Fill the message with the calculated values (and some placeholder values for the rotation) //{**/
       Eigen::Matrix3d rot_mat = Eigen::Matrix3d::Identity();
-      Eigen::Matrix3d rot_cov = 0.1*Eigen::Matrix3d::Identity();
+      Eigen::Matrix3d rot_cov = 666*Eigen::Matrix3d::Identity();
       // Fill the covariance array
-      nav_msgs::Odometry det_msg;
+      nav_msgs::Odometry est_pos;
       for (int r_it = 0; r_it < 6; r_it++)
         for (int c_it = 0; c_it < 6; c_it++)
           if (r_it < 3 && c_it < 3)
-            det_msg.pose.covariance[r_it + c_it*6] = pos_cov(r_it, c_it);
+            est_pos.pose.covariance[r_it + c_it*6] = pos_cov(r_it, c_it);
           else if (r_it >= 3 && c_it >= 3)
-            det_msg.pose.covariance[r_it + c_it*6] = rot_cov(r_it-3, c_it-3);
+            est_pos.pose.covariance[r_it + c_it*6] = rot_cov(r_it-3, c_it-3);
           else
-            det_msg.pose.covariance[r_it + c_it*6] = 0.0;
-      det_msg.header.stamp = ros::Time::now();
-      det_msg.header.frame_id = "local_origin";
-      det_msg.pose.pose.position.x = pos_vec(0);
-      det_msg.pose.pose.position.y = pos_vec(1);
-      det_msg.pose.pose.position.z = pos_vec(2);
+            est_pos.pose.covariance[r_it + c_it*6] = 0.0;
+      est_pos.header.stamp = ros::Time::now();
+      est_pos.header.frame_id = "local_origin";
+      est_pos.pose.pose.position.x = pos_vec(0);
+      est_pos.pose.pose.position.y = pos_vec(1);
+      est_pos.pose.pose.position.z = pos_vec(2);
       Eigen::Quaterniond tmp(rot_mat);
-      det_msg.pose.pose.orientation.x = tmp.x();
-      det_msg.pose.pose.orientation.y = tmp.y();
-      det_msg.pose.pose.orientation.z = tmp.z();
-      det_msg.pose.pose.orientation.w = tmp.w();
-      detected_UAV_pub.publish(det_msg);
+      est_pos.pose.pose.orientation.x = tmp.x();
+      est_pos.pose.pose.orientation.y = tmp.y();
+      est_pos.pose.pose.orientation.z = tmp.z();
+      est_pos.pose.pose.orientation.w = tmp.w();
+      //}
+      
+      // Finally publish the message
+      detected_UAV_pub.publish(est_pos);
+
+      cout << "Detections processed" << std::endl;
+    } else
+    {
+      r.sleep();
     }
+
   }
+  delete tf_listener;
+  delete[] dist_filter;
 }

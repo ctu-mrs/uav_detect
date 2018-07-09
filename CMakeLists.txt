@@ -74,7 +74,6 @@ target_link_libraries(display_detections
   ${OpenCV_LIBRARIES}
 )
 
-# add_definitions(-DDEBUG)
 add_executable(uav_detect src/uav_detect.cpp src/detector.cpp)
 add_dependencies(uav_detect
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
@@ -86,12 +85,12 @@ target_link_libraries(uav_detect
   darknet-cpp-shared
 )
 
-add_executable(uav_detect_localize src/uav_detect_localize.cpp src/detected_uav.cpp)
-add_dependencies(uav_detect_localize
+add_executable(filter_single src/filter_single.cpp src/rlcnn_util.cpp)
+add_dependencies(filter_single
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS}
 )
-target_link_libraries(uav_detect_localize
+target_link_libraries(filter_single
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
 )
