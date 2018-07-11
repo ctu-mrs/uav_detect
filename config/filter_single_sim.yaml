@@ -24,6 +24,7 @@ camera_offset_z: -0.2
 camera_offset_roll: 45 #degrees
 camera_offset_pitch: -90  #degrees
 camera_offset_yaw: 45  #degrees
+camera_offset_angle: 0.0 # degrees
 
 ############### Distance estimation parameters ###############
 dist_filter_window: 3

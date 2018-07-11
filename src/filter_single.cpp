@@ -263,18 +263,25 @@ int main(int argc, char **argv)
 
       /** Pick the detection to be used (according to highest probability) //{**/
       Detection ref_det;
-      double max_prob;
-      bool max_prob_set;
+      double max_prob = 0;
+      bool max_prob_set = false;
       for (const auto& det : latest_detections.detections)
       {
         if (!max_prob_set || det.probability > max_prob)
         {
           max_prob = det.probability;
           max_prob_set = true;
-          ref_det = det;
+          ref_det = Detection(det);
         }
       }
       //}
+      
+      // If there was no detection, don't publish anything
+      if (!max_prob_set)
+      {
+        cout << "No detection" << std::endl;
+        continue;
+      }
 
       /** Calculate the estimated distance using pinhole camera model projection and using camera rectification //{**/
       bool dist_valid = true;
@@ -282,18 +289,18 @@ int main(int argc, char **argv)
       cv::Point2d det_l_pt((ref_det.x_relative-ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0,
                            (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0);
       det_l_pt = camera_model.rectifyPoint(det_l_pt);  // do not forget to rectify the points!
-      cv::Point3d cvl_ray = camera_model.projectPixelTo3dRay(det_l_pt);
-      Eigen::Vector3d l_ray(cvl_ray.x, cvl_ray.y, cvl_ray.z);
+      cv::Point3d cvl_vec = camera_model.projectPixelTo3dRay(det_l_pt);
+      Eigen::Vector3d l_vec(cvl_vec.x, cvl_vec.y, cvl_vec.z);
       // right point on the other UAV
       cv::Point2d det_r_pt((ref_det.x_relative+ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0,
                            (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0);
       det_r_pt = camera_model.rectifyPoint(det_r_pt);
-      cv::Point3d cvr_ray = camera_model.projectPixelTo3dRay(det_r_pt);
-      Eigen::Vector3d r_ray(cvr_ray.x, cvr_ray.y, cvr_ray.z);
+      cv::Point3d cvr_vec = camera_model.projectPixelTo3dRay(det_r_pt);
+      Eigen::Vector3d r_vec(cvr_vec.x, cvr_vec.y, cvr_vec.z);
       // now calculate the estimated distance
-      double alpha = acos(l_ray.dot(r_ray)/(l_ray.norm()*r_ray.norm()))/2.0;
+      double alpha = acos(l_vec.dot(r_vec)/(l_vec.norm()*r_vec.norm()))/2.0;
       /* double est_dist = dist_corr_p0 + dist_corr_p1*UAV_width/(2.0*tan(ray_angle/2.0)); */
-      double est_dist = UAV_width*sin(M_PI - alpha)*(tan(alpha) + cot(alpha));
+      double est_dist = UAV_width*sin(M_PI_2 - alpha)*(tan(alpha) + cot(alpha));
       if (isnan(est_dist) || est_dist < 0.0 || est_dist > max_dist)
         dist_valid = false;
       if (dist_valid)
@@ -302,16 +309,11 @@ int main(int argc, char **argv)
       //}
       
       /** Calculate the estimated position of the other UAV //{**/
-      // left point on the other UAV
-      cv::Point2d det_pt((ref_det.x_relative)*w_used + (w_camera-w_used)/2.0,
-                         (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0);
-      det_pt = camera_model.rectifyPoint(det_pt);  // do not forget to rectify the points!
-      cv::Point3d cv_ray = camera_model.projectPixelTo3dRay(det_pt);
-      Eigen::Vector3d ray(cv_ray.x, cv_ray.y, cv_ray.z);
-      ray = est_dist*ray;
+      Eigen::Vector3d c_vec = (l_vec + r_vec)/2.0;
+      c_vec = est_dist*c_vec;
       // now calculate the estimated location
-      cout << "Estimated location (camera CS): [" << ray(0) << ", " << ray(1) << ", " << ray(2) << "]" << std::endl;
-      Eigen::Vector3d pos_vec = c2w_tf*ray;
+      cout << "Estimated location (camera CS): [" << c_vec(0) << ", " << c_vec(1) << ", " << c_vec(2) << "]" << std::endl;
+      Eigen::Vector3d pos_vec = c2w_tf*c_vec;
       cout << "Estimated location (world  CS): [" << pos_vec(0) << ", " << pos_vec(1) << ", " << pos_vec(2) << "]" << std::endl;
       //}
       
@@ -322,11 +324,12 @@ int main(int argc, char **argv)
         pos_cov(2, 2) = 1.0;
       else
         pos_cov(2, 2) = est_dist*0.33;
+      pos_cov *= 1.0/max_prob;
       // Rotation matrix from the camera CS to the world CS
       Eigen::Matrix3d c2w_rot = c2w_tf.rotation();
       // Find the rotation matrix to rotate the covariance to point in the direction of the estimated position
       Eigen::Vector3d a(0.0, 0.0, 1.0);
-      Eigen::Vector3d b = ray.normalized();
+      Eigen::Vector3d b = c_vec.normalized();
       Eigen::Vector3d v = a.cross(b);
       double sin_ab = v.norm();
       double cos_ab = a.dot(b);

@@ -1,3 +1,3 @@
 threshold: 0.1
-hier_threshold: 0.1
 only_subsquare: false
+double_detect: true

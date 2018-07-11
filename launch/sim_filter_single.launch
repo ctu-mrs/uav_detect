@@ -4,10 +4,12 @@
 
   <group ns="$(arg uav_name)">
     
-    <node pkg="uav_detect" name="filter_single" type="filter_single" output="screen" >
+    <node name="uav_detection" pkg="uav_detect" type="filter_single" output="screen" launch-prefix="gdb -ex run --args" >
       
       <rosparam file="$(find uav_detect)/config/filter_single_sim.yaml" />
       <param name="uav_name" value="$(arg uav_name)" />
+    
+      <remap from="~detections" to="uav_detect/detections" />
     
     </node>
   

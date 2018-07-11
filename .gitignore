@@ -3,6 +3,7 @@
 
 # vim swap files
 *.swp
+*.swo
 
 # extra large files
 *.bag

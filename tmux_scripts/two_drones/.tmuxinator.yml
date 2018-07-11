@@ -8,13 +8,13 @@ windows:
   - gazebo:
       layout: even-vertical
       panes:
-        - roslaunch uav_detect detection_simulation.launch
-        # - roslaunch simulation simulation.launch
+        # - roslaunch uav_detect detection_simulation.launch
+        - roslaunch simulation simulation.launch
   - spawn:
       layout: even-vertical
       panes:
         - sleep 5; spawn 1 --run --delete --enable-rangefinder --enable-ground-truth --enable-mobius-camera-front
-        - sleep 5; spawn 2 --run --delete --enable-rangefinder --enable-ground-truth --enable-mobius-camera-front --enable-scanse
+        - sleep 5; spawn 2 --run --delete --enable-rangefinder --enable-ground-truth --enable-scanse
   - odometry:
       layout: even-vertical
       panes:
@@ -54,18 +54,24 @@ windows:
           sleep 7;
           rosservice call /$UAV_NAME/trackers_manager/transition mrs_trackers/MpcTracker;
           sleep 2;
-          rosservice call /$UAV_NAME/trackers_manager/mpc_tracker/goTo "goal: [5.0, 0.0, 5.0, 0.0]"'
+          rosservice call /$UAV_NAME/trackers_manager/mpc_tracker/goTo "goal: [10.0, 0.0, 5.0, 0.0]"'
         #}
-  - random_flier:
+  - detector:
       layout: even-vertical
       panes:
         - export UAV_NAME=uav1;
-          history -s roslaunch uav_detect uav_detect.launch
+          sleep 13; roslaunch uav_detect uav_detect.launch
         - export UAV_NAME=uav1;
-          history -s roslaunch uav_detect display_detections.launch
-        - export UAV_NAME=uav1;
-          history -s roslaunch uav_detect estimate_location.launch
-  - rviz:
+          sleep 13; roslaunch uav_detect display_detections.launch
+  - filter_detected:
       layout: even-vertical
       panes:
-        - sleep 12; rviz
+        - export UAV_NAME=uav1;
+          sleep 20; roslaunch uav_detect sim_filter_single.launch
+  - interceptor:
+      layout: even-vertical
+      panes:
+        - export UAV_NAME=uav1;
+          sleep 13; roslaunch intercept_estimator sim_intercept.launch
+        - export UAV_NAME=uav1;
+          history -s roslaunch interceptor interceptor.launch
