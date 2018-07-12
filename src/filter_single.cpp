@@ -293,14 +293,16 @@ int main(int argc, char **argv)
       det_l_pt = camera_model.rectifyPoint(det_l_pt);  // do not forget to rectify the points!
       cv::Point3d cvl_vec = camera_model.projectPixelTo3dRay(det_l_pt);
       Eigen::Vector3d l_vec(cvl_vec.x, cvl_vec.y, cvl_vec.z);
+      l_vec.normalize();
       // right point on the other UAV
       cv::Point2d det_r_pt((ref_det.x_relative+ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0,
                            (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0);
       det_r_pt = camera_model.rectifyPoint(det_r_pt);
       cv::Point3d cvr_vec = camera_model.projectPixelTo3dRay(det_r_pt);
       Eigen::Vector3d r_vec(cvr_vec.x, cvr_vec.y, cvr_vec.z);
+      r_vec.normalize();
       // now calculate the estimated distance
-      double alpha = acos(l_vec.dot(r_vec)/(l_vec.norm()*r_vec.norm()))/2.0;
+      double alpha = acos(l_vec.dot(r_vec))/2.0;
       /* double est_dist = dist_corr_p0 + dist_corr_p1*UAV_width/(2.0*tan(ray_angle/2.0)); */
       double est_dist = UAV_width*sin(M_PI_2 - alpha)*(tan(alpha) + cot(alpha));
       est_dist = dist_corr_p0 + dist_corr_p1*est_dist;
