@@ -69,10 +69,12 @@ int main(int argc, char **argv)
   string uav_name, uav_frame, world_frame;
   double UAV_width;
   double max_dist;
-  double camera_offset_angle;
+  double dist_corr_p0, dist_corr_p1;
   double camera_offset_x, camera_offset_y, camera_offset_z;
   double camera_offset_roll, camera_offset_pitch, camera_offset_yaw;
   double camera_delay;
+  double xy_covariance_coeff;
+  double z_covariance_coeff;
 
   ros::init(argc, argv, "uav_detect_localize");
   ROS_INFO ("Node initialized.");
@@ -92,13 +94,8 @@ int main(int argc, char **argv)
 
   nh.param("UAV_width", UAV_width, 0.28*2.0);
   nh.param("max_dist", max_dist, 15.0);
-  // offset camera yaw angle
-  nh.param("camera_offset_angle", camera_offset_angle, numeric_limits<double>::infinity());
-  if (isinf(camera_offset_angle))
-  {
-    ROS_ERROR("Offset camera yaw angle not specified");
-    ros::shutdown();
-  }
+  nh.param("dist_corr_p0", dist_corr_p0, -2.0);
+  nh.param("dist_corr_p1", dist_corr_p1, 0.8);
 
   // camera x offset
   nh.param("camera_offset_x", camera_offset_x, numeric_limits<double>::infinity());
@@ -150,14 +147,17 @@ int main(int argc, char **argv)
     ros::shutdown();
   }
   nh.param("dist_filter_window", dist_filter_window, 3);
+  nh.param("xy_covariance_coeff", xy_covariance_coeff, 0.5);
+  nh.param("z_covariance_coeff", z_covariance_coeff, 0.1);
 
   cout << "Using parameters:" << std::endl;
   cout << "\tuav name:\t" << uav_name << std::endl;
   cout << "\tuav frame:\t" << uav_frame << std::endl;
   cout << "\tworld frame:\t" << world_frame << std::endl;
   cout << "\tUAV width:\t" << UAV_width << "m" << std::endl;
+  cout << "\tdist. correction p0:\t" << dist_corr_p0 << "m" << std::endl;
+  cout << "\tdist. correction p1:\t" << dist_corr_p1 << std::endl;
   cout << "\tmax. detection dist.:\t" << max_dist << "m" << std::endl;
-  cout << "\tcamera offset yaw angle:\t" << camera_offset_angle << "°" << std::endl;
   cout << "\tcamera X offset:\t" << camera_offset_x << "m" << std::endl;
   cout << "\tcamera Y offset:\t" << camera_offset_y << "m" << std::endl;
   cout << "\tcamera Z offset:\t" << camera_offset_z << "m" << std::endl;
@@ -166,6 +166,8 @@ int main(int argc, char **argv)
   cout << "\tcamera yaw:\t" << camera_offset_yaw << "°"  << std::endl;
   cout << "\tcamera delay:\t" << camera_delay << "ms" << std::endl;
   cout << "\tdist. filter size:\t" << dist_filter_window << std::endl;
+  cout << "\txy covar. coeff.:\t" << xy_covariance_coeff << std::endl;
+  cout << "\tz covar. coeff.:\t" << z_covariance_coeff << std::endl;
 
   filter_initialized = false;
   dist_filter = new double[dist_filter_window];
@@ -301,11 +303,15 @@ int main(int argc, char **argv)
       double alpha = acos(l_vec.dot(r_vec)/(l_vec.norm()*r_vec.norm()))/2.0;
       /* double est_dist = dist_corr_p0 + dist_corr_p1*UAV_width/(2.0*tan(ray_angle/2.0)); */
       double est_dist = UAV_width*sin(M_PI_2 - alpha)*(tan(alpha) + cot(alpha));
-      if (isnan(est_dist) || est_dist < 0.0 || est_dist > max_dist)
-        dist_valid = false;
-      if (dist_valid)
-        est_dist = do_filter(est_dist);
+      est_dist = dist_corr_p0 + dist_corr_p1*est_dist;
       cout << "Estimated distance: " << est_dist << std::endl;
+      if (isnan(est_dist) || est_dist < 0.0 || est_dist > max_dist)
+      {
+        dist_valid = false;
+        cout << "Invalid estimated distance, cropping to " << max_dist << "m" << std::endl;
+        est_dist = max_dist;
+      }
+      /* est_dist = do_filter(est_dist); */
       //}
       
       /** Calculate the estimated position of the other UAV //{**/
@@ -320,11 +326,18 @@ int main(int argc, char **argv)
       /** Calculate the corresponding covariance matrix of the estimated position //{**/
       Eigen::Matrix3d pos_cov = Eigen::Matrix3d::Identity();  // prepare the covariance matrix
       double tol = 1e-9;
-      if (est_dist < 3.0)
-        pos_cov(2, 2) = 1.0;
-      else
-        pos_cov(2, 2) = est_dist*0.33;
-      pos_cov *= 1.0/max_prob;
+      pos_cov(0, 0) = pos_cov(1, 1) = xy_covariance_coeff;
+      // if the distance estimation is fishy, give it a very large covariance (the information is probably wrong)
+      if (!dist_valid)
+      {
+        pos_cov(2, 2) = 66.6*z_covariance_coeff;
+      } else // otherwise give further detections smaller weights than nearer
+      {
+        pos_cov(2, 2) = est_dist*sqrt(est_dist)*z_covariance_coeff;
+        if (pos_cov(2, 2) < 0.33*z_covariance_coeff)
+          pos_cov(2, 2) = 0.33*z_covariance_coeff;
+        pos_cov *= 1.0/max_prob;
+      }
       // Rotation matrix from the camera CS to the world CS
       Eigen::Matrix3d c2w_rot = c2w_tf.rotation();
       // Find the rotation matrix to rotate the covariance to point in the direction of the estimated position
@@ -366,7 +379,7 @@ int main(int argc, char **argv)
             est_pos.pose.covariance[r_it + c_it*6] = rot_cov(r_it-3, c_it-3);
           else
             est_pos.pose.covariance[r_it + c_it*6] = 0.0;
-      est_pos.header.stamp = ros::Time::now();
+      est_pos.header.stamp = latest_detections.stamp;
       est_pos.header.frame_id = "local_origin";
       est_pos.pose.pose.position.x = pos_vec(0);
       est_pos.pose.pose.position.y = pos_vec(1);
