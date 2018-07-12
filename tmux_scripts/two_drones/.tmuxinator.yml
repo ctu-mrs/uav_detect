@@ -23,8 +23,8 @@ windows:
   - penn_controller:
       layout: even-vertical
       panes:
-        - sleep 10; export UAV_NAME=uav1; roslaunch penn_controller simulation.launch
-        - sleep 10; export UAV_NAME=uav2; roslaunch penn_controller simulation.launch
+        - sleep 10; export UAV_NAME=uav1; roslaunch interceptor sim_penn_controller.launch
+        - sleep 10; export UAV_NAME=uav2; roslaunch interceptor sim_penn_controller.launch
   - takeoff:
       layout: even-vertical
       panes:
