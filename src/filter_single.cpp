@@ -299,19 +299,15 @@ int main(int argc, char **argv)
       bool dist_valid = true;
       double pt2d[2]; double pt3d[3] = {0.0, 0.0, 0.0};
       // project the left point of the UAV using OCamCalib camera calibration to 3D
-      pt2d[2] = {
-        (ref_det.x_relative-ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0,
-        (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0
-        };
+      pt2d[0] = (ref_det.x_relative-ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0;
+      pt2d[1] = (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0;
       cam2world(pt3d, pt2d, &oc_model);
       Eigen::Vector3d l_vec(-pt3d[0], -pt3d[1], -pt3d[2]);
       l_vec.normalize();
 
       // do the same for the right point of the UAV
-      pt2d[2] = {
-        (ref_det.x_relative+ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0,
-        (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0
-        };
+      pt2d[0] = (ref_det.x_relative+ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0;
+      pt2d[1] = (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0;
       cam2world(pt3d, pt2d, &oc_model);
       Eigen::Vector3d r_vec(-pt3d[0], -pt3d[1], -pt3d[2]);
       r_vec.normalize();

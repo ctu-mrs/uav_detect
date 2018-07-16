@@ -114,8 +114,8 @@ void world2cam(double point2D[2], double point3D[3], struct ocam_model *myocam_m
  double c           = (myocam_model->c);
  double d           = (myocam_model->d);
  double e           = (myocam_model->e);
- int    width       = (myocam_model->width);
- int    height      = (myocam_model->height);
+ /* int    width       = (myocam_model->width); */
+ /* int    height      = (myocam_model->height); */
  int length_invpol  = (myocam_model->length_invpol);
  double norm        = sqrt(point3D[0]*point3D[0] + point3D[1]*point3D[1]);
  double theta       = atan(point3D[2]/norm);
