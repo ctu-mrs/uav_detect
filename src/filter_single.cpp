@@ -1,3 +1,4 @@
+#include <ros/package.h>
 #include <ros/ros.h>
 #include <image_transport/image_transport.h>
 #include <cv_bridge/cv_bridge.h>
@@ -21,6 +22,8 @@
 #include <uav_detect/Detections.h>
 
 #include "rlcnn_util.h"
+
+#include "ocam_functions.h"
 
 #define cot(x) tan(M_PI_2 - x)
 
@@ -66,7 +69,7 @@ double do_filter(double new_val)
 
 int main(int argc, char **argv)
 {
-  string uav_name, uav_frame, world_frame;
+  string uav_name, uav_frame, world_frame, calib_path;
   double UAV_width;
   double max_dist;
   double dist_corr_p0, dist_corr_p1;
@@ -91,6 +94,7 @@ int main(int argc, char **argv)
   }
   nh.param("world_frame", world_frame, std::string("local_origin"));
   nh.param("uav_frame", uav_frame, std::string("fcu_uav1"));
+  nh.param("calib_path", calib_path, std::string("config/mobius_calib.txt"));
 
   nh.param("UAV_width", UAV_width, 0.28*2.0);
   nh.param("max_dist", max_dist, 15.0);
@@ -154,6 +158,7 @@ int main(int argc, char **argv)
   cout << "\tuav name:\t" << uav_name << std::endl;
   cout << "\tuav frame:\t" << uav_frame << std::endl;
   cout << "\tworld frame:\t" << world_frame << std::endl;
+  cout << "\tcalibration path:\t" << calib_path << std::endl;
   cout << "\tUAV width:\t" << UAV_width << "m" << std::endl;
   cout << "\tdist. correction p0:\t" << dist_corr_p0 << "m" << std::endl;
   cout << "\tdist. correction p1:\t" << dist_corr_p1 << std::endl;
@@ -171,6 +176,11 @@ int main(int argc, char **argv)
 
   filter_initialized = false;
   dist_filter = new double[dist_filter_window];
+  
+  // Load OCamCalib calibration
+  ocam_model oc_model;  // calibration model of the color camera
+  calib_path = ros::package::getPath("uav_detect")+"/"+calib_path;
+  get_ocam_model(&oc_model, (char*)calib_path.c_str());
   //}
 
   /** Build the UAV to camera transformation * //{*/
@@ -287,19 +297,23 @@ int main(int argc, char **argv)
 
       /** Calculate the estimated distance using pinhole camera model projection and using camera rectification //{**/
       bool dist_valid = true;
-      // left point on the other UAV
-      cv::Point2d det_l_pt((ref_det.x_relative-ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0,
-                           (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0);
-      det_l_pt = camera_model.rectifyPoint(det_l_pt);  // do not forget to rectify the points!
-      cv::Point3d cvl_vec = camera_model.projectPixelTo3dRay(det_l_pt);
-      Eigen::Vector3d l_vec(cvl_vec.x, cvl_vec.y, cvl_vec.z);
+      double pt2d[2]; double pt3d[3] = {0.0, 0.0, 0.0};
+      // project the left point of the UAV using OCamCalib camera calibration to 3D
+      pt2d[2] = {
+        (ref_det.x_relative-ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0,
+        (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0
+        };
+      cam2world(pt3d, pt2d, &oc_model);
+      Eigen::Vector3d l_vec(-pt3d[0], -pt3d[1], -pt3d[2]);
       l_vec.normalize();
-      // right point on the other UAV
-      cv::Point2d det_r_pt((ref_det.x_relative+ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0,
-                           (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0);
-      det_r_pt = camera_model.rectifyPoint(det_r_pt);
-      cv::Point3d cvr_vec = camera_model.projectPixelTo3dRay(det_r_pt);
-      Eigen::Vector3d r_vec(cvr_vec.x, cvr_vec.y, cvr_vec.z);
+
+      // do the same for the right point of the UAV
+      pt2d[2] = {
+        (ref_det.x_relative+ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0,
+        (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0
+        };
+      cam2world(pt3d, pt2d, &oc_model);
+      Eigen::Vector3d r_vec(-pt3d[0], -pt3d[1], -pt3d[2]);
       r_vec.normalize();
       // now calculate the estimated distance
       double alpha = acos(l_vec.dot(r_vec))/2.0;
