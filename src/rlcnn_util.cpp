@@ -8,6 +8,7 @@ namespace rlcnn
   /* Globals used for calculations */
   Eigen::Affine3d c2w_tf;
   image_geometry::PinholeCameraModel camera_model;
+  ocam_model oc_model;// OCamCalib camera model
   int w_camera, h_camera, w_used, h_used;
 
   void update_camera_info(const uav_detect::Detections& dets_msg)
@@ -20,31 +21,27 @@ namespace rlcnn
   }
 
 
-  /* Calculates a projection half-line of the detection *//*//{*/
-  void calculate_3D_projection(
-      const uav_detect::Detection& det,
-      Eigen::Vector3d& out_point,
-      Eigen::Vector3d& out_vector
-      )
+  /* calculate_direction_pinhole - Calculates a direction vector of the detection in camera coordinates using pinhole camera model //{ */
+  Eigen::Vector3d calculate_direction_pinhole(double px_x, double px_y)
   {
     // Calculate pixel position of the detection
-    int px_x = (int)round(
-                      (w_camera-w_used)/2.0 +  // offset between the detection rectangle and camera image
-                      (det.x_relative)*w_used);
-    int px_y = (int)round(
-                      (h_camera-h_used)/2.0 +  // offset between the detection rectangle and camera image
-                      (det.y_relative)*h_used);
-    cv::Point2d center_pt = camera_model.rectifyPoint(cv::Point2d(px_x, px_y));
+    cv::Point2d det_pt(px_x, px_y);
+    det_pt = camera_model.rectifyPoint(det_pt);  // do not forget to rectify the points!
+    cv::Point3d cv_vec = camera_model.projectPixelTo3dRay(det_pt);
+    return Vector3d(cv_vec.x, cv_vec.y, cv_vec.z).normalized(); 
+  }
+  //}
 
-    // Calculate projections of the center, left and right points of the detected bounding box
-    cv::Point3d ray_vec = camera_model.projectPixelTo3dRay(center_pt);
-
-    double ray_vec_norm = sqrt(ray_vec.x*ray_vec.x + ray_vec.y*ray_vec.y + ray_vec.z*ray_vec.z);
-    out_point << 0.0, 0.0, 0.0;
-    out_vector << ray_vec.x/ray_vec_norm, ray_vec.y/ray_vec_norm, ray_vec.z/ray_vec_norm;
-    out_point = c2w_tf*out_point;
-    out_vector = c2w_tf*out_vector - out_point;
-  }/*//}*/
+  /* calculate_direction_ocam - Calculates a direction vector of the detection in camera coordinates using OCamCalib camera model //{ */
+  Eigen::Vector3d calculate_direction_ocam(double px_x, double px_y)
+  {
+    double pt2d[2] = {px_y, px_x};
+    double pt3d[3] = {0.0, 0.0, 0.0};
+    // project the left point of the UAV using OCamCalib camera calibration to 3D
+    cam2world(pt3d, pt2d, &oc_model);
+    return Vector3d(pt3d[1], pt3d[0], -pt3d[2]).normalized();
+  }
+  //}
 
   /* tf2_to_eigen - helper function to convert tf2::Transform to Eigen::Affine3d *//*//{*/
   Eigen::Affine3d tf2_to_eigen(const tf2::Transform& tf2_t)

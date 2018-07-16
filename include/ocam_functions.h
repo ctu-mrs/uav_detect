@@ -4,6 +4,8 @@
    Copyright (C) 2008 DAVIDE SCARAMUZZA, ETH Zurich  
    Author: Davide Scaramuzza - email: davide.scaramuzza@ieee.org
 ------------------------------------------------------------------------------*/
+#ifndef OCAM_FUNCTIONS_H
+#define OCAM_FUNCTIONS_H
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -87,3 +89,4 @@ void create_perspecive_undistortion_LUT( CvMat *mapx, CvMat *mapy, struct ocam_m
  xc, yc are the row and column coordinates of the image center
 ------------------------------------------------------------------------------*/
 void create_panoramic_undistortion_LUT ( CvMat *mapx, CvMat *mapy, float Rmin, float Rmax, float xc, float yc );
+#endif // OCAM_FUNCTIONS_H

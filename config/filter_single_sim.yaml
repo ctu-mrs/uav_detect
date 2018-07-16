@@ -1,5 +1,6 @@
 # frame names
 frame_ids: [local_origin]
+use_ocam: false
 
 ############### Camera parameters (for top-mounted Mobius cam) ###############
 ## MOBIUS camera parameters ##
@@ -30,5 +31,5 @@ dist_filter_window: 3
 max_dist: 15.0
 xy_covariance_coeff: 0.001
 z_covariance_coeff: 0.005
-dist_corr_p0: -2.0
-dist_corr_p1: 0.8
+dist_corr_p0: -1.0
+dist_corr_p1: 0.7

@@ -70,6 +70,7 @@ double do_filter(double new_val)
 int main(int argc, char **argv)
 {
   string uav_name, uav_frame, world_frame, calib_path;
+  bool use_ocam;
   double UAV_width;
   double max_dist;
   double dist_corr_p0, dist_corr_p1;
@@ -94,7 +95,13 @@ int main(int argc, char **argv)
   }
   nh.param("world_frame", world_frame, std::string("local_origin"));
   nh.param("uav_frame", uav_frame, std::string("fcu_uav1"));
-  nh.param("calib_path", calib_path, std::string("config/mobius_calib.txt"));
+  nh.param("calib_path", calib_path, std::string(""));
+  nh.param("use_ocam", use_ocam, false);
+  if (use_ocam && calib_path.empty())
+  {
+    ROS_ERROR("Path to OCamCalib calibration file not specified");
+    ros::shutdown();
+  }
 
   nh.param("UAV_width", UAV_width, 0.28*2.0);
   nh.param("max_dist", max_dist, 15.0);
@@ -158,7 +165,9 @@ int main(int argc, char **argv)
   cout << "\tuav name:\t" << uav_name << std::endl;
   cout << "\tuav frame:\t" << uav_frame << std::endl;
   cout << "\tworld frame:\t" << world_frame << std::endl;
-  cout << "\tcalibration path:\t" << calib_path << std::endl;
+  cout << "\tusing OCamCalib:\t" << use_ocam << std::endl;
+  if (use_ocam)
+    cout << "\t--calibration path:\t" << calib_path << std::endl;
   cout << "\tUAV width:\t" << UAV_width << "m" << std::endl;
   cout << "\tdist. correction p0:\t" << dist_corr_p0 << "m" << std::endl;
   cout << "\tdist. correction p1:\t" << dist_corr_p1 << std::endl;
@@ -177,10 +186,11 @@ int main(int argc, char **argv)
   filter_initialized = false;
   dist_filter = new double[dist_filter_window];
   
-  // Load OCamCalib calibration
-  ocam_model oc_model;  // calibration model of the color camera
-  calib_path = ros::package::getPath("uav_detect")+"/"+calib_path;
-  get_ocam_model(&oc_model, (char*)calib_path.c_str());
+  if (use_ocam)
+  {
+    // Load OCamCalib calibration
+    get_ocam_model(&oc_model, (char*)calib_path.c_str());
+  }
   //}
 
   /** Build the UAV to camera transformation * //{*/
@@ -297,20 +307,21 @@ int main(int argc, char **argv)
 
       /** Calculate the estimated distance using pinhole camera model projection and using camera rectification //{**/
       bool dist_valid = true;
-      double pt2d[2]; double pt3d[3] = {0.0, 0.0, 0.0};
-      // project the left point of the UAV using OCamCalib camera calibration to 3D
-      pt2d[0] = (ref_det.x_relative-ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0;
-      pt2d[1] = (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0;
-      cam2world(pt3d, pt2d, &oc_model);
-      Eigen::Vector3d l_vec(-pt3d[0], -pt3d[1], -pt3d[2]);
-      l_vec.normalize();
+      double l_px = (ref_det.x_relative-ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0;
+      double r_px = (ref_det.x_relative+ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0;
+      double y_px = (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0;
+      Eigen::Vector3d l_vec;
+      Eigen::Vector3d r_vec;
+      if (use_ocam)
+      {
+        l_vec = calculate_direction_ocam(l_px, y_px);
+        r_vec = calculate_direction_ocam(r_px, y_px);
+      } else
+      {
+        l_vec = calculate_direction_pinhole(l_px, y_px);
+        r_vec = calculate_direction_pinhole(r_px, y_px);
+      }
 
-      // do the same for the right point of the UAV
-      pt2d[0] = (ref_det.x_relative+ref_det.w_relative/2.0)*w_used + (w_camera-w_used)/2.0;
-      pt2d[1] = (ref_det.y_relative)*h_used + (h_camera-h_used)/2.0;
-      cam2world(pt3d, pt2d, &oc_model);
-      Eigen::Vector3d r_vec(-pt3d[0], -pt3d[1], -pt3d[2]);
-      r_vec.normalize();
       // now calculate the estimated distance
       double alpha = acos(l_vec.dot(r_vec))/2.0;
       /* double est_dist = dist_corr_p0 + dist_corr_p1*UAV_width/(2.0*tan(ray_angle/2.0)); */
@@ -320,8 +331,8 @@ int main(int argc, char **argv)
       if (isnan(est_dist) || est_dist < 0.0 || est_dist > max_dist)
       {
         dist_valid = false;
-        cout << "Invalid estimated distance, cropping to " << max_dist << "m" << std::endl;
-        est_dist = max_dist;
+        est_dist = est_dist < 0.0 ? 0.0 : max_dist;
+        cout << "Invalid estimated distance, cropping to " << est_dist << "m" << std::endl;
       }
       /* est_dist = do_filter(est_dist); */
       //}
