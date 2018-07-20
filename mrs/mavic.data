@@ -1,0 +1,6 @@
+classes= 1
+train  = data/mavic/training.txt
+valid  = data/mavic/testing.txt
+names = data/mavic.names
+backup = mavic_backup
+

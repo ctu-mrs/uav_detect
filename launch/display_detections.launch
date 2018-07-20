@@ -10,7 +10,7 @@
       <rosparam file="$(find uav_detect)/config/uav_detect.yaml" />
       <param name="uav_name" value="$(arg uav_name)" />
 
-      <remap from="~camera_input" to="mobius_front/image_raw" />
+      <remap from="~camera_input" to="mobius/image_raw" />
       <remap from="~detections" to="uav_detect/detections" />
     
     </node>

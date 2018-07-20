@@ -1,0 +1,25 @@
+<launch>
+
+  <arg name="uav_name" default="$(optenv UAV_NAME uav)"/>
+
+  <group ns="$(arg uav_name)">
+    
+    <node name="uav_detect" pkg="uav_detect" type="uav_detect" output="screen" >
+      
+      <rosparam file="$(find uav_detect)/config/mobius.yaml" />
+      <rosparam file="$(find mrs_trackers)/config/f550.yaml" />
+      <rosparam file="$(find uav_detect)/config/uav_detect.yaml" />
+      <param name="data_file" value="$(find uav_detect)/mrs/mrs.data" />
+      <param name="names_file" value="$(find uav_detect)/mrs/mrs.names" />
+      <param name="cfg_file" value="$(find uav_detect)/mrs/tiny-yolo-mrs.cfg" />
+      <param name="weights_file" value="$(find uav_detect)/mrs/tiny-yolo-mavic_50000.weights" />
+      <param name="uav_name" value="$(arg uav_name)" />
+
+      <remap from="~camera_input" to="mobius/image_raw" />
+      <remap from="~camera_info" to="mobius/camera_info" />
+    
+    </node>
+  
+  </group>
+
+</launch>
