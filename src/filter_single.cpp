@@ -6,6 +6,7 @@
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 
 #include <geometry_msgs/TransformStamped.h>
+#include <std_msgs/Float64.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Transform.h>
@@ -65,6 +66,16 @@ double do_filter(double new_val)
   dist_filter[dist_filter_window-1] = new_val;
   return ret/dist_filter_window;
 }
+
+double min_x, max_x;
+double min_y, max_y;
+double min_z, max_z;
+bool position_valid(Eigen::Vector3d pos_vec)
+{
+  return  (pos_vec(0) > min_x && pos_vec(0) < max_x) &&
+          (pos_vec(1) > min_y && pos_vec(2) < max_y) &&
+          (pos_vec(2) > min_z && pos_vec(2) < max_z);
+}
 //}
 
 int main(int argc, char **argv)
@@ -94,7 +105,7 @@ int main(int argc, char **argv)
     ros::shutdown();
   }
   nh.param("world_frame", world_frame, std::string("local_origin"));
-  nh.param("uav_frame", uav_frame, std::string("fcu_uav1"));
+  nh.param("uav_frame", uav_frame, std::string("fcu_uav3"));
   nh.param("calib_path", calib_path, std::string(""));
   nh.param("use_ocam", use_ocam, false);
   if (use_ocam && calib_path.empty())
@@ -103,6 +114,12 @@ int main(int argc, char **argv)
     ros::shutdown();
   }
 
+  nh.param("min_x", min_x, -numeric_limits<double>::infinity());
+  nh.param("max_x", max_x, numeric_limits<double>::infinity());
+  nh.param("min_y", min_y, -numeric_limits<double>::infinity());
+  nh.param("max_y", max_y, numeric_limits<double>::infinity());
+  nh.param("min_z", min_z, 0.0);
+  nh.param("max_z", max_z, numeric_limits<double>::infinity());
   nh.param("UAV_width", UAV_width, 0.28*2.0);
   nh.param("max_dist", max_dist, 15.0);
   nh.param("dist_corr_p0", dist_corr_p0, -2.0);
@@ -167,7 +184,13 @@ int main(int argc, char **argv)
   cout << "\tworld frame:\t" << world_frame << std::endl;
   cout << "\tusing OCamCalib:\t" << use_ocam << std::endl;
   if (use_ocam)
-    cout << "\t--calibration path:\t" << calib_path << std::endl;
+    cout << "\t\tcalibration path:\t" << calib_path << std::endl;
+
+  cout << "\tBounding area:" << std::endl
+       << "\t\tx in <" << min_x << ", " << max_x << ">" << std::endl
+       << "\t\ty in <" << min_y << ", " << max_y << ">" << std::endl
+       << "\t\tz in <" << min_z << ", " << max_z << ">" << std::endl;
+
   cout << "\tUAV width:\t" << UAV_width << "m" << std::endl;
   cout << "\tdist. correction p0:\t" << dist_corr_p0 << "m" << std::endl;
   cout << "\tdist. correction p1:\t" << dist_corr_p1 << std::endl;
@@ -215,6 +238,7 @@ int main(int argc, char **argv)
   // Initialize other subs and pubs
   ros::Subscriber detections_sub = nh.subscribe("detections", 1, detections_callback, ros::TransportHints().tcpNoDelay());
   ros::Publisher detected_UAV_pub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("detected_uav", 10);
+  ros::Publisher distance_pub = nh.advertise<std_msgs::Float64>("detected_uav_distance", 10);
   //}
 
   cout << "----------------------------------------------------------" << std::endl;
@@ -267,7 +291,7 @@ int main(int argc, char **argv)
         c2w_tf = tf2_to_eigen((uav2camera_transform * world2uav_transform).inverse());
       } catch (tf2::TransformException& ex)
       {
-        ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", world_frame.c_str(), "usb_cam", ex.what());
+        ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", world_frame.c_str(), uav_frame.c_str(), ex.what());
         continue;
       }
       //}
@@ -328,6 +352,9 @@ int main(int argc, char **argv)
       double est_dist = UAV_width*sin(M_PI_2 - alpha)*(tan(alpha) + cot(alpha));
       est_dist = dist_corr_p0 + dist_corr_p1*est_dist;
       cout << "Estimated distance: " << est_dist << std::endl;
+      std_msgs::Float64 dist_msg;
+      dist_msg.data = est_dist;
+      distance_pub.publish(dist_msg);
       if (isnan(est_dist) || est_dist < 0.0 || est_dist > max_dist)
       {
         dist_valid = false;
@@ -344,6 +371,14 @@ int main(int argc, char **argv)
       cout << "Estimated location (camera CS): [" << c_vec(0) << ", " << c_vec(1) << ", " << c_vec(2) << "]" << std::endl;
       Eigen::Vector3d pos_vec = c2w_tf*c_vec;
       cout << "Estimated location (world  CS): [" << pos_vec(0) << ", " << pos_vec(1) << ", " << pos_vec(2) << "]" << std::endl;
+
+      // Check whether the estimated position makes sense
+      bool pos_valid = true;
+      if (!position_valid(pos_vec))
+      {
+        pos_valid = false;
+        cout << "Invalid estimated position, throwing it away" << std::endl;
+      }
       //}
       
       /** Calculate the corresponding covariance matrix of the estimated position //{**/
@@ -415,7 +450,10 @@ int main(int argc, char **argv)
       //}
       
       // Finally publish the message
-      detected_UAV_pub.publish(est_pos);
+      if (pos_valid)
+      {
+        detected_UAV_pub.publish(est_pos);
+      }
 
       cout << "Detections processed" << std::endl;
     } else

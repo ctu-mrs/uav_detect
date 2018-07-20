@@ -1,6 +1,6 @@
 # frame names
-frame_ids: [local_origin]
-use_ocam: false
+uav_frame: "fcu_uav3"
+use_ocam: true
 
 ############### Camera parameters (for top-mounted Mobius cam) ###############
 camera_delay: 130 # ms
@@ -23,9 +23,18 @@ camera_offset_yaw: 0.0
 # camera_offset_yaw: 45  #degrees
 
 ############### Distance estimation parameters ###############
+UAV_width: 0.3 # metres
 dist_filter_window: 3
 max_dist: 15.0
 xy_covariance_coeff: 0.001
 z_covariance_coeff: 0.005
 dist_corr_p0: -1.0
 dist_corr_p1: 0.7
+
+############### Position estimation parameters ###############
+min_x: -.inf
+max_x: .inf
+min_y: -.inf
+max_y: .inf
+min_z: 0.0
+max_z: .inf
