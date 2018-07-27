@@ -1,0 +1,7 @@
+<launch>
+  <node pkg="nodelet" type="nodelet" name="pcxyz"
+        args="standalone depth_image_proc/point_cloud_xyz">
+        <remap from="/pcxyz/camera_info" to="/uav5/rs_d435/depth/camera_info"/>
+        <remap from="/pcxyz/image_rect" to="/uav5/rs_d435/depth/image_rect_raw"/>
+  </node>
+</launch>

@@ -32,17 +32,6 @@ namespace rlcnn
   }
   //}
 
-  /* calculate_direction_ocam - Calculates a direction vector of the detection in camera coordinates using OCamCalib camera model //{ */
-  Eigen::Vector3d calculate_direction_ocam(double px_x, double px_y)
-  {
-    double pt2d[2] = {px_y, px_x};
-    double pt3d[3] = {0.0, 0.0, 0.0};
-    // project the left point of the UAV using OCamCalib camera calibration to 3D
-    cam2world(pt3d, pt2d, &oc_model);
-    return Vector3d(pt3d[1], pt3d[0], -pt3d[2]).normalized();
-  }
-  //}
-
   /* tf2_to_eigen - helper function to convert tf2::Transform to Eigen::Affine3d *//*//{*/
   Eigen::Affine3d tf2_to_eigen(const tf2::Transform& tf2_t)
   {

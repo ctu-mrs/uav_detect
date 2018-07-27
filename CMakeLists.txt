@@ -59,7 +59,7 @@ include_directories(include
   ${catkin_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
   ${Eigen_INCLUDE_DIRS}
-  ~/git/darknet_ocl/src
+  # ~/git/darknet_ocl/src
 )
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O0")
@@ -74,18 +74,19 @@ target_link_libraries(display_detections
   ${OpenCV_LIBRARIES}
 )
 
-add_executable(uav_detect src/uav_detect.cpp src/detector.cpp)
-add_dependencies(uav_detect
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
-)
-target_link_libraries(uav_detect
-  ${catkin_LIBRARIES}
-  ${OpenCV_LIBRARIES}
-  darknet-cpp-shared
-)
+# add_executable(uav_detect src/uav_detect.cpp src/detector.cpp)
+# add_dependencies(uav_detect
+#   ${${PROJECT_NAME}_EXPORTED_TARGETS}
+#   ${catkin_EXPORTED_TARGETS}
+# )
+# target_link_libraries(uav_detect
+#   ${catkin_LIBRARIES}
+#   ${OpenCV_LIBRARIES}
+#   darknet-cpp-shared
+# )
 
-add_executable(filter_single src/filter_single.cpp src/rlcnn_util.cpp src/ocam_functions.cpp)
+# add_executable(filter_single src/filter_single.cpp src/rlcnn_util.cpp src/ocam_functions.cpp)
+add_executable(filter_single src/filter_single.cpp src/rlcnn_util.cpp)
 add_dependencies(filter_single
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS}

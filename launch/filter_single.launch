@@ -8,9 +8,9 @@
       
       <rosparam file="$(find uav_detect)/config/filter_single.yaml" />
       <param name="uav_name" value="$(arg uav_name)" />
-      <param name="calib_path" value="$(find uav_detect)/config/mobius_calib.txt" />
     
-      <remap from="~detections" to="uav_detect/detections" />
+      <remap from="~depth_map" to="/$(arg uav_name)/rs_d435/depth/image_rect_raw" />
+      <remap from="~camera_info" to="/$(arg uav_name)/rs_d435/depth/camera_info" />
 
     </node>
   

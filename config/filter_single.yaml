@@ -1,5 +1,5 @@
 # frame names
-uav_frame: "fcu_uav3"
+uav_frame: 'fcu_uav5'
 use_ocam: true
 
 ############### Camera parameters (for top-mounted Mobius cam) ###############
@@ -21,6 +21,10 @@ camera_offset_yaw: 0.0
 # camera_offset_roll: 45 #degrees
 # camera_offset_pitch: -90  #degrees
 # camera_offset_yaw: 45  #degrees
+
+############### Depthmap related parameters  ###############
+height_threshold: 1.0 # metres above ground
+bg_dist: 1.0 # metres from background to be filtered
 
 ############### Distance estimation parameters ###############
 UAV_width: 0.3 # metres
