@@ -21,6 +21,7 @@
 
 #include <list>
 
+#include <dynamic_reconfigure/server.h>
 #include <uav_detect/DepthMapParamsConfig.h>
 
 #include "param_loader.h"
@@ -60,11 +61,8 @@ void dm_cinfo_callback(const sensor_msgs::CameraInfo& dm_cinfo_msg)
   }
 }
 
-uav_detect::DepthMapParamsConfig dm_params_config_latest;
-void dynamic_reconfigure_callback(uav_detect::DepthMapParamsConfig& config, uint32_t level)
-{
-  dm_params_config_latest = config;
-}
+typedef DynamicReconfigureMgr<uav_detect::DepthMapParamsConfig> drmgr_t;
+drmgr_t drmgr;
 
 /** Utility functions //{**/
 double min_x, max_x;
@@ -91,39 +89,39 @@ int main(int argc, char **argv)
   string world_frame = load_param(nh, "world_frame", std::string("local_origin"));
   /* double UAV_width = load_param<double>(nh, "UAV_width");; */
   // Load the camera transformation parameters
-  double camera_offset_x = load_param_compulsory<double>(nh, "camera_offset_x");;
-  double camera_offset_y = load_param_compulsory<double>(nh, "camera_offset_y");;
-  double camera_offset_z = load_param_compulsory<double>(nh, "camera_offset_z");;
-  double camera_offset_roll = load_param_compulsory<double>(nh, "camera_offset_roll");;
-  double camera_offset_pitch = load_param_compulsory<double>(nh, "camera_offset_pitch");;
-  double camera_offset_yaw = load_param_compulsory<double>(nh, "camera_offset_yaw");;
+  double camera_offset_x = load_param_compulsory<double>(nh, "camera_offset_x");
+  double camera_offset_y = load_param_compulsory<double>(nh, "camera_offset_y");
+  double camera_offset_z = load_param_compulsory<double>(nh, "camera_offset_z");
+  double camera_offset_roll = load_param_compulsory<double>(nh, "camera_offset_roll");
+  double camera_offset_pitch = load_param_compulsory<double>(nh, "camera_offset_pitch");
+  double camera_offset_yaw = load_param_compulsory<double>(nh, "camera_offset_yaw");
   /* double camera_delay = load_param<double>(nh, "camera_delay");; */
   // Load the detection parameters
   /* double height_threshold = load_param<double>(nh, "height_threshold", 1.0);; */
   // Filter by color
-  bool blob_filter_by_color = load_param_dynamic<bool>(nh, "blob_filter_by_color", true);;
-  double min_dist = load_param<double>(nh, "min_dist", 300.0);;
-  double max_dist = load_param<double>(nh, "max_dist", 18000.0);;
+  bool &blob_filter_by_color = drmgr.config_latest.blob_filter_by_color;
+  double min_dist = load_param<double>(nh, "min_dist", 300.0);
+  double max_dist = load_param<double>(nh, "max_dist", 18000.0);
   // Filter by area
-  bool blob_filter_by_area = load_param<bool>(nh, "blob_filter_by_area", false);;
-  double blob_min_area = load_param<double>(nh, "blob_min_area", 200.0);;
-  double blob_max_area = load_param<double>(nh, "blob_max_area", 921600.0);;
+  bool blob_filter_by_area = load_param<bool>(nh, "blob_filter_by_area", false);
+  double blob_min_area = load_param<double>(nh, "blob_min_area", 200.0);
+  double blob_max_area = load_param<double>(nh, "blob_max_area", 921600.0);
   // Filter by circularity
-  bool blob_filter_by_circularity = load_param<bool>(nh, "blob_filter_by_circularity", false);;
-  double blob_min_circularity = load_param<double>(nh, "blob_min_circularity", 0.0);;
-  double blob_max_circularity = load_param<double>(nh, "blob_max_circularity", 1.0);;
+  bool blob_filter_by_circularity = load_param<bool>(nh, "blob_filter_by_circularity", false);
+  double blob_min_circularity = load_param<double>(nh, "blob_min_circularity", 0.0);
+  double blob_max_circularity = load_param<double>(nh, "blob_max_circularity", 1.0);
   // Filter by convexity
-  bool blob_filter_by_convexity = load_param<bool>(nh, "blob_filter_by_convexity", false);;
-  double blob_min_convexity = load_param<double>(nh, "blob_min_convexity", 0.0);;
-  double blob_max_convexity = load_param<double>(nh, "blob_max_convexity", 1.0);;
+  bool blob_filter_by_convexity = load_param<bool>(nh, "blob_filter_by_convexity", false);
+  double blob_min_convexity = load_param<double>(nh, "blob_min_convexity", 0.0);
+  double blob_max_convexity = load_param<double>(nh, "blob_max_convexity", 1.0);
   // Filter by inertia
-  bool blob_filter_by_inertia = load_param<bool>(nh, "blob_filter_by_inertia", false);;
-  double blob_min_inertia_ratio = load_param<double>(nh, "blob_min_inertia_ratio", 0.0);;
-  double blob_max_inertia_ratio = load_param<double>(nh, "blob_max_inertia_ratio", 1.0);;
+  bool blob_filter_by_inertia = load_param<bool>(nh, "blob_filter_by_inertia", false);
+  double blob_min_inertia_ratio = load_param<double>(nh, "blob_min_inertia_ratio", 0.0);
+  double blob_max_inertia_ratio = load_param<double>(nh, "blob_max_inertia_ratio", 1.0);
   // Other filtering criterions
-  double blob_min_dist_between = load_param<double>(nh, "blob_min_dist_between", 10.0);;
-  double blob_threshold_step = load_param<double>(nh, "blob_threshold_step", 10.0);;
-  size_t blob_min_repeatability = load_param<int>(nh, "blob_min_repeatability", 2);;
+  double blob_min_dist_between = load_param<double>(nh, "blob_min_dist_between", 10.0);
+  double blob_threshold_step = load_param<double>(nh, "blob_threshold_step", 10.0);
+  size_t blob_min_repeatability = load_param<int>(nh, "blob_min_repeatability", 2);
   //}
 
   /** Build the UAV to camera transformation * //{*/
@@ -151,6 +149,13 @@ int main(int argc, char **argv)
   ros::Publisher detected_UAV_pub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("detected_uav", 10);
   ros::Publisher thresholded_pub = nh.advertise<sensor_msgs::Image&>("thresholded_dm", 1);
   ros::Publisher distance_pub = nh.advertise<std_msgs::Float64>("detected_uav_distance", 10);
+
+  // dynamic_reconfigure server
+  dynamic_reconfigure::Server<uav_detect::DepthMapParamsConfig> server;
+  dynamic_reconfigure::Server<uav_detect::DepthMapParamsConfig>::CallbackType f;
+
+  f = boost::bind(&drmgr_t::dynamic_reconfigure_callback, &drmgr, _1, _2);
+  server.setCallback(f);
   //}
 
   cout << "----------------------------------------------------------" << std::endl;

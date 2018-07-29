@@ -2,12 +2,14 @@
 #define PARAM_LOADER_H
 
 #include <ros/ros.h>
+#include <dynamic_reconfigure/server.h>
 #include <string>
 #include <iostream>
 
 bool load_successful = true;
 
-template <typename T> T load_param(ros::NodeHandle &nh, const std::string &name, const T &default_value, bool optional = true, bool print_value = true)
+template <typename T>
+T load_param(ros::NodeHandle &nh, const std::string &name, const T &default_value, bool optional = true, bool print_value = true)
 {
   T loaded = default_value;
   bool success = nh.getParam(name, loaded);
@@ -30,10 +32,45 @@ template <typename T> T load_param(ros::NodeHandle &nh, const std::string &name,
   return loaded;
 }
 
-template <typename T> T load_param_compulsory(ros::NodeHandle &nh, const std::string &name, bool print_value = true)
+template <typename T>
+T load_param_compulsory(ros::NodeHandle &nh, const std::string &name, bool print_value = true)
 {
   return load_param(nh, name, T(), false, print_value);
 }
+
+template <typename ConfigType>
+class DynamicReconfigureMgr
+{
+  public:
+    ConfigType config_latest;
+    void dynamic_reconfigure_callback(ConfigType& config, uint32_t level)
+    {
+      config_latest = config;
+      ROS_INFO("Dynamic reconfigure request received:");
+      std::vector<typename ConfigType::AbstractParamDescriptionConstPtr> descrs = config.__getParamDescriptions__();
+      for (auto &descr : descrs)
+      {
+        boost::any val;
+        descr->getValue(config, val);
+        std::cout << "\t" << descr->name << ":\t";
+        // try to guess the correct value (these should be the only ones supported)
+        int *intval;
+        double *doubleval;
+        bool *boolval;
+        std::string *stringval;
+        if ((intval = boost::any_cast<int>(&val)))
+          std::cout << *intval << std::endl;
+        else if ((doubleval = boost::any_cast<double>(&val)))
+          std::cout << *doubleval << std::endl;
+        else if ((boolval = boost::any_cast<bool>(&val)))
+          std::cout << *boolval << std::endl;
+        else if ((stringval = boost::any_cast<std::string>(&val)))
+          std::cout << *stringval << std::endl;
+        else
+          std::cout << "unknown type" << std::endl;
+      }
+    };
+};
 
 /* class LoadParam{ */
 /* private: */
