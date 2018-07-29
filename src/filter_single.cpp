@@ -37,7 +37,7 @@ using namespace rlcnn;
 using namespace uav_detect;
 using namespace Eigen;
 
-/* extern Eigen::Affine3d rlcnn::c2w_tf; */
+extern bool load_successful;
 
 // Callback for the depth map
 bool new_dm = false;
@@ -125,6 +125,12 @@ int main(int argc, char **argv)
   double &blob_min_dist_between = drmgr.config.blob_min_dist_between;
   double &blob_threshold_step = drmgr.config.blob_threshold_step;
   int &blob_min_repeatability = drmgr.config.blob_min_repeatability;
+
+  if (!load_successful)
+  {
+    ROS_ERROR("Some compulsory parameters were not loaded successfully, ending the node");
+    ros::shutdown();
+  }
   //}
 
   /** Build the UAV to camera transformation * //{*/
