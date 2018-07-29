@@ -45,6 +45,10 @@ generate_messages(DEPENDENCIES
   sensor_msgs
 )
 
+generate_dynamic_reconfigure_options(
+  config/dm_params.cfg
+  )
+
 catkin_package(
   CATKIN_DEPENDS message_runtime image_transport mrs_estimation # roscpp rospy std_msgs
 )

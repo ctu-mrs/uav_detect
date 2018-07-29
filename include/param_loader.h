@@ -7,18 +7,9 @@
 
 bool load_successful = true;
 
-template <typename T> T load_param(ros::NodeHandle nh, std::string name, T default_value, bool print_value = true)
+template <typename T> T load_param(ros::NodeHandle &nh, const std::string &name, const T &default_value, bool optional = true, bool print_value = true)
 {
-  T loaded;
-  nh.param(name, loaded, default_value);
-  if (print_value)
-    std::cout << "\t" << name << ":\t" << loaded << std::endl;
-  return loaded;
-}
-
-template <typename T> T load_param(ros::NodeHandle nh, std::string name, bool print_value = true)
-{
-  T loaded;
+  T loaded = default_value;
   bool success = nh.getParam(name, loaded);
   if (success)
   {
@@ -26,10 +17,22 @@ template <typename T> T load_param(ros::NodeHandle nh, std::string name, bool pr
       std::cout << "\t" << name << ":\t" << loaded << std::endl;
   } else
   {
-    ROS_ERROR("Could not load non-optional parameter %s", name.c_str());
-    load_successful = false;
+    loaded = default_value;
+    if (!optional)
+    {
+      ROS_ERROR("Could not load non-optional parameter %s", name.c_str());
+      load_successful = false;
+    } else
+    {
+      std::cout << "\t" << name << ":\t" << loaded << std::endl;
+    }
   }
   return loaded;
+}
+
+template <typename T> T load_param_compulsory(ros::NodeHandle &nh, const std::string &name, bool print_value = true)
+{
+  return load_param(nh, name, T(), false, print_value);
 }
 
 /* class LoadParam{ */

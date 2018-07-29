@@ -21,8 +21,7 @@
 
 #include <list>
 
-#include <uav_detect/Detection.h>
-#include <uav_detect/Detections.h>
+#include <uav_detect/DepthMapParamsConfig.h>
 
 #include "param_loader.h"
 #include "rlcnn_util.h"
@@ -61,6 +60,12 @@ void dm_cinfo_callback(const sensor_msgs::CameraInfo& dm_cinfo_msg)
   }
 }
 
+uav_detect::DepthMapParamsConfig dm_params_config_latest;
+void dynamic_reconfigure_callback(uav_detect::DepthMapParamsConfig& config, uint32_t level)
+{
+  dm_params_config_latest = config;
+}
+
 /** Utility functions //{**/
 double min_x, max_x;
 double min_y, max_y;
@@ -81,24 +86,44 @@ int main(int argc, char **argv)
   ros::NodeHandle nh = ros::NodeHandle("~");
 
   /** Load parameters from ROS * //{*/
-  string uav_name = load_param<string>(nh, string("uav_name"));
+  string uav_name = load_param_compulsory<string>(nh, string("uav_name"));
   string uav_frame = load_param(nh, "uav_frame", std::string("fcu_") + uav_name);
   string world_frame = load_param(nh, "world_frame", std::string("local_origin"));
-  double UAV_width = load_param<double>(nh, "UAV_width");;
-  uint16_t max_dist = load_param<int>(nh, "max_dist");;
-  max_dist *= 1000;  // to mm
-  uint16_t bg_dist = load_param<int>(nh, "bg_dist");;
-  bg_dist *= 1000;  // to mm
+  /* double UAV_width = load_param<double>(nh, "UAV_width");; */
   // Load the camera transformation parameters
-  double camera_offset_x = load_param<double>(nh, "camera_offset_x");;
-  double camera_offset_y = load_param<double>(nh, "camera_offset_y");;
-  double camera_offset_z = load_param<double>(nh, "camera_offset_z");;
-  double camera_offset_roll = load_param<double>(nh, "camera_offset_roll");;
-  double camera_offset_pitch = load_param<double>(nh, "camera_offset_pitch");;
-  double camera_offset_yaw = load_param<double>(nh, "camera_offset_yaw");;
-  double camera_delay = load_param<double>(nh, "camera_delay");;
+  double camera_offset_x = load_param_compulsory<double>(nh, "camera_offset_x");;
+  double camera_offset_y = load_param_compulsory<double>(nh, "camera_offset_y");;
+  double camera_offset_z = load_param_compulsory<double>(nh, "camera_offset_z");;
+  double camera_offset_roll = load_param_compulsory<double>(nh, "camera_offset_roll");;
+  double camera_offset_pitch = load_param_compulsory<double>(nh, "camera_offset_pitch");;
+  double camera_offset_yaw = load_param_compulsory<double>(nh, "camera_offset_yaw");;
+  /* double camera_delay = load_param<double>(nh, "camera_delay");; */
   // Load the detection parameters
-  double height_threshold = load_param<double>(nh, "height_threshold", 1.0);;
+  /* double height_threshold = load_param<double>(nh, "height_threshold", 1.0);; */
+  // Filter by color
+  bool blob_filter_by_color = load_param_dynamic<bool>(nh, "blob_filter_by_color", true);;
+  double min_dist = load_param<double>(nh, "min_dist", 300.0);;
+  double max_dist = load_param<double>(nh, "max_dist", 18000.0);;
+  // Filter by area
+  bool blob_filter_by_area = load_param<bool>(nh, "blob_filter_by_area", false);;
+  double blob_min_area = load_param<double>(nh, "blob_min_area", 200.0);;
+  double blob_max_area = load_param<double>(nh, "blob_max_area", 921600.0);;
+  // Filter by circularity
+  bool blob_filter_by_circularity = load_param<bool>(nh, "blob_filter_by_circularity", false);;
+  double blob_min_circularity = load_param<double>(nh, "blob_min_circularity", 0.0);;
+  double blob_max_circularity = load_param<double>(nh, "blob_max_circularity", 1.0);;
+  // Filter by convexity
+  bool blob_filter_by_convexity = load_param<bool>(nh, "blob_filter_by_convexity", false);;
+  double blob_min_convexity = load_param<double>(nh, "blob_min_convexity", 0.0);;
+  double blob_max_convexity = load_param<double>(nh, "blob_max_convexity", 1.0);;
+  // Filter by inertia
+  bool blob_filter_by_inertia = load_param<bool>(nh, "blob_filter_by_inertia", false);;
+  double blob_min_inertia_ratio = load_param<double>(nh, "blob_min_inertia_ratio", 0.0);;
+  double blob_max_inertia_ratio = load_param<double>(nh, "blob_max_inertia_ratio", 1.0);;
+  // Other filtering criterions
+  double blob_min_dist_between = load_param<double>(nh, "blob_min_dist_between", 10.0);;
+  double blob_threshold_step = load_param<double>(nh, "blob_threshold_step", 10.0);;
+  size_t blob_min_repeatability = load_param<int>(nh, "blob_min_repeatability", 2);;
   //}
 
   /** Build the UAV to camera transformation * //{*/
@@ -185,18 +210,18 @@ int main(int argc, char **argv)
      /* Vector3d ground_pt1(0, 0, 1); */
      /* Vector3d ground_pt2(1, 0, 1); */
      /* Vector3d ground_pt3(0, 1, 1); */
-     Vector3d ground_normal(0, 0, 1);
-     double ground_height = 0.0;
-     Hyperplane<double, 3> ground_plane(ground_normal, ground_height);
-     ground_plane.transform(w2c_tf.rotation());
-     double mean_dist = 0.0;
-     unsigned n_used_px = 0;
-     unsigned n_ground_px = 0;
-     unsigned n_away_px = 0;
-     unsigned n_invalid_px = 0;
+     /* Vector3d ground_normal(0, 0, 1); */
+     /* double ground_height = 0.0; */
+     /* Hyperplane<double, 3> ground_plane(ground_normal, ground_height); */
+     /* ground_plane.transform(w2c_tf.rotation()); */
+     /* double mean_dist = 0.0; */
+     /* unsigned n_used_px = 0; */
+     /* unsigned n_ground_px = 0; */
+     /* unsigned n_away_px = 0; */
+     /* unsigned n_invalid_px = 0; */
 
-     uint32_t im_h = last_dm_msg.height;
-     uint32_t im_w = last_dm_msg.width;
+     /* uint32_t im_h = last_dm_msg.height; */
+     /* uint32_t im_w = last_dm_msg.width; */
 
      /* /1* Perform masking of the image //{ *1/ */
      /* for (uint32_t px_it = 0; px_it < im_h*im_w; px_it++) */
@@ -266,7 +291,7 @@ int main(int argc, char **argv)
      /* } */
      /* //} */
 
-     /* Use OpenCV FAST implementation to find blobs //{ */
+     /* Use OpenCV SimpleBlobDetector to find blobs //{ */
      vector<KeyPoint> keypoints;
      /* cv::Mat out_img(im_h, im_w, CV_16UC1); */
      cv_bridge::CvImage out_img;
@@ -278,31 +303,36 @@ int main(int argc, char **argv)
      out_img.encoding = string("8UC1");
       SimpleBlobDetector::Params params;
 
-      // Change thresholds
-      /* params.minThreshold = 300*256/65536; */
-      /* params.maxThreshold = 15000*256/65536; */
-      params.minThreshold = 2;
-      params.maxThreshold = 254;
-      // Filter by Area.
-      params.filterByArea = false;
-      params.minArea = 200;
-      // Filter by Circularity
-      params.filterByCircularity = false;
-      /* params.minCircularity = 0.1; */
-      /* params.maxCircularity = 0.8; */
-      // Filter by Convexity
-      params.filterByConvexity = false;
-      /* params.minConvexity = 0.87; */
-      // Filter by Inertia
-      params.filterByInertia = false;
-      /* params.minInertiaRatio = 0.01; */
-      /* params.maxInertiaRatio = 0.8; */
+      // Filter by color thresholds
+      params.filterByColor = blob_filter_by_color;
+      params.minThreshold = min_dist*255.0/max_dist;
+      params.maxThreshold = 254.0;
+      // Filter by area.
+      params.filterByArea = blob_filter_by_area;
+      params.minArea = blob_min_area;
+      params.maxArea = blob_max_area;
+      // Filter by circularity
+      params.filterByCircularity = blob_filter_by_circularity;
+      params.minCircularity = blob_min_circularity;
+      params.maxCircularity = blob_max_circularity;
+      // Filter by convexity
+      params.filterByConvexity = blob_filter_by_convexity;
+      params.minConvexity = blob_min_convexity;
+      params.maxConvexity = blob_max_convexity;
+      // Filter by inertia
+      params.filterByInertia = blob_filter_by_inertia;
+      params.minInertiaRatio = blob_min_inertia_ratio;
+      params.maxInertiaRatio = blob_max_inertia_ratio;
+      // Other filtering criterions
+      params.minDistBetweenBlobs = blob_min_dist_between;
+      params.thresholdStep = blob_threshold_step;
+      params.minRepeatability = blob_min_repeatability;
 
       auto detector = SimpleBlobDetector::create(params);
       detector->detect(out_img.image, keypoints);
 
      cv::drawKeypoints(out_img.image, keypoints, out_img.image, Scalar(255), DrawMatchesFlags::DRAW_OVER_OUTIMG);
-     cv::circle(out_img.image, Point(im_h/2, 100), 50, Scalar(255), 10);
+     /* cv::circle(out_img.image, Point(im_h/2, 100), 50, Scalar(255), 10); */
      cout << "Number of keypoints: " << keypoints.size() << std::endl;
 
      //}
