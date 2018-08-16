@@ -6,7 +6,6 @@
     
     <node name="uav_detect" pkg="uav_detect" type="uav_detect" output="screen" >
       
-      <rosparam file="$(find mrs_trackers)/config/f550.yaml" />
       <rosparam file="$(find uav_detect)/config/uav_detect.yaml" />
       <param name="data_file" value="$(find uav_detect)/mrs/mrs.data" />
       <param name="names_file" value="$(find uav_detect)/mrs/mrs.names" />

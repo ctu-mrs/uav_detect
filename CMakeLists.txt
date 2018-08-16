@@ -22,7 +22,6 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_sensor_msgs
   tf2_eigen
   tf2_geometry_msgs
-  mrs_estimation
 )
 
 set(CMAKE_CXX_FLAGS "-std=c++11 -DGPU -DOPENCV -DOPENCL -Wall -O2")
@@ -46,7 +45,7 @@ generate_messages(DEPENDENCIES
 )
 
 catkin_package(
-  CATKIN_DEPENDS message_runtime image_transport mrs_estimation # roscpp rospy std_msgs
+  CATKIN_DEPENDS message_runtime image_transport # roscpp rospy std_msgs
 )
 
 ###########
@@ -86,12 +85,12 @@ target_link_libraries(uav_detect
   darknet-cpp-shared
 )
 
-add_executable(uav_detect_localize src/uav_detect_localize.cpp src/detected_uav.cpp)
-add_dependencies(uav_detect_localize
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
-)
-target_link_libraries(uav_detect_localize
-  ${catkin_LIBRARIES}
-  ${OpenCV_LIBRARIES}
-)
+# add_executable(uav_detect_localize src/uav_detect_localize.cpp src/detected_uav.cpp)
+# add_dependencies(uav_detect_localize
+#   ${${PROJECT_NAME}_EXPORTED_TARGETS}
+#   ${catkin_EXPORTED_TARGETS}
+# )
+# target_link_libraries(uav_detect_localize
+#   ${catkin_LIBRARIES}
+#   ${OpenCV_LIBRARIES}
+# )

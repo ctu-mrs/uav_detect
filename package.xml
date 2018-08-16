@@ -48,7 +48,6 @@
   <build_depend>image_geometry</build_depend>
   <build_depend>nav_msgs</build_depend>
   <build_depend>message_generation</build_depend>
-  <build_depend>mrs_estimation</build_depend>
   
   <run_depend>message_generation</run_depend>
   <run_depend>message_runtime</run_depend>
@@ -62,7 +61,6 @@
   <run_depend>image_transport</run_depend>
   <run_depend>image_geometry</run_depend>
   <run_depend>nav_msgs</run_depend>
-  <run_depend>mrs_estimation</run_depend>
 
   <!-- The export tag contains other, unspecified, tags -->
   <export>
