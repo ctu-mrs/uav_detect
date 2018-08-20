@@ -22,7 +22,7 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_sensor_msgs
   tf2_eigen
   tf2_geometry_msgs
-  mrs_estimation
+  mrs_lib
 )
 
 set(CMAKE_CXX_FLAGS "-std=c++11 -DGPU -DOPENCV -DOPENCL -Wall -O2")
@@ -46,7 +46,7 @@ generate_messages(DEPENDENCIES
 )
 
 catkin_package(
-  CATKIN_DEPENDS message_runtime image_transport mrs_estimation # roscpp rospy std_msgs
+  CATKIN_DEPENDS message_runtime image_transport mrs_lib # roscpp rospy std_msgs
 )
 
 ###########
