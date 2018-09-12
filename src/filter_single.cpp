@@ -71,16 +71,14 @@ double min_y, max_y;
 double min_z, max_z;
 bool position_valid(Eigen::Vector3d pos_vec)
 {
-  return  (pos_vec(0) > min_x && pos_vec(0) < max_x) &&
-          (pos_vec(1) > min_y && pos_vec(2) < max_y) &&
-          (pos_vec(2) > min_z && pos_vec(2) < max_z);
+  return (pos_vec(0) > min_x && pos_vec(0) < max_x) && (pos_vec(1) > min_y && pos_vec(2) < max_y) && (pos_vec(2) > min_z && pos_vec(2) < max_z);
 }
 //}
 
-int main(int argc, char **argv)
+int main(int argc, char** argv)
 {
   ros::init(argc, argv, "uav_detect_localize");
-  ROS_INFO ("Node initialized.");
+  ROS_INFO("Node initialized.");
 
   ros::NodeHandle nh = ros::NodeHandle("~");
 
@@ -102,29 +100,29 @@ int main(int argc, char **argv)
   drmgr_t drmgr;
   // Load the detection parameters
   // Filter by color
-  bool &blob_filter_by_color = drmgr.config.blob_filter_by_color;
-  double &min_dist = drmgr.config.min_dist;
-  double &max_dist = drmgr.config.max_dist;
+  bool& blob_filter_by_color = drmgr.config.blob_filter_by_color;
+  double& min_dist = drmgr.config.min_dist;
+  double& max_dist = drmgr.config.max_dist;
   // Filter by area
-  bool &blob_filter_by_area = drmgr.config.blob_filter_by_area;
-  double &blob_min_area = drmgr.config.blob_min_area;
-  double &blob_max_area = drmgr.config.blob_max_area;
+  bool& blob_filter_by_area = drmgr.config.blob_filter_by_area;
+  double& blob_min_area = drmgr.config.blob_min_area;
+  double& blob_max_area = drmgr.config.blob_max_area;
   // Filter by circularity
-  bool &blob_filter_by_circularity = drmgr.config.blob_filter_by_circularity;
-  double &blob_min_circularity = drmgr.config.blob_min_circularity;
-  double &blob_max_circularity = drmgr.config.blob_max_circularity;
+  bool& blob_filter_by_circularity = drmgr.config.blob_filter_by_circularity;
+  double& blob_min_circularity = drmgr.config.blob_min_circularity;
+  double& blob_max_circularity = drmgr.config.blob_max_circularity;
   // Filter by convexity
-  bool &blob_filter_by_convexity = drmgr.config.blob_filter_by_convexity;
-  double &blob_min_convexity = drmgr.config.blob_min_convexity;
-  double &blob_max_convexity = drmgr.config.blob_max_convexity;
+  bool& blob_filter_by_convexity = drmgr.config.blob_filter_by_convexity;
+  double& blob_min_convexity = drmgr.config.blob_min_convexity;
+  double& blob_max_convexity = drmgr.config.blob_max_convexity;
   // Filter by inertia
-  bool &blob_filter_by_inertia = drmgr.config.blob_filter_by_inertia;
-  double &blob_min_inertia_ratio = drmgr.config.blob_min_inertia_ratio;
-  double &blob_max_inertia_ratio = drmgr.config.blob_max_inertia_ratio;
+  bool& blob_filter_by_inertia = drmgr.config.blob_filter_by_inertia;
+  double& blob_min_inertia_ratio = drmgr.config.blob_min_inertia_ratio;
+  double& blob_max_inertia_ratio = drmgr.config.blob_max_inertia_ratio;
   // Other filtering criterions
-  double &blob_min_dist_between = drmgr.config.blob_min_dist_between;
-  double &blob_threshold_step = drmgr.config.blob_threshold_step;
-  int &blob_min_repeatability = drmgr.config.blob_min_repeatability;
+  double& blob_min_dist_between = drmgr.config.blob_min_dist_between;
+  double& blob_threshold_step = drmgr.config.blob_threshold_step;
+  int& blob_min_repeatability = drmgr.config.blob_min_repeatability;
 
   if (!load_successful)
   {
@@ -137,7 +135,7 @@ int main(int argc, char **argv)
   tf2::Transform uav2camera_transform;
   {
     tf2::Quaternion q;
-    tf2::Vector3    origin;
+    tf2::Vector3 origin;
     // camera transformation
     origin.setValue(camera_offset_x, camera_offset_y, camera_offset_z);
     // camera rotation
@@ -151,7 +149,7 @@ int main(int argc, char **argv)
   /** Create publishers and subscribers //{**/
   tf2_ros::Buffer tf_buffer;
   // Initialize transform listener
-  tf2_ros::TransformListener *tf_listener = new tf2_ros::TransformListener(tf_buffer);
+  tf2_ros::TransformListener* tf_listener = new tf2_ros::TransformListener(tf_buffer);
   // Initialize other subs and pubs
   ros::Subscriber depthmap_sub = nh.subscribe("depth_map", 1, depthmap_callback, ros::TransportHints().tcpNoDelay());
   ros::Subscriber dm_cinfo_sub = nh.subscribe("camera_info", 1, dm_cinfo_callback, ros::TransportHints().tcpNoDelay());
@@ -174,148 +172,143 @@ int main(int argc, char **argv)
       new_dm = false;
 
       // Construct a new world to camera transform
-      Eigen::Affine3d w2c_tf;
+      Eigen::Affine3d c2w_tf;
       geometry_msgs::TransformStamped transform;
-      tf2::Transform  world2uav_transform;
-      tf2::Vector3    origin;
+      tf2::Transform world2uav_transform;
+      tf2::Vector3 origin;
       tf2::Quaternion orientation;
       try
       {
-        const ros::Duration timeout(1.0/6.0);
+        const ros::Duration timeout(1.0 / 6.0);
         // Obtain transform from world into uav frame
-        transform = tf_buffer.lookupTransform(
-            uav_frame,
-            world_frame,
-            last_dm_msg.header.stamp,
-            timeout
-            );
+        transform = tf_buffer.lookupTransform(uav_frame, world_frame, last_dm_msg.header.stamp, timeout);
         /* tf2::convert(transform, world2uav_transform); */
-        origin.setValue(
-            transform.transform.translation.x,
-            transform.transform.translation.y,
-            transform.transform.translation.z
-            );
+        origin.setValue(transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z);
 
-       orientation.setX(transform.transform.rotation.x);
-       orientation.setY(transform.transform.rotation.y);
-       orientation.setZ(transform.transform.rotation.z);
-       orientation.setW(transform.transform.rotation.w);
+        orientation.setX(transform.transform.rotation.x);
+        orientation.setY(transform.transform.rotation.y);
+        orientation.setZ(transform.transform.rotation.z);
+        orientation.setW(transform.transform.rotation.w);
 
-       world2uav_transform.setOrigin(origin);
-       world2uav_transform.setRotation(orientation);
+        world2uav_transform.setOrigin(origin);
+        world2uav_transform.setRotation(orientation);
 
-       // Obtain transform from camera frame into world
-       w2c_tf = tf2_to_eigen(uav2camera_transform * world2uav_transform);
-     } catch (tf2::TransformException& ex)
-     {
-       ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", world_frame.c_str(), uav_frame.c_str(), ex.what());
-       continue;
-     }
-     //}
+        // Obtain transform from camera frame into world
+        c2w_tf = tf2_to_eigen(uav2camera_transform * world2uav_transform).inverse();
+      }
+      catch (tf2::TransformException& ex)
+      {
+        ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", world_frame.c_str(), uav_frame.c_str(), ex.what());
+        continue;
+      }
+      //}
 
-     ros::Time cur_t = ros::Time::now();
+      /* ros::Time cur_t = ros::Time::now(); */
 
-     // TODO: create the actual pointcloud?
-     /* cout << last_dm_msg.encoding << std::endl; */
-     /* Vector3d ground_pt1(0, 0, 1); */
-     /* Vector3d ground_pt2(1, 0, 1); */
-     /* Vector3d ground_pt3(0, 1, 1); */
-     /* Vector3d ground_normal(0, 0, 1); */
-     /* double ground_height = 0.0; */
-     /* Hyperplane<double, 3> ground_plane(ground_normal, ground_height); */
-     /* ground_plane.transform(w2c_tf.rotation()); */
-     /* double mean_dist = 0.0; */
-     /* unsigned n_used_px = 0; */
-     /* unsigned n_ground_px = 0; */
-     /* unsigned n_away_px = 0; */
-     /* unsigned n_invalid_px = 0; */
+      // TODO: create the actual pointcloud?
+      /* cout << last_dm_msg.encoding << std::endl; */
+      /* Vector3d ground_pt1(0, 0, 1); */
+      /* Vector3d ground_pt2(1, 0, 1); */
+      /* Vector3d ground_pt3(0, 1, 1); */
+      /* Vector3d ground_normal(0, 0, 1); */
+      /* double ground_height = 0.0; */
+      /* Hyperplane<double, 3> ground_plane(ground_normal, ground_height); */
+      /* ground_plane.transform(w2c_tf.rotation()); */
+      /* double mean_dist = 0.0; */
+      /* unsigned n_used_px = 0; */
+      /* unsigned n_ground_px = 0; */
+      /* unsigned n_away_px = 0; */
+      /* unsigned n_invalid_px = 0; */
 
-     /* uint32_t im_h = last_dm_msg.height; */
-     /* uint32_t im_w = last_dm_msg.width; */
+      /* uint32_t im_h = last_dm_msg.height; */
+      /* uint32_t im_w = last_dm_msg.width; */
 
-     /* /1* Perform masking of the image //{ *1/ */
-     /* for (uint32_t px_it = 0; px_it < im_h*im_w; px_it++) */
-     /* { */
-     /*   uint16_t cur_dist; */
-     /*   uint16_t cur_x = px_it%im_w; */
-     /*   uint16_t cur_y = px_it/im_w; */
-     /*   if (last_dm_msg.is_bigendian) */
-     /*   { */
-     /*     cur_dist = last_dm_msg.data[px_it*2 + 0] << 8 */
-     /*              | last_dm_msg.data[px_it*2 + 1]; */
-     /*   } else */
-     /*   { */
-     /*     cur_dist = last_dm_msg.data[px_it*2 + 0] */
-     /*              | last_dm_msg.data[px_it*2 + 1] << 8; */
-     /*   } */
-     /*   if (cur_dist == 0) */
-     /*   { */
-     /*     last_dm_msg.data[px_it*2 + 0] = last_dm_msg.data[px_it*2 + 1] = 255; */
-     /*     n_invalid_px++; */
-     /*   } else if (cur_dist > max_dist) */
-     /*   { */
-     /*     last_dm_msg.data[px_it*2 + 0] = last_dm_msg.data[px_it*2 + 1] = 255; */
-     /*     n_away_px++; */
-     /*   } else */
-     /*   { */
-     /*     Vector3d cur_pt = calculate_direction_pinhole(cur_x, cur_y)*cur_dist; */
-     /*     double dist_above_ground = ground_plane.signedDistance(cur_pt); */
-     /*     if (dist_above_ground < height_threshold) */
-     /*     { */
-     /*       last_dm_msg.data[px_it*2 + 0] = last_dm_msg.data[px_it*2 + 1] = 255; */
-     /*       n_ground_px++; */
-     /*     } else */
-     /*     { */
-     /*       mean_dist += cur_dist; */
-     /*       n_used_px++; */
-     /*     } */
-     /*   } */
-     /* } */
-     /* mean_dist /= n_used_px; */
-     /* cout << "Mean distance of background: " << mean_dist << std::endl; */
-     /* cout << "number of invalid pixels" << n_invalid_px << std::endl; */
-     /* cout << "number of faraway pixels" << n_away_px << std::endl; */
-     /* cout << "number of ground pixels" << n_ground_px << std::endl; */
-     /* cout << "number of used pixels" << n_used_px << std::endl; */
-     /* //} */
+      /* /1* Perform masking of the image //{ *1/ */
+      /* for (uint32_t px_it = 0; px_it < im_h*im_w; px_it++) */
+      /* { */
+      /*   uint16_t cur_dist; */
+      /*   uint16_t cur_x = px_it%im_w; */
+      /*   uint16_t cur_y = px_it/im_w; */
+      /*   if (last_dm_msg.is_bigendian) */
+      /*   { */
+      /*     cur_dist = last_dm_msg.data[px_it*2 + 0] << 8 */
+      /*              | last_dm_msg.data[px_it*2 + 1]; */
+      /*   } else */
+      /*   { */
+      /*     cur_dist = last_dm_msg.data[px_it*2 + 0] */
+      /*              | last_dm_msg.data[px_it*2 + 1] << 8; */
+      /*   } */
+      /*   if (cur_dist == 0) */
+      /*   { */
+      /*     last_dm_msg.data[px_it*2 + 0] = last_dm_msg.data[px_it*2 + 1] = 255; */
+      /*     n_invalid_px++; */
+      /*   } else if (cur_dist > max_dist) */
+      /*   { */
+      /*     last_dm_msg.data[px_it*2 + 0] = last_dm_msg.data[px_it*2 + 1] = 255; */
+      /*     n_away_px++; */
+      /*   } else */
+      /*   { */
+      /*     Vector3d cur_pt = calculate_direction_pinhole(cur_x, cur_y)*cur_dist; */
+      /*     double dist_above_ground = ground_plane.signedDistance(cur_pt); */
+      /*     if (dist_above_ground < height_threshold) */
+      /*     { */
+      /*       last_dm_msg.data[px_it*2 + 0] = last_dm_msg.data[px_it*2 + 1] = 255; */
+      /*       n_ground_px++; */
+      /*     } else */
+      /*     { */
+      /*       mean_dist += cur_dist; */
+      /*       n_used_px++; */
+      /*     } */
+      /*   } */
+      /* } */
+      /* mean_dist /= n_used_px; */
+      /* cout << "Mean distance of background: " << mean_dist << std::endl; */
+      /* cout << "number of invalid pixels" << n_invalid_px << std::endl; */
+      /* cout << "number of faraway pixels" << n_away_px << std::endl; */
+      /* cout << "number of ground pixels" << n_ground_px << std::endl; */
+      /* cout << "number of used pixels" << n_used_px << std::endl; */
+      /* //} */
 
-     /* /1* Visualize the result //{ *1/ */
-     /* for (uint32_t px_it = 0; px_it < im_h*im_w; px_it++) */
-     /* { */
-     /*   uint16_t cur_dist; */
-     /*   if (last_dm_msg.is_bigendian) */
-     /*   { */
-     /*     cur_dist = last_dm_msg.data[px_it*2 + 0] << 8 */
-     /*              | last_dm_msg.data[px_it*2 + 1]; */
-     /*   } else */
-     /*   { */
-     /*     cur_dist = last_dm_msg.data[px_it*2 + 0] */
-     /*              | last_dm_msg.data[px_it*2 + 1] << 8; */
-     /*   } */
-     /*   /1* if (px_it == 0) *1/ */
-     /*   /1*   cout << "topleft pixel: " << cur_px << std::endl; *1/ */
-     /*   if (cur_dist < mean_dist - bg_dist) */
-     /*     last_dm_msg.data[px_it*2 + 0] = last_dm_msg.data[px_it*2 + 1] = 0; */
-     /*   else */
-     /*     last_dm_msg.data[px_it*2 + 0] = last_dm_msg.data[px_it*2 + 1] = 255; */
-     /* } */
-     /* //} */
+      /* /1* Visualize the result //{ *1/ */
+      /* for (uint32_t px_it = 0; px_it < im_h*im_w; px_it++) */
+      /* { */
+      /*   uint16_t cur_dist; */
+      /*   if (last_dm_msg.is_bigendian) */
+      /*   { */
+      /*     cur_dist = last_dm_msg.data[px_it*2 + 0] << 8 */
+      /*              | last_dm_msg.data[px_it*2 + 1]; */
+      /*   } else */
+      /*   { */
+      /*     cur_dist = last_dm_msg.data[px_it*2 + 0] */
+      /*              | last_dm_msg.data[px_it*2 + 1] << 8; */
+      /*   } */
+      /*   /1* if (px_it == 0) *1/ */
+      /*   /1*   cout << "topleft pixel: " << cur_px << std::endl; *1/ */
+      /*   if (cur_dist < mean_dist - bg_dist) */
+      /*     last_dm_msg.data[px_it*2 + 0] = last_dm_msg.data[px_it*2 + 1] = 0; */
+      /*   else */
+      /*     last_dm_msg.data[px_it*2 + 0] = last_dm_msg.data[px_it*2 + 1] = 255; */
+      /* } */
+      /* //} */
 
-     /* Use OpenCV SimpleBlobDetector to find blobs //{ */
-     vector<KeyPoint> keypoints;
-     /* cv::Mat out_img(im_h, im_w, CV_16UC1); */
-     cv_bridge::CvImage out_img;
-     /* out_img.image = cv::Mat(im_h, im_w, CV_16UC1); */
-     out_img = *cv_bridge::toCvCopy(last_dm_msg, string("16UC1"));
-     cv::Mat tmp(out_img.image.size(), CV_8UC1);
-     out_img.image.convertTo(tmp, CV_8UC1, 255.0/max_dist);
-     out_img.image = tmp;
-     out_img.encoding = string("8UC1");
+      /* Use OpenCV SimpleBlobDetector to find blobs //{ */
+      vector<KeyPoint> keypoints;
+      /* cv::Mat out_img(im_h, im_w, CV_16UC1); */
+      cv_bridge::CvImage out_img;
+      /* out_img.image = cv::Mat(im_h, im_w, CV_16UC1); */
+      out_img = *cv_bridge::toCvCopy(last_dm_msg, string("16UC1"));
+      cv::Mat detect_im(out_img.image.size(), CV_8UC1);
+      out_img.image.convertTo(detect_im, CV_8UC1, 255.0 / max_dist / 1000);
+      // output debug image
+      cv::Mat tmp;
+      out_img.image.convertTo(tmp, CV_8UC1, 255.0 / max_dist / 1000);
+      cv::cvtColor(tmp, out_img.image, COLOR_GRAY2BGR);
+      out_img.encoding = string("bgr8");
       SimpleBlobDetector::Params params;
 
       // Filter by color thresholds
       params.filterByColor = blob_filter_by_color;
-      params.minThreshold = min_dist*255.0/max_dist;
+      params.minThreshold = min_dist * 255.0 / max_dist;
       params.maxThreshold = 254.0;
       // Filter by area.
       params.filterByArea = blob_filter_by_area;
@@ -339,26 +332,39 @@ int main(int argc, char **argv)
       params.minRepeatability = blob_min_repeatability;
 
       auto detector = SimpleBlobDetector::create(params);
-      detector->detect(out_img.image, keypoints);
+      detector->detect(detect_im, keypoints);
 
-     cv::drawKeypoints(out_img.image, keypoints, out_img.image, Scalar(255), DrawMatchesFlags::DRAW_OVER_OUTIMG);
-     /* cv::circle(out_img.image, Point(im_h/2, 100), 50, Scalar(255), 10); */
-     cout << "Number of keypoints: " << keypoints.size() << std::endl;
+      /* cv::drawKeypoints(out_img.image, keypoints, out_img.image, Scalar(0, 0, 255), DrawMatchesFlags::DRAW_OVER_OUTIMG); */
+      for (const auto& kpt : keypoints)
+      {
+        uint8_t dist = detect_im.at<uint8_t>(kpt.pt);
+        if (dist > min_dist * 255.0 / max_dist && dist < 253)
+        {
+          Eigen::Vector3d pt3d = calculate_direction_pinhole(kpt.pt.x, kpt.pt.y);
+          pt3d *= dist;
+          pt3d = c2w_tf*pt3d;
+          if (pt3d(2) > 2.0)
+            cv::circle(out_img.image, kpt.pt, kpt.size, cv::Scalar(0, 0, 255), 3, 8, 0);
+        }
+        /* else */
+        /*   cv::circle(out_img.image, kpt.pt, kpt.size, cv::Scalar(255, 0, 0), 3, 8, 0); */
+      }
+      /* cv::circle(out_img.image, Point(im_h/2, 100), 50, Scalar(255), 10); */
+      cout << "Number of keypoints: " << keypoints.size() << std::endl;
 
-     //}
+      //}
 
-     // Finally publish the message
-     sensor_msgs::ImagePtr out_msg = out_img.toImageMsg();
-     out_msg->header = last_dm_msg.header;
-     /* cout << "New encoding: " << out_msg->encoding << std::endl; */
-     thresholded_pub.publish(out_msg);
+      // Finally publish the message
+      sensor_msgs::ImagePtr out_msg = out_img.toImageMsg();
+      out_msg->header = last_dm_msg.header;
+      /* cout << "New encoding: " << out_msg->encoding << std::endl; */
+      thresholded_pub.publish(out_msg);
 
       cout << "Image processed" << std::endl;
     } else
     {
       r.sleep();
     }
-
   }
   delete tf_listener;
 }

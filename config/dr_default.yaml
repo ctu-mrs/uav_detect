@@ -1,0 +1,64 @@
+!!python/object/new:dynamic_reconfigure.encoding.Config
+dictitems:
+  blob_filter_by_area: true
+  blob_filter_by_circularity: true
+  blob_filter_by_color: true
+  blob_filter_by_convexity: true
+  blob_filter_by_inertia: true
+  blob_max_area: 10000.0
+  blob_max_circularity: 0.65
+  blob_max_convexity: 1.0
+  blob_max_inertia_ratio: 0.23
+  blob_min_area: 400.0
+  blob_min_circularity: 0.21
+  blob_min_convexity: 0.46
+  blob_min_dist_between: 10.0
+  blob_min_inertia_ratio: 0.0
+  blob_min_repeatability: 4
+  blob_threshold_step: 10.0
+  groups: !!python/object/new:dynamic_reconfigure.encoding.Config
+    dictitems:
+      groups: !!python/object/new:dynamic_reconfigure.encoding.Config
+        dictitems:
+          Params: !!python/object/new:dynamic_reconfigure.encoding.Config
+            dictitems:
+              blob_filter_by_area: true
+              blob_filter_by_circularity: true
+              blob_filter_by_color: true
+              blob_filter_by_convexity: true
+              blob_filter_by_inertia: true
+              blob_max_area: 10000.0
+              blob_max_circularity: 0.65
+              blob_max_convexity: 1.0
+              blob_max_inertia_ratio: 0.23
+              blob_min_area: 400.0
+              blob_min_circularity: 0.21
+              blob_min_convexity: 0.46
+              blob_min_dist_between: 10.0
+              blob_min_inertia_ratio: 0.0
+              blob_min_repeatability: 4
+              blob_threshold_step: 10.0
+              groups: !!python/object/new:dynamic_reconfigure.encoding.Config
+                state: []
+              id: 1
+              max_dist: 15.0
+              min_dist: 2.0
+              name: Params
+              parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
+                state: []
+              parent: 0
+              state: true
+              type: ''
+            state: []
+        state: []
+      id: 0
+      name: Default
+      parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
+        state: []
+      parent: 0
+      state: true
+      type: ''
+    state: []
+  max_dist: 15.0
+  min_dist: 2.0
+state: []
