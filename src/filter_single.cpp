@@ -335,6 +335,9 @@ int main(int argc, char** argv)
       detector->detect(detect_im, keypoints);
 
       /* cv::drawKeypoints(out_img.image, keypoints, out_img.image, Scalar(0, 0, 255), DrawMatchesFlags::DRAW_OVER_OUTIMG); */
+      int potential = 0;
+      int unsure = 0;
+      int sure = 0;
       for (const auto& kpt : keypoints)
       {
         uint8_t dist = detect_im.at<uint8_t>(kpt.pt);
@@ -343,12 +346,24 @@ int main(int argc, char** argv)
           Eigen::Vector3d pt3d = calculate_direction_pinhole(kpt.pt.x, kpt.pt.y);
           pt3d *= dist;
           pt3d = c2w_tf*pt3d;
-          if (pt3d(2) > 2.0)
+          if (pt3d(2) > 0.5)
+          {
+            sure++;
             cv::circle(out_img.image, kpt.pt, kpt.size, cv::Scalar(0, 0, 255), 3, 8, 0);
+          } else
+          {
+            unsure++;
+            cv::circle(out_img.image, kpt.pt, kpt.size, cv::Scalar(0, 255, 0), 3, 8, 0);
+          }
+        } else
+        {
+          potential++;
+          cv::circle(out_img.image, kpt.pt, kpt.size, cv::Scalar(255, 0, 0), 3, 8, 0);
         }
-        /* else */
-        /*   cv::circle(out_img.image, kpt.pt, kpt.size, cv::Scalar(255, 0, 0), 3, 8, 0); */
       }
+      cv::putText(out_img.image, string("potential: ") + to_string(potential), Point(0, 40), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(255, 0, 0), 3);
+      cv::putText(out_img.image, string("unsure: ") + to_string(unsure), Point(0, 80), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(0, 255, 0), 3);
+      cv::putText(out_img.image, string("sure: ") + to_string(sure), Point(0, 120), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(0, 0, 255), 3);
       /* cv::circle(out_img.image, Point(im_h/2, 100), 50, Scalar(255), 10); */
       cout << "Number of keypoints: " << keypoints.size() << std::endl;
 
