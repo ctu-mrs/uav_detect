@@ -1,5 +1,5 @@
 # frame names
-uav_frame: 'fcu_uav5'
+uav_frame: 'fcu_uav'
 use_ocam: true
 
 ############### Camera parameters (for top-mounted Mobius cam) ###############
