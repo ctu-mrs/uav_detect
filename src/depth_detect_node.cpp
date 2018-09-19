@@ -1,4 +1,5 @@
 #include "main.h"
+#include "DepthBlobDetector.h"
 
 using namespace cv;
 using namespace std;
@@ -33,9 +34,10 @@ void dm_cinfo_callback(const sensor_msgs::CameraInfo& dm_cinfo_msg)
   }
 }
 
-double get_height(const Eigen::Affine3d& c2w_tf, uint16_t px_x, uint16_t px_y, double depth_m)
+double get_height(const Eigen::Vector3d& c2w_z, uint16_t px_x, uint16_t px_y, double depth_m)
 {
-
+  Eigen::Vector3d pos((px_x-d_cx)/d_fx*depth_m, (px_y-d_cy)/d_fy*depth_m, depth_m);
+  return c2w_z.dot(pos);
 }
 
 // shortcut type to the dynamic reconfigure manager template instance
@@ -146,9 +148,10 @@ int main(int argc, char** argv)
     /* if (new_dm) */
     if (new_dm && got_dm_cinfo)
     {
+      cout << "Processsing image" << std::endl;
       new_dm = false;
 
-      // Construct a new world to camera transform
+      // Construct a new world to camera transform //{
       Eigen::Affine3d c2w_tf;
       geometry_msgs::TransformStamped transform;
       tf2::Transform world2uav_transform;
@@ -189,46 +192,36 @@ int main(int argc, char** argv)
       cv::inRange(out_img.image, min_dist*1000, max_dist*1000, tmp);
       cv::cvtColor(tmp, out_img.image, COLOR_GRAY2BGR);
       out_img.encoding = string("bgr8");
-      /* cv::Mat detect_im(out_img.image.size(), CV_8UC1); */
-      /* // output debug image */
-      /* cv::Mat tmp; */
-      /* out_img.image.convertTo(tmp, CV_8UC1, 255.0 / max_dist / 1000); */
-      /* cv::cvtColor(tmp, out_img.image, COLOR_GRAY2BGR); */
-      /* out_img.encoding = string("bgr8"); */
+      cv::Mat detect_im(out_img.image.size(), CV_8UC1);
       //}
 
-      /* /1* Use OpenCV SimpleBlobDetector to find blobs //{ *1/ */
-      /* vector<KeyPoint> keypoints; */
-      /* SimpleBlobDetector::Params params; */
-      /* // Filter by color thresholds */
-      /* params.filterByColor = blob_filter_by_color; */
-      /* params.minThreshold = min_dist * 255.0 / max_dist; */
-      /* params.maxThreshold = 254.0; */
-      /* // Filter by area. */
-      /* params.filterByArea = blob_filter_by_area; */
-      /* params.minArea = blob_min_area; */
-      /* params.maxArea = blob_max_area; */
-      /* // Filter by circularity */
-      /* params.filterByCircularity = blob_filter_by_circularity; */
-      /* params.minCircularity = blob_min_circularity; */
-      /* params.maxCircularity = blob_max_circularity; */
-      /* // Filter by convexity */
-      /* params.filterByConvexity = blob_filter_by_convexity; */
-      /* params.minConvexity = blob_min_convexity; */
-      /* params.maxConvexity = blob_max_convexity; */
-      /* // Filter by inertia */
-      /* params.filterByInertia = blob_filter_by_inertia; */
-      /* params.minInertiaRatio = blob_min_inertia_ratio; */
-      /* params.maxInertiaRatio = blob_max_inertia_ratio; */
-      /* // Other filtering criterions */
-      /* params.minDistBetweenBlobs = blob_min_dist_between; */
-      /* params.thresholdStep = blob_threshold_step; */
-      /* params.minRepeatability = blob_min_repeatability; */
+      /* Use OpenCV SimpleBlobDetector to find blobs //{ */
+      vector<KeyPoint> keypoints;
+      dbd::Params params;
+      params.filter_by_color = false;
+      /* params.color = min_dist * 255.0 / max_dist; */
+      params.filter_by_area = blob_filter_by_area;
+      params.min_area = blob_min_area;
+      params.max_area = blob_max_area;
+      params.filter_by_circularity = blob_filter_by_circularity;
+      params.min_circularity = blob_min_circularity;
+      params.max_circularity = blob_max_circularity;
+      params.filter_by_convexity = blob_filter_by_convexity;
+      params.min_convexity = blob_min_convexity;
+      params.max_convexity = blob_max_convexity;
+      params.filter_by_inertia = blob_filter_by_inertia;
+      params.min_inertia_ratio = blob_min_inertia_ratio;
+      params.max_inertia_ratio = blob_max_inertia_ratio;
+      params.min_threshold = 1;
+      params.max_threshold = min_dist * 255.0 / max_dist;
+      params.threshold_step = blob_threshold_step;
+      params.min_repeatability = blob_min_repeatability;
+      params.min_dist_between = blob_min_dist_between;
 
-      /* auto detector = SimpleBlobDetector::create(params); */
-      /* detector->detect(detect_im, keypoints); */
+      dbd::DepthBlobDetector detector(params);
+      detector.detect(detect_im, keypoints);
 
-      /* /1* cv::drawKeypoints(out_img.image, keypoints, out_img.image, Scalar(0, 0, 255), DrawMatchesFlags::DRAW_OVER_OUTIMG); *1/ */
+      /* cv::drawKeypoints(out_img.image, keypoints, out_img.image, Scalar(0, 0, 255), DrawMatchesFlags::DRAW_OVER_OUTIMG); */
       /* int potential = 0; */
       /* int unsure = 0; */
       /* int sure = 0; */
@@ -237,10 +230,8 @@ int main(int argc, char** argv)
       /*   uint8_t dist = detect_im.at<uint8_t>(kpt.pt); */
       /*   if (dist > min_dist * 255.0 / max_dist && dist < 253) */
       /*   { */
-      /*     Eigen::Vector3d pt3d = calculate_direction_pinhole(kpt.pt.x, kpt.pt.y); */
-      /*     pt3d *= dist; */
-      /*     pt3d = c2w_tf*pt3d; */
-      /*     if (pt3d(2) > 0.5) */
+             /* double height = get_height(c2w_z, kpt.pt.x, kpt.pt.y, dist); */
+      /*     if (height > 0.5) */
       /*     { */
       /*       sure++; */
       /*       cv::circle(out_img.image, kpt.pt, kpt.size, cv::Scalar(0, 0, 255), 3, 8, 0); */
@@ -261,7 +252,7 @@ int main(int argc, char** argv)
       /* /1* cv::circle(out_img.image, Point(im_h/2, 100), 50, Scalar(255), 10); *1/ */
       /* cout << "Number of keypoints: " << keypoints.size() << std::endl; */
 
-      /* //} */
+      //}
 
       // Finally publish the message
       sensor_msgs::ImagePtr out_msg = out_img.toImageMsg();

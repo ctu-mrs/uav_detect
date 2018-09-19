@@ -4,7 +4,7 @@
 
   <group ns="$(arg uav_name)">
     
-    <node pkg="uav_detect" name="uav_detection" type="filter_single" output="screen" >
+    <node pkg="uav_detect" name="uav_detection" type="depth_detect_node" output="screen">
       
       <rosparam file="$(find uav_detect)/config/filter_single.yaml" />
       <param name="uav_name" value="$(arg uav_name)" />
