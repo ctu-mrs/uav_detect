@@ -40,6 +40,7 @@ struct Params
   uint16_t min_threshold;
   uint16_t max_threshold;
   uint16_t threshold_step;
+  bool use_threshold_width;
   uint16_t threshold_width;
   uint16_t min_repeatability;
   // Other filtering criterions
@@ -50,7 +51,7 @@ class DepthBlobDetector
 {
   public:
     DepthBlobDetector(const Params& parameters);
-    void detect(cv::Mat image, std::vector<Blob>& blobs, cv::Mat mask = cv::Mat());
+    void detect(cv::Mat image, std::vector<Blob>& ret_blobs);
 
   private:
     void findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Blob>& blobs) const;

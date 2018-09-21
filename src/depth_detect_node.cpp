@@ -77,11 +77,17 @@ int main(int argc, char** argv)
   /* double camera_delay = load_param<double>(nh, "camera_delay");; */
   // LOAD DYNAMIC PARAMETERS
   drmgr_t drmgr;
+  // Load the image preprocessing parameters
+  int& dilate_iterations = drmgr.config.dilate_iterations;
+  int& erode_iterations = drmgr.config.erode_iterations;
+  int& gaussianblur_size = drmgr.config.gaussianblur_size;
+  int& medianblur_size = drmgr.config.medianblur_size;
   // Load the detection parameters
   // Filter by color
   bool& blob_filter_by_color = drmgr.config.blob_filter_by_color;
   int& min_depth = drmgr.config.min_depth;
   int& max_depth = drmgr.config.max_depth;
+  bool& use_threshold_width = drmgr.config.use_threshold_width;
   int& blob_threshold_step = drmgr.config.blob_threshold_step;
   int& blob_threshold_width = drmgr.config.blob_threshold_width;
   // Filter by area
@@ -190,8 +196,27 @@ int main(int argc, char** argv)
       // create the detection image
       cv::Mat detect_im = dbg_img.image;
 
+      // dilate and erode the image if requested
+      {
+        cv::Mat element = cv::getStructuringElement(MORPH_RECT, Size(5, 5), Point(-1, -1));
+        cv::dilate(detect_im, detect_im, element, Point(-1, -1), dilate_iterations);
+        cv::erode(detect_im, detect_im, element, Point(-1, -1), erode_iterations);
+      }
+      // blur it if requested
+      if (gaussianblur_size % 2 == 1)
+      {
+        cv::GaussianBlur(detect_im, detect_im, cv::Size(gaussianblur_size, gaussianblur_size), 0);
+      }
+      // blur it if requested
+      if (medianblur_size % 2 == 1)
+      {
+        cv::medianBlur(detect_im, detect_im, medianblur_size);
+      }
+
       // convert the output image from grayscale to color to enable colorful drawing
+      cout << "dbg_img type: " << dbg_img.image.type() << endl;
       cv::cvtColor(detect_im, dbg_img.image, COLOR_GRAY2BGR);
+      cout << "dbg_img type: " << dbg_img.image.type() << endl;
       dbg_img.encoding = string("bgr16");
 
       //}
@@ -217,6 +242,7 @@ int main(int argc, char** argv)
       params.max_threshold = max_depth;
       params.min_depth = min_depth;
       params.max_depth = max_depth;
+      params.use_threshold_width = use_threshold_width;
       params.threshold_step = blob_threshold_step;
       params.threshold_width = blob_threshold_width;
       params.min_repeatability = blob_min_repeatability;
@@ -234,7 +260,7 @@ int main(int argc, char** argv)
       for (const auto& blob : blobs)
       {
         sure++;
-        cv::circle(dbg_img.image, blob.location, blob.radius, cv::Scalar(0, 0, 255), 3, 8, 0);
+        cv::circle(dbg_img.image, blob.location, blob.radius, cv::Scalar(0, 0, 65535), 3, 8, 0);
         /* double depth = blob.avg_depth; */
         /* if (depth > min_dist * 255.0 / max_dist && dist < 253) */
         /* { */
@@ -262,6 +288,8 @@ int main(int argc, char** argv)
 
       //}
 
+      imshow("found_blobs", dbg_img.image);
+      waitKey(1);
       sensor_msgs::ImagePtr out_msg = dbg_img.toImageMsg();
       cout << out_msg->encoding;
       thresholded_pub.publish(out_msg);

@@ -1,5 +1,5 @@
 #include "DepthBlobDetector.h"
-#define DEBUG_BLOB_DETECTOR
+/* #define DEBUG_BLOB_DETECTOR */
 
 using namespace cv;
 using namespace std;
@@ -80,14 +80,10 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vecto
             blob.confidence = ratio * ratio;
         }
 
-        std::vector < Point > hull;
-        if (params.filter_by_convexity || params.filter_by_color)
-        {
-            convexHull(Mat(contours[contourIdx]), hull);
-        }
-
         if (params.filter_by_convexity)
         {
+            std::vector < Point > hull;
+            convexHull(Mat(contours[contourIdx]), hull);
             double area = contourArea(Mat(contours[contourIdx]));
             double hullArea = contourArea(Mat(hull));
             if (fabs(hullArea) < DBL_EPSILON)
@@ -101,13 +97,23 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vecto
         if (params.filter_by_color)
         {
           double avg_color = 0;
-          for (const Point& pt : hull)
+          /* Mat mask; */
+          /* drawContours(mask, contours, contourIdx, Scalar(1), CV_FILLED, LINE_4); */
+          /* cout << mask.type(); */
+          /* avg_color = mean(image, mask)[0]; */
+          for (const Point& pt : contours[contourIdx])
           {
             avg_color += image.at<uint16_t>(pt);
           }
           avg_color = avg_color/contours[contourIdx].size();
+
           if (avg_color < params.min_depth || avg_color > params.max_depth)
             continue;
+
+#ifdef DEBUG_BLOB_DETECTOR
+          drawContours(keypointsImage, contours, contourIdx, Scalar(0, avg_color*255.0/params.max_depth, 0), CV_FILLED, LINE_4);
+#endif
+
           blob.avg_depth = avg_color/1000.0;
         }
 
@@ -144,7 +150,7 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vecto
 
 /* method void DepthBlobDetector::detect(cv::Mat image, std::vector<cv::KeyPoint>& keypoints, cv::Mat mask) //{ */
 /* inspired by https://github.com/opencv/opencv/blob/3.4/modules/features2d/src/blobdetector.cpp */
-void DepthBlobDetector::detect(cv::Mat image, std::vector<Blob>& ret_blobs, cv::Mat mask)
+void DepthBlobDetector::detect(cv::Mat image, std::vector<Blob>& ret_blobs)
 {
     ret_blobs.clear();
     assert(params.min_repeatability != 0);
@@ -160,13 +166,19 @@ void DepthBlobDetector::detect(cv::Mat image, std::vector<Blob>& ret_blobs, cv::
     }
 
     std::vector < std::vector<Blob> > blobs;
-    for (double thresh = params.min_threshold+params.threshold_width; thresh < params.max_threshold; thresh += params.threshold_step)
+    uint16_t thresh_start = params.min_threshold;
+    if (params.use_threshold_width)
+      thresh_start = params.min_threshold + params.threshold_width;
+    for (uint16_t thresh = thresh_start; thresh < params.max_threshold; thresh += params.threshold_step)
     {
         Mat binarizedImage;
 #ifdef DEBUG_BLOB_DETECTOR
-        ROS_INFO("[%s]: using threshold %.1f", ros::this_node::getName().c_str(), thresh);
+        ROS_INFO("[%s]: using threshold %u", ros::this_node::getName().c_str(), thresh);
 #endif
-        inRange(grayscaleImage, thresh-params.threshold_width, thresh, binarizedImage);
+        if (params.use_threshold_width)
+          inRange(grayscaleImage, thresh-params.threshold_width, thresh, binarizedImage);
+        else
+          inRange(grayscaleImage, params.min_depth, thresh, binarizedImage);
 
 #ifdef DEBUG_BLOB_DETECTOR
         cur_depth = (thresh + params.threshold_width)/1000.0;
