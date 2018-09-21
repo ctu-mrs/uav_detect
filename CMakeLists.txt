@@ -8,7 +8,6 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
   nav_msgs
-  mavros_msgs
   sensor_msgs
   dynamic_reconfigure
   cv_bridge
@@ -25,7 +24,7 @@ find_package(catkin REQUIRED COMPONENTS
   mrs_lib
 )
 
-set(CMAKE_CXX_FLAGS "-std=c++17 -Wall -O2")
+set(CMAKE_CXX_FLAGS "-std=c++17 -Wall -g -O0")
 
 find_package(OpenCV REQUIRED)
 

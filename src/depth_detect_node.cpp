@@ -80,12 +80,14 @@ int main(int argc, char** argv)
   // Load the detection parameters
   // Filter by color
   bool& blob_filter_by_color = drmgr.config.blob_filter_by_color;
-  double& min_dist = drmgr.config.min_dist;
-  double& max_dist = drmgr.config.max_dist;
+  int& min_depth = drmgr.config.min_depth;
+  int& max_depth = drmgr.config.max_depth;
+  int& blob_threshold_step = drmgr.config.blob_threshold_step;
+  int& blob_threshold_width = drmgr.config.blob_threshold_width;
   // Filter by area
   bool& blob_filter_by_area = drmgr.config.blob_filter_by_area;
-  double& blob_min_area = drmgr.config.blob_min_area;
-  double& blob_max_area = drmgr.config.blob_max_area;
+  int& blob_min_area = drmgr.config.blob_min_area;
+  int& blob_max_area = drmgr.config.blob_max_area;
   // Filter by circularity
   bool& blob_filter_by_circularity = drmgr.config.blob_filter_by_circularity;
   double& blob_min_circularity = drmgr.config.blob_min_circularity;
@@ -100,7 +102,6 @@ int main(int argc, char** argv)
   double& blob_max_inertia_ratio = drmgr.config.blob_max_inertia_ratio;
   // Other filtering criterions
   double& blob_min_dist_between = drmgr.config.blob_min_dist_between;
-  double& blob_threshold_step = drmgr.config.blob_threshold_step;
   int& blob_min_repeatability = drmgr.config.blob_min_repeatability;
 
   if (!pl.loaded_successfully())
@@ -184,21 +185,21 @@ int main(int argc, char** argv)
       //}
 
       /* Prepare the image for detection //{ */
-      /* cv::Mat out_img(im_h, im_w, CV_16UC1); */
-      cv_bridge::CvImage out_img;
-      /* out_img.image = cv::Mat(im_h, im_w, CV_16UC1); */
-      out_img = *cv_bridge::toCvCopy(last_dm_msg, string("16UC1"));
-      cv::Mat tmp;
-      cv::inRange(out_img.image, min_dist*1000, max_dist*1000, tmp);
-      cv::cvtColor(tmp, out_img.image, COLOR_GRAY2BGR);
-      out_img.encoding = string("bgr8");
-      cv::Mat detect_im(out_img.image.size(), CV_8UC1);
+      cv_bridge::CvImage dbg_img;
+      dbg_img = *cv_bridge::toCvCopy(last_dm_msg, string("16UC1"));
+      // create the detection image
+      cv::Mat detect_im = dbg_img.image;
+
+      // convert the output image from grayscale to color to enable colorful drawing
+      cv::cvtColor(detect_im, dbg_img.image, COLOR_GRAY2BGR);
+      dbg_img.encoding = string("bgr16");
+
       //}
 
       /* Use OpenCV SimpleBlobDetector to find blobs //{ */
-      vector<KeyPoint> keypoints;
+      vector<dbd::Blob> blobs;
       dbd::Params params;
-      params.filter_by_color = false;
+      params.filter_by_color = blob_filter_by_color;
       /* params.color = min_dist * 255.0 / max_dist; */
       params.filter_by_area = blob_filter_by_area;
       params.min_area = blob_min_area;
@@ -212,52 +213,57 @@ int main(int argc, char** argv)
       params.filter_by_inertia = blob_filter_by_inertia;
       params.min_inertia_ratio = blob_min_inertia_ratio;
       params.max_inertia_ratio = blob_max_inertia_ratio;
-      params.min_threshold = 1;
-      params.max_threshold = min_dist * 255.0 / max_dist;
+      params.min_threshold = min_depth;
+      params.max_threshold = max_depth;
+      params.min_depth = min_depth;
+      params.max_depth = max_depth;
       params.threshold_step = blob_threshold_step;
+      params.threshold_width = blob_threshold_width;
       params.min_repeatability = blob_min_repeatability;
       params.min_dist_between = blob_min_dist_between;
 
       dbd::DepthBlobDetector detector(params);
-      detector.detect(detect_im, keypoints);
+      ROS_INFO("[%s]: Starting Blob detector", ros::this_node::getName().c_str());
+      detector.detect(detect_im, blobs);
+      ROS_INFO("[%s]: Blob detector finished", ros::this_node::getName().c_str());
 
-      /* cv::drawKeypoints(out_img.image, keypoints, out_img.image, Scalar(0, 0, 255), DrawMatchesFlags::DRAW_OVER_OUTIMG); */
+      /* cv::drawKeypoints(dbg_img.image, blobs, dbg_img.image, Scalar(0, 0, 255), DrawMatchesFlags::DRAW_OVER_OUTIMG); */
       /* int potential = 0; */
       /* int unsure = 0; */
-      /* int sure = 0; */
-      /* for (const auto& kpt : keypoints) */
-      /* { */
-      /*   uint8_t dist = detect_im.at<uint8_t>(kpt.pt); */
-      /*   if (dist > min_dist * 255.0 / max_dist && dist < 253) */
-      /*   { */
-             /* double height = get_height(c2w_z, kpt.pt.x, kpt.pt.y, dist); */
-      /*     if (height > 0.5) */
-      /*     { */
-      /*       sure++; */
-      /*       cv::circle(out_img.image, kpt.pt, kpt.size, cv::Scalar(0, 0, 255), 3, 8, 0); */
-      /*     } else */
-      /*     { */
-      /*       unsure++; */
-      /*       cv::circle(out_img.image, kpt.pt, kpt.size, cv::Scalar(0, 255, 0), 3, 8, 0); */
-      /*     } */
-      /*   } else */
-      /*   { */
-      /*     potential++; */
-      /*     cv::circle(out_img.image, kpt.pt, kpt.size, cv::Scalar(255, 0, 0), 3, 8, 0); */
-      /*   } */
-      /* } */
-      /* cv::putText(out_img.image, string("potential: ") + to_string(potential), Point(0, 40), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(255, 0, 0), 3); */
-      /* cv::putText(out_img.image, string("unsure: ") + to_string(unsure), Point(0, 80), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(0, 255, 0), 3); */
-      /* cv::putText(out_img.image, string("sure: ") + to_string(sure), Point(0, 120), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(0, 0, 255), 3); */
-      /* /1* cv::circle(out_img.image, Point(im_h/2, 100), 50, Scalar(255), 10); *1/ */
-      /* cout << "Number of keypoints: " << keypoints.size() << std::endl; */
+      int sure = 0;
+      for (const auto& blob : blobs)
+      {
+        sure++;
+        cv::circle(dbg_img.image, blob.location, blob.radius, cv::Scalar(0, 0, 255), 3, 8, 0);
+        /* double depth = blob.avg_depth; */
+        /* if (depth > min_dist * 255.0 / max_dist && dist < 253) */
+        /* { */
+        /*   double height = get_height(c2w_z, kpt.pt.x, kpt.pt.y, dist); */
+        /*   if (height > 0.5) */
+        /*   { */
+        /*     sure++; */
+        /*     cv::circle(dbg_img.image, kpt.pt, kpt.size, cv::Scalar(0, 0, 255), 3, 8, 0); */
+        /*   } else */
+        /*   { */
+        /*     unsure++; */
+        /*     cv::circle(dbg_img.image, kpt.pt, kpt.size, cv::Scalar(0, 255, 0), 3, 8, 0); */
+        /*   } */
+        /* } else */
+        /* { */
+        /*   potential++; */
+        /*   cv::circle(dbg_img.image, kpt.pt, kpt.size, cv::Scalar(255, 0, 0), 3, 8, 0); */
+        /* } */
+      }
+      /* cv::putText(dbg_img.image, string("potential: ") + to_string(potential), Point(0, 40), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(255, 0, 0), 3); */
+      /* cv::putText(dbg_img.image, string("unsure: ") + to_string(unsure), Point(0, 80), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(0, 255, 0), 3); */
+      cv::putText(dbg_img.image, string("sure: ") + to_string(sure), Point(0, 120), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(0, 0, 255), 3);
+      /* cv::circle(dbg_img.image, Point(im_h/2, 100), 50, Scalar(255), 10); */
+      cout << "Number of blobs: " << blobs.size() << std::endl;
 
       //}
 
-      // Finally publish the message
-      sensor_msgs::ImagePtr out_msg = out_img.toImageMsg();
-      out_msg->header = last_dm_msg.header;
-      /* cout << "New encoding: " << out_msg->encoding << std::endl; */
+      sensor_msgs::ImagePtr out_msg = dbg_img.toImageMsg();
+      cout << out_msg->encoding;
       thresholded_pub.publish(out_msg);
 
       cout << "Image processed" << std::endl;

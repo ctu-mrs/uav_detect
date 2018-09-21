@@ -1,4 +1,5 @@
 #include "DepthBlobDetector.h"
+#define DEBUG_BLOB_DETECTOR
 
 using namespace cv;
 using namespace std;
@@ -9,30 +10,32 @@ DepthBlobDetector::DepthBlobDetector(const Params& parameters)
   params = parameters;
 }
 
-/* method void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Center>& centers) const //{ */
+#ifdef DEBUG_BLOB_DETECTOR
+double cur_depth;
+#endif
+
+/* method void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Blob>& blobs) const //{ */
 /* inspired by https://github.com/opencv/opencv/blob/3.4/modules/features2d/src/blobdetector.cpp */
-void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Center>& centers) const
+void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Blob>& blobs) const
 {
-    centers.clear();
+    blobs.clear();
 
     std::vector < std::vector<Point> > contours;
-    Mat tmpBinaryImage = binaryImage.clone();
-    findContours(tmpBinaryImage, contours, RETR_LIST, CHAIN_APPROX_NONE);
+    /* findContours(tmpBinaryImage, contours, RETR_LIST, CHAIN_APPROX_NONE); */
+    findContours(binaryImage, contours, RETR_LIST, CHAIN_APPROX_NONE);
 
 #ifdef DEBUG_BLOB_DETECTOR
     Mat keypointsImage;
     cvtColor( binaryImage, keypointsImage, CV_GRAY2RGB );
     
-    Mat contoursImage;
-    cvtColor( binaryImage, contoursImage, CV_GRAY2RGB );
-    drawContours( contoursImage, contours, -1, Scalar(0,255,0) );
-    imshow("contours", contoursImage );
+    drawContours( keypointsImage, contours, -1, Scalar(0,255,0) );
+    imshow("opencv_debug", keypointsImage );
 #endif
 
     for (size_t contourIdx = 0; contourIdx < contours.size(); contourIdx++)
     {
-        Center center;
-        center.confidence = 1;
+        Blob blob;
+        blob.confidence = 1;
         Moments moms = moments(Mat(contours[contourIdx]));
         if (params.filter_by_area)
         {
@@ -74,13 +77,17 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vecto
             if (ratio < params.min_inertia_ratio || ratio >= params.max_inertia_ratio)
                 continue;
 
-            center.confidence = ratio * ratio;
+            blob.confidence = ratio * ratio;
+        }
+
+        std::vector < Point > hull;
+        if (params.filter_by_convexity || params.filter_by_color)
+        {
+            convexHull(Mat(contours[contourIdx]), hull);
         }
 
         if (params.filter_by_convexity)
         {
-            std::vector < Point > hull;
-            convexHull(Mat(contours[contourIdx]), hull);
             double area = contourArea(Mat(contours[contourIdx]));
             double hullArea = contourArea(Mat(hull));
             if (fabs(hullArea) < DBL_EPSILON)
@@ -90,15 +97,23 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vecto
                 continue;
         }
 
-        if(moms.m00 == 0.0)
-            continue;
-        center.location = Point2d(moms.m10 / moms.m00, moms.m01 / moms.m00);
-
+        //compute blob average depth
         if (params.filter_by_color)
         {
-            if (binaryImage.at<uchar> (cvRound(center.location.y), cvRound(center.location.x)) != params.color)
-                continue;
+          double avg_color = 0;
+          for (const Point& pt : hull)
+          {
+            avg_color += image.at<uint16_t>(pt);
+          }
+          avg_color = avg_color/contours[contourIdx].size();
+          if (avg_color < params.min_depth || avg_color > params.max_depth)
+            continue;
+          blob.avg_depth = avg_color/1000.0;
         }
+
+        if(moms.m00 == 0.0)
+            continue;
+        blob.location = Point2d(moms.m10 / moms.m00, moms.m01 / moms.m00);
 
         //compute blob radius
         {
@@ -106,31 +121,32 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vecto
             for (size_t pointIdx = 0; pointIdx < contours[contourIdx].size(); pointIdx++)
             {
                 Point2d pt = contours[contourIdx][pointIdx];
-                dists.push_back(norm(center.location - pt));
+                dists.push_back(norm(blob.location - pt));
             }
             std::sort(dists.begin(), dists.end());
-            center.radius = (dists[(dists.size() - 1) / 2] + dists[dists.size() / 2]) / 2.;
+            blob.radius = (dists[(dists.size() - 1) / 2] + dists[dists.size() / 2]) / 2.;
         }
 
-        centers.push_back(center);
+        blobs.push_back(blob);
 
 
 #ifdef DEBUG_BLOB_DETECTOR
-        circle( keypointsImage, center.location, 1, Scalar(0,0,255), 1 );
+        circle( keypointsImage, blob.location, 1, Scalar(0,0,255), 1 );
 #endif
     }
 #ifdef DEBUG_BLOB_DETECTOR
-    imshow("bk", keypointsImage );
-    waitKey(1);
+    cv::putText(keypointsImage, string("cur_depth: ") + to_string(cur_depth), Point(0, 120), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(0, 0, 255), 3);
+    imshow("opencv_debug", keypointsImage );
+    waitKey(50);
 #endif
 }
 //}
 
 /* method void DepthBlobDetector::detect(cv::Mat image, std::vector<cv::KeyPoint>& keypoints, cv::Mat mask) //{ */
 /* inspired by https://github.com/opencv/opencv/blob/3.4/modules/features2d/src/blobdetector.cpp */
-void DepthBlobDetector::detect(cv::Mat image, std::vector<cv::KeyPoint>& keypoints, cv::Mat mask)
+void DepthBlobDetector::detect(cv::Mat image, std::vector<Blob>& ret_blobs, cv::Mat mask)
 {
-    keypoints.clear();
+    ret_blobs.clear();
     assert(params.min_repeatability != 0);
     Mat grayscaleImage;
     if (image.channels() == 3 || image.channels() == 4)
@@ -138,66 +154,78 @@ void DepthBlobDetector::detect(cv::Mat image, std::vector<cv::KeyPoint>& keypoin
     else
         grayscaleImage = image;
 
-    if (grayscaleImage.type() != CV_8UC1) {
-        ROS_ERROR("Blob detector only supports 8-bit images!");
+    if (grayscaleImage.type() != CV_8UC1 && grayscaleImage.type() != CV_16UC1) {
+        ROS_ERROR("Blob detector only supports 8-bit and 16-bit images!");
+        return;
     }
 
-    std::vector < std::vector<Center> > centers;
-    for (double thresh = params.min_threshold; thresh < params.max_threshold; thresh += params.threshold_step)
+    std::vector < std::vector<Blob> > blobs;
+    for (double thresh = params.min_threshold+params.threshold_width; thresh < params.max_threshold; thresh += params.threshold_step)
     {
         Mat binarizedImage;
-        threshold(grayscaleImage, binarizedImage, thresh, 255, THRESH_BINARY);
+#ifdef DEBUG_BLOB_DETECTOR
+        ROS_INFO("[%s]: using threshold %.1f", ros::this_node::getName().c_str(), thresh);
+#endif
+        inRange(grayscaleImage, thresh-params.threshold_width, thresh, binarizedImage);
 
-        std::vector < Center > curCenters;
-        findBlobs(grayscaleImage, binarizedImage, curCenters);
-        std::vector < std::vector<Center> > newCenters;
-        for (size_t i = 0; i < curCenters.size(); i++)
+#ifdef DEBUG_BLOB_DETECTOR
+        cur_depth = (thresh + params.threshold_width)/1000.0;
+#endif
+        std::vector < Blob > curBlobs;
+        findBlobs(grayscaleImage, binarizedImage, curBlobs);
+        std::vector < std::vector<Blob> > newBlobs;
+        for (size_t i = 0; i < curBlobs.size(); i++)
         {
             bool isNew = true;
-            for (size_t j = 0; j < centers.size(); j++)
+            for (size_t j = 0; j < blobs.size(); j++)
             {
-                double dist = norm(centers[j][ centers[j].size() / 2 ].location - curCenters[i].location);
-                isNew = dist >= params.min_dist_between && dist >= centers[j][ centers[j].size() / 2 ].radius && dist >= curCenters[i].radius;
+                double dist = norm(blobs[j][ blobs[j].size() / 2 ].location - curBlobs[i].location);
+                isNew = dist >= params.min_dist_between && dist >= blobs[j][ blobs[j].size() / 2 ].radius && dist >= curBlobs[i].radius;
                 if (!isNew)
                 {
-                    centers[j].push_back(curCenters[i]);
+                    blobs[j].push_back(curBlobs[i]);
 
-                    size_t k = centers[j].size() - 1;
-                    while( k > 0 && centers[j][k].radius < centers[j][k-1].radius )
+                    size_t k = blobs[j].size() - 1;
+                    while( k > 0 && blobs[j][k].radius < blobs[j][k-1].radius )
                     {
-                        centers[j][k] = centers[j][k-1];
+                        blobs[j][k] = blobs[j][k-1];
                         k--;
                     }
-                    centers[j][k] = curCenters[i];
+                    blobs[j][k] = curBlobs[i];
 
                     break;
                 }
             }
             if (isNew)
-                newCenters.push_back(std::vector<Center> (1, curCenters[i]));
+                newBlobs.push_back(std::vector<Blob> (1, curBlobs[i]));
         }
-        std::copy(newCenters.begin(), newCenters.end(), std::back_inserter(centers));
+        std::copy(newBlobs.begin(), newBlobs.end(), std::back_inserter(blobs));
     }
 
-    for (size_t i = 0; i < centers.size(); i++)
+    for (size_t i = 0; i < blobs.size(); i++)
     {
-        if (centers[i].size() < params.min_repeatability)
+      vector<Blob> cur_blobs = blobs[i];
+        if (cur_blobs.size() < params.min_repeatability)
             continue;
         Point2d sumPoint(0, 0);
         double normalizer = 0;
-        for (size_t j = 0; j < centers[i].size(); j++)
+        for (size_t j = 0; j < cur_blobs.size(); j++)
         {
-            sumPoint += centers[i][j].confidence * centers[i][j].location;
-            normalizer += centers[i][j].confidence;
+            sumPoint += cur_blobs[j].confidence * cur_blobs[j].location;
+            normalizer += cur_blobs[j].confidence;
         }
         sumPoint *= (1. / normalizer);
-        KeyPoint kpt(sumPoint, (float)(centers[i][centers[i].size() / 2].radius) * 2.0f);
-        keypoints.push_back(kpt);
+        Blob result_blob;
+        result_blob.confidence = normalizer/cur_blobs.size();
+        result_blob.location = sumPoint;
+        result_blob.radius = (float)(cur_blobs[cur_blobs.size() / 2].radius);
+        result_blob.avg_depth = cur_blobs[cur_blobs.size() / 2].avg_depth;
+        ret_blobs.push_back(result_blob);
     }
 
-    if (!mask.empty())
-    {
-        KeyPointsFilter::runByPixelsMask(keypoints, mask);
-    }
+    /* if (!mask.empty()) */
+    /* { */
+    /*     KeyPointsFilter::runByPixelsMask(keypoints, mask); */
+    /* } */
 }
 //}

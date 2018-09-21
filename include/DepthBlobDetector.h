@@ -6,22 +6,24 @@
 namespace dbd
 {
 
-struct Center
+struct Blob
 {
   double confidence;
   cv::Point2d location;
   double radius;
+  double avg_depth;
 };
 
 struct Params
 {
   // Filter by color
   bool filter_by_color;
-  double color;
+  uint16_t min_depth;
+  uint16_t max_depth;
   // Filter by area
   bool filter_by_area;
-  double min_area;
-  double max_area;
+  uint32_t min_area;
+  uint32_t max_area;
   // Filter by circularity
   bool filter_by_circularity;
   double min_circularity;
@@ -35,10 +37,11 @@ struct Params
   double min_inertia_ratio;
   double max_inertia_ratio;
   // thresholding
-  double min_threshold;
-  double max_threshold;
-  double threshold_step;
-  unsigned min_repeatability;
+  uint16_t min_threshold;
+  uint16_t max_threshold;
+  uint16_t threshold_step;
+  uint16_t threshold_width;
+  uint16_t min_repeatability;
   // Other filtering criterions
   double min_dist_between;
 };
@@ -47,10 +50,10 @@ class DepthBlobDetector
 {
   public:
     DepthBlobDetector(const Params& parameters);
-    void detect(cv::Mat image, std::vector<cv::KeyPoint>& keypoints, cv::Mat mask = cv::Mat());
+    void detect(cv::Mat image, std::vector<Blob>& blobs, cv::Mat mask = cv::Mat());
 
   private:
-    void findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Center>& centers) const;
+    void findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Blob>& blobs) const;
 
   private:
     Params params;
