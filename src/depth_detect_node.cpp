@@ -202,6 +202,10 @@ int main(int argc, char** argv)
         cv::dilate(detect_im, detect_im, element, Point(-1, -1), dilate_iterations);
         cv::erode(detect_im, detect_im, element, Point(-1, -1), erode_iterations);
       }
+      // fill black pixels with values of neighbors
+      {
+
+      }
       // blur it if requested
       if (gaussianblur_size % 2 == 1)
       {
