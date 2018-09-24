@@ -204,7 +204,77 @@ int main(int argc, char** argv)
       }
       // fill black pixels with values of neighbors
       {
+        cv::Mat binarized, dbg_img_cont;
+        cv::inRange(detect_im, 0, 0, binarized); 
+        cv::cvtColor(binarized, dbg_img_cont, CV_GRAY2BGR);
+        vector<vector<Point> > contours;
+        cv::findContours(binarized, contours, RETR_LIST, CHAIN_APPROX_NONE);
+        cv::drawContours(dbg_img_cont, contours, -1, Scalar(0, 0, 255), FILLED);
+        for (const vector<Point>& cont : contours)
+        {
+          size_t first_it = 0;
 
+          while (first_it < cont.size())
+          {
+            Point first = cont.at(first_it);
+            Point last = first;
+
+            // find the first and last points in this row/col and its direction
+            bool is_same_dir = true;
+            size_t it = first_it + 1;
+            int prev_dir = 0;
+            while (it < cont.size() && is_same_dir)
+            {
+              Point other = cont.at(it);
+              int dir = 0;
+              if (other.x == first.x)
+                dir = 1;
+              else if (other.y == first.y)
+                dir = 2;
+              else if (max(abs(first.x-other.x), abs(first.y-other.y)) == 1)
+                dir = 3;
+            
+              is_same_dir = dir != 0 && (prev_dir == 0 || prev_dir == dir);
+              if (is_same_dir)
+              {
+                last = other;
+                prev_dir = dir;
+              }
+              it++;
+            }
+            
+            Point diff = last - first;
+            Point dir(clamp(diff.x, -1, 1), clamp(diff.y, -1, 1));
+            float dist = sqrt(diff.x*diff.x + diff.y*diff.y);
+
+            Point pre_first = first - dir;
+            uint16_t pre_first_val = 0;
+            if (pre_first.x >= 0 && pre_first.x < detect_im.cols && pre_first.y >= 0 && pre_first.y < detect_im.rows)
+              pre_first_val = detect_im.at<uint16_t>(pre_first);
+
+            Point post_last = last + dir;
+            uint16_t post_last_val = 0;
+            if (post_last.x >= 0 && post_last.x < detect_im.cols && post_last.y >= 0 && post_last.y < detect_im.rows)
+              post_last_val = detect_im.at<uint16_t>(post_last);
+          
+            float val_diff = float(post_last_val) - float(pre_first_val);
+            float grad = val_diff/dist;
+
+            Point cur = first;
+            while (cur != last)
+            {
+              Point cur_diff = cur-first;
+              float cur_dist = sqrt(cur_diff.x*cur_diff.x + cur_diff.y*cur_diff.y);
+              detect_im.at<uint16_t>(cur) = pre_first_val + grad*cur_dist;
+              dbg_img_cont.at<Vec3b>(cur) = Vec3b(255, 0, 0);
+              cur += dir;
+            }
+
+            first_it += it;
+          }
+        }
+        cv::imshow("black_areas", dbg_img_cont);
+        cv::waitKey(100);
       }
       // blur it if requested
       if (gaussianblur_size % 2 == 1)
