@@ -40,6 +40,29 @@ double get_height(const Eigen::Vector3d& c2w_z, uint16_t px_x, uint16_t px_y, do
   return c2w_z.dot(pos);
 }
 
+float avg_around(uint16_t* ptr, int it, cv::Size size)
+{
+  constexpr int radius = 2;
+  float sum = 0.0f;
+  int n = 0;
+  for (int c_it = it - radius; c_it <= it + radius; c_it++)
+  {
+    for (int r_it = -radius; r_it <= radius; r_it++)
+    {
+      if (c_it >= 0 && c_it < size.width && r_it >= 0 && r_it < size.height)
+      {
+        uint16_t cur_val = ptr[c_it + r_it*size.width];
+        if (cur_val != 0)
+        {
+          sum += cur_val;
+          n++;
+        }
+      }
+    }
+  }
+  return n>0 ? sum/n : 0;
+}
+
 // shortcut type to the dynamic reconfigure manager template instance
 typedef mrs_lib::DynamicReconfigureMgr<uav_detect::DepthMapParamsConfig> drmgr_t;
 
@@ -204,77 +227,54 @@ int main(int argc, char** argv)
       }
       // fill black pixels with values of neighbors
       {
-        cv::Mat binarized, dbg_img_cont;
-        cv::inRange(detect_im, 0, 0, binarized); 
-        cv::cvtColor(binarized, dbg_img_cont, CV_GRAY2BGR);
-        vector<vector<Point> > contours;
-        cv::findContours(binarized, contours, RETR_LIST, CHAIN_APPROX_NONE);
-        cv::drawContours(dbg_img_cont, contours, -1, Scalar(0, 0, 255), FILLED);
-        for (const vector<Point>& cont : contours)
+        /* cv::Mat dbg_img2; */
+        /* cv::cvtColor(detect_im, dbg_img2, COLOR_GRAY2BGR); */
+
+        for (int i = 0; i < detect_im.rows; i++)
         {
-          size_t first_it = 0;
-
-          while (first_it < cont.size())
+          uint16_t* curptr = detect_im.ptr<uint16_t>(i);
+          bool interpolating = false;
+          int interp_start_it;
+          float interp_start_d = avg_around(curptr, 0, detect_im.size());
+          for (int j = 0; j < detect_im.cols; j++)
           {
-            Point first = cont.at(first_it);
-            Point last = first;
-
-            // find the first and last points in this row/col and its direction
-            bool is_same_dir = true;
-            size_t it = first_it + 1;
-            int prev_dir = 0;
-            while (it < cont.size() && is_same_dir)
+            uint16_t cur_d = curptr[j];
+            if (cur_d == 0 && j < detect_im.cols-1)
             {
-              Point other = cont.at(it);
-              int dir = 0;
-              if (other.x == first.x)
-                dir = 1;
-              else if (other.y == first.y)
-                dir = 2;
-              else if (max(abs(first.x-other.x), abs(first.y-other.y)) == 1)
-                dir = 3;
-            
-              is_same_dir = dir != 0 && (prev_dir == 0 || prev_dir == dir);
-              if (is_same_dir)
+              if (!interpolating)
               {
-                last = other;
-                prev_dir = dir;
+                interpolating = true;
+                interp_start_it = j;
               }
-              it++;
-            }
-            
-            Point diff = last - first;
-            Point dir(clamp(diff.x, -1, 1), clamp(diff.y, -1, 1));
-            float dist = sqrt(diff.x*diff.x + diff.y*diff.y);
-
-            Point pre_first = first - dir;
-            uint16_t pre_first_val = 0;
-            if (pre_first.x >= 0 && pre_first.x < detect_im.cols && pre_first.y >= 0 && pre_first.y < detect_im.rows)
-              pre_first_val = detect_im.at<uint16_t>(pre_first);
-
-            Point post_last = last + dir;
-            uint16_t post_last_val = 0;
-            if (post_last.x >= 0 && post_last.x < detect_im.cols && post_last.y >= 0 && post_last.y < detect_im.rows)
-              post_last_val = detect_im.at<uint16_t>(post_last);
-          
-            float val_diff = float(post_last_val) - float(pre_first_val);
-            float grad = val_diff/dist;
-
-            Point cur = first;
-            while (cur != last)
+            } else
             {
-              Point cur_diff = cur-first;
-              float cur_dist = sqrt(cur_diff.x*cur_diff.x + cur_diff.y*cur_diff.y);
-              detect_im.at<uint16_t>(cur) = pre_first_val + grad*cur_dist;
-              dbg_img_cont.at<Vec3b>(cur) = Vec3b(255, 0, 0);
-              cur += dir;
-            }
+              if (interpolating)
+              {
+                float cur_avg = avg_around(curptr, j, detect_im.size());
+                int dist = j - interp_start_it;
+                float diff = cur_avg - interp_start_d;
+                float grad = diff/float(dist);
+                int cur_dist = 0;
 
-            first_it += it;
+                for (int k = interp_start_it; k < j; k++)
+                {
+                  curptr[k] = clamp(int(interp_start_d + cur_dist*grad), 0, int(std::numeric_limits<uint16_t>::max()));
+                  /* dbg_img2.at<Vec3w>(i, k) = Vec3w(0, 0, 65535); */
+                  cur_dist++;
+                }
+              
+                interpolating = false;
+                interp_start_d = cur_avg;
+              } else
+              {
+                interp_start_d = avg_around(curptr, j, detect_im.size());
+              }
+            }
           }
         }
-        cv::imshow("black_areas", dbg_img_cont);
-        cv::waitKey(100);
+        
+        /* cv::imshow("black_areas", dbg_img2); */
+        /* cv::waitKey(100); */
       }
       // blur it if requested
       if (gaussianblur_size % 2 == 1)
@@ -288,9 +288,7 @@ int main(int argc, char** argv)
       }
 
       // convert the output image from grayscale to color to enable colorful drawing
-      cout << "dbg_img type: " << dbg_img.image.type() << endl;
       cv::cvtColor(detect_im, dbg_img.image, COLOR_GRAY2BGR);
-      cout << "dbg_img type: " << dbg_img.image.type() << endl;
       dbg_img.encoding = string("bgr16");
 
       //}
@@ -356,7 +354,7 @@ int main(int argc, char** argv)
       }
       /* cv::putText(dbg_img.image, string("potential: ") + to_string(potential), Point(0, 40), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(255, 0, 0), 3); */
       /* cv::putText(dbg_img.image, string("unsure: ") + to_string(unsure), Point(0, 80), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(0, 255, 0), 3); */
-      cv::putText(dbg_img.image, string("sure: ") + to_string(sure), Point(0, 120), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(0, 0, 255), 3);
+      cv::putText(dbg_img.image, string("sure: ") + to_string(sure), Point(0, 70), FONT_HERSHEY_SIMPLEX, 1.1, Scalar(0, 0, 65535), 2);
       /* cv::circle(dbg_img.image, Point(im_h/2, 100), 50, Scalar(255), 10); */
       cout << "Number of blobs: " << blobs.size() << std::endl;
 
