@@ -12,6 +12,7 @@ struct Blob
   cv::Point2d location;
   double radius;
   double avg_depth;
+  std::vector<std::vector<cv::Point> > contours;
 };
 
 struct Params
@@ -32,6 +33,10 @@ struct Params
   bool filter_by_convexity;
   double min_convexity;
   double max_convexity;
+  // Filter by orientation
+  bool filter_by_orientation;
+  double min_angle;
+  double max_angle;
   // Filter by inertia
   bool filter_by_inertia;
   double min_inertia_ratio;
@@ -51,7 +56,7 @@ class DepthBlobDetector
 {
   public:
     DepthBlobDetector(const Params& parameters);
-    void detect(cv::Mat image, std::vector<Blob>& ret_blobs);
+    void detect(cv::Mat image, cv::Mat image_raw, std::vector<Blob>& ret_blobs);
 
   private:
     void findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Blob>& blobs) const;

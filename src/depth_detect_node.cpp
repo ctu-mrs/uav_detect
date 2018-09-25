@@ -40,29 +40,6 @@ double get_height(const Eigen::Vector3d& c2w_z, uint16_t px_x, uint16_t px_y, do
   return c2w_z.dot(pos);
 }
 
-float avg_around(uint16_t* ptr, int it, cv::Size size)
-{
-  constexpr int radius = 2;
-  float sum = 0.0f;
-  int n = 0;
-  for (int c_it = it - radius; c_it <= it + radius; c_it++)
-  {
-    for (int r_it = -radius; r_it <= radius; r_it++)
-    {
-      if (c_it >= 0 && c_it < size.width && r_it >= 0 && r_it < size.height)
-      {
-        uint16_t cur_val = ptr[c_it + r_it*size.width];
-        if (cur_val != 0)
-        {
-          sum += cur_val;
-          n++;
-        }
-      }
-    }
-  }
-  return n>0 ? sum/n : 0;
-}
-
 // shortcut type to the dynamic reconfigure manager template instance
 typedef mrs_lib::DynamicReconfigureMgr<uav_detect::DepthMapParamsConfig> drmgr_t;
 
@@ -121,6 +98,10 @@ int main(int argc, char** argv)
   bool& blob_filter_by_circularity = drmgr.config.blob_filter_by_circularity;
   double& blob_min_circularity = drmgr.config.blob_min_circularity;
   double& blob_max_circularity = drmgr.config.blob_max_circularity;
+  // Filter by orientation
+  bool& blob_filter_by_orientation = drmgr.config.blob_filter_by_orientation;
+  double& blob_min_angle = drmgr.config.blob_min_angle;
+  double& blob_max_angle = drmgr.config.blob_max_angle;
   // Filter by convexity
   bool& blob_filter_by_convexity = drmgr.config.blob_filter_by_convexity;
   double& blob_min_convexity = drmgr.config.blob_min_convexity;
@@ -169,6 +150,8 @@ int main(int argc, char** argv)
 
   cout << "----------------------------------------------------------" << std::endl;
 
+  bool paused = false;
+  cv_bridge::CvImage source_img;
   ros::Rate r(10);
   while (ros::ok())
   {
@@ -179,7 +162,6 @@ int main(int argc, char** argv)
     if (new_dm && got_dm_cinfo)
     {
       cout << "Processsing image" << std::endl;
-      new_dm = false;
 
       // Construct a new world to camera transform //{
       Eigen::Affine3d c2w_tf;
@@ -213,69 +195,37 @@ int main(int argc, char** argv)
       }
       //}
 
+      if (!paused || source_img.image.empty())
+      {
+        source_img = *cv_bridge::toCvCopy(last_dm_msg, string("16UC1"));
+        new_dm = false;
+      }
+
       /* Prepare the image for detection //{ */
-      cv_bridge::CvImage dbg_img;
-      dbg_img = *cv_bridge::toCvCopy(last_dm_msg, string("16UC1"));
       // create the detection image
-      cv::Mat detect_im = dbg_img.image;
+      cv::Mat detect_im = source_img.image.clone();
+      cv::Mat raw_im = source_img.image;
+      // prepare the debug image
+      cv_bridge::CvImage dbg_img = source_img;
+
+      if (drmgr.config.blur_empty_areas)
+      {
+        cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(20, 5), Point(-1, -1));
+        cv::Mat mask, tmp;
+        cv::inRange(detect_im, 0, 0, mask);
+        cv::dilate(detect_im, tmp, element, Point(-1, -1), 3);
+        /* cv::GaussianBlur(tmp, tmp, Size(19, 75), 40); */
+        cv::blur(detect_im, tmp, Size(115, 215));
+        tmp.copyTo(detect_im, mask);
+      }
 
       // dilate and erode the image if requested
       {
-        cv::Mat element = cv::getStructuringElement(MORPH_RECT, Size(5, 5), Point(-1, -1));
+        cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(3, 3), Point(-1, -1));
         cv::dilate(detect_im, detect_im, element, Point(-1, -1), dilate_iterations);
         cv::erode(detect_im, detect_im, element, Point(-1, -1), erode_iterations);
       }
-      // fill black pixels with values of neighbors
-      {
-        /* cv::Mat dbg_img2; */
-        /* cv::cvtColor(detect_im, dbg_img2, COLOR_GRAY2BGR); */
 
-        for (int i = 0; i < detect_im.rows; i++)
-        {
-          uint16_t* curptr = detect_im.ptr<uint16_t>(i);
-          bool interpolating = false;
-          int interp_start_it;
-          float interp_start_d = avg_around(curptr, 0, detect_im.size());
-          for (int j = 0; j < detect_im.cols; j++)
-          {
-            uint16_t cur_d = curptr[j];
-            if (cur_d == 0 && j < detect_im.cols-1)
-            {
-              if (!interpolating)
-              {
-                interpolating = true;
-                interp_start_it = j;
-              }
-            } else
-            {
-              if (interpolating)
-              {
-                float cur_avg = avg_around(curptr, j, detect_im.size());
-                int dist = j - interp_start_it;
-                float diff = cur_avg - interp_start_d;
-                float grad = diff/float(dist);
-                int cur_dist = 0;
-
-                for (int k = interp_start_it; k < j; k++)
-                {
-                  curptr[k] = clamp(int(interp_start_d + cur_dist*grad), 0, int(std::numeric_limits<uint16_t>::max()));
-                  /* dbg_img2.at<Vec3w>(i, k) = Vec3w(0, 0, 65535); */
-                  cur_dist++;
-                }
-              
-                interpolating = false;
-                interp_start_d = cur_avg;
-              } else
-              {
-                interp_start_d = avg_around(curptr, j, detect_im.size());
-              }
-            }
-          }
-        }
-        
-        /* cv::imshow("black_areas", dbg_img2); */
-        /* cv::waitKey(100); */
-      }
       // blur it if requested
       if (gaussianblur_size % 2 == 1)
       {
@@ -307,6 +257,9 @@ int main(int argc, char** argv)
       params.filter_by_convexity = blob_filter_by_convexity;
       params.min_convexity = blob_min_convexity;
       params.max_convexity = blob_max_convexity;
+      params.filter_by_orientation = blob_filter_by_orientation;
+      params.min_angle = blob_min_angle;
+      params.max_angle = blob_max_angle;
       params.filter_by_inertia = blob_filter_by_inertia;
       params.min_inertia_ratio = blob_min_inertia_ratio;
       params.max_inertia_ratio = blob_max_inertia_ratio;
@@ -322,7 +275,7 @@ int main(int argc, char** argv)
 
       dbd::DepthBlobDetector detector(params);
       ROS_INFO("[%s]: Starting Blob detector", ros::this_node::getName().c_str());
-      detector.detect(detect_im, blobs);
+      detector.detect(detect_im, raw_im, blobs);
       ROS_INFO("[%s]: Blob detector finished", ros::this_node::getName().c_str());
 
       /* cv::drawKeypoints(dbg_img.image, blobs, dbg_img.image, Scalar(0, 0, 255), DrawMatchesFlags::DRAW_OVER_OUTIMG); */
@@ -332,38 +285,28 @@ int main(int argc, char** argv)
       for (const auto& blob : blobs)
       {
         sure++;
-        cv::circle(dbg_img.image, blob.location, blob.radius, cv::Scalar(0, 0, 65535), 3, 8, 0);
-        /* double depth = blob.avg_depth; */
-        /* if (depth > min_dist * 255.0 / max_dist && dist < 253) */
-        /* { */
-        /*   double height = get_height(c2w_z, kpt.pt.x, kpt.pt.y, dist); */
-        /*   if (height > 0.5) */
-        /*   { */
-        /*     sure++; */
-        /*     cv::circle(dbg_img.image, kpt.pt, kpt.size, cv::Scalar(0, 0, 255), 3, 8, 0); */
-        /*   } else */
-        /*   { */
-        /*     unsure++; */
-        /*     cv::circle(dbg_img.image, kpt.pt, kpt.size, cv::Scalar(0, 255, 0), 3, 8, 0); */
-        /*   } */
-        /* } else */
-        /* { */
-        /*   potential++; */
-        /*   cv::circle(dbg_img.image, kpt.pt, kpt.size, cv::Scalar(255, 0, 0), 3, 8, 0); */
-        /* } */
+
+        auto max = blob.contours.size();
+        for (size_t it = blob.contours.size()-1; it; it--)
+        {
+          cv::drawContours(dbg_img.image, blob.contours, it, Scalar(0, 65535, 65535/max*it), CV_FILLED);
+        }
       }
       /* cv::putText(dbg_img.image, string("potential: ") + to_string(potential), Point(0, 40), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(255, 0, 0), 3); */
       /* cv::putText(dbg_img.image, string("unsure: ") + to_string(unsure), Point(0, 80), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(0, 255, 0), 3); */
-      cv::putText(dbg_img.image, string("sure: ") + to_string(sure), Point(0, 70), FONT_HERSHEY_SIMPLEX, 1.1, Scalar(0, 0, 65535), 2);
+      cv::putText(dbg_img.image, string("found: ") + to_string(sure), Point(0, 30), FONT_HERSHEY_SIMPLEX, 1.1, Scalar(0, 0, 65535), 2);
       /* cv::circle(dbg_img.image, Point(im_h/2, 100), 50, Scalar(255), 10); */
       cout << "Number of blobs: " << blobs.size() << std::endl;
 
       //}
 
+      imshow("image_raw", raw_im);
       imshow("found_blobs", dbg_img.image);
-      waitKey(1);
+      if (waitKey(25) == ' ')
+      {
+        paused = !paused;
+      }
       sensor_msgs::ImagePtr out_msg = dbg_img.toImageMsg();
-      cout << out_msg->encoding;
       thresholded_pub.publish(out_msg);
 
       cout << "Image processed" << std::endl;
