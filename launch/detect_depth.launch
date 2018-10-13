@@ -9,8 +9,10 @@
       <rosparam file="$(find uav_detect)/config/filter_single.yaml" />
       <param name="uav_name" value="$(arg uav_name)" />
     
-      <remap from="~depth_map" to="/$(arg uav_name)/rs_d435/depth/image_rect_raw" />
-      <remap from="~camera_info" to="/$(arg uav_name)/rs_d435/depth/camera_info" />
+      <remap from="~thermal_image" to="/thermal/image_raw" />
+      <remap from="~rgb_image" to="/$(arg uav_name)/rs_d435/color/image_rect_color" />
+      <remap from="~depth_map" to="/$(arg uav_name)/rs_d435/aligned_depth_to_color/image_raw" />
+      <remap from="~camera_info" to="/$(arg uav_name)/rs_d435/aligned_depth_to_color/camera_info" />
 
     </node>
   

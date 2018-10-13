@@ -6,12 +6,32 @@ using namespace std;
 using namespace uav_detect;
 using namespace Eigen;
 
+// Callback for the thermal image
+bool new_thermal = false;
+sensor_msgs::Image last_thermal_msg;
+void thermal_callback(const sensor_msgs::Image& thermal_msg)
+{
+  ROS_INFO("Got new thermal image");
+  last_thermal_msg = thermal_msg;
+  new_thermal = true;
+}
+
+// Callback for the rgb image
+bool new_rgb = false;
+sensor_msgs::Image last_rgb_msg;
+void rgb_callback(const sensor_msgs::Image& rgb_msg)
+{
+  ROS_INFO("Got new rgb image");
+  last_rgb_msg = rgb_msg;
+  new_rgb = true;
+}
+
 // Callback for the depth map
 bool new_dm = false;
 sensor_msgs::Image last_dm_msg;
 void depthmap_callback(const sensor_msgs::Image& dm_msg)
 {
-  ROS_INFO("Got new image");
+  ROS_INFO("Got new depth image");
   last_dm_msg = dm_msg;
   new_dm = true;
 }
@@ -24,7 +44,7 @@ void dm_cinfo_callback(const sensor_msgs::CameraInfo& dm_cinfo_msg)
 {
   if (!got_dm_cinfo)
   {
-    ROS_INFO("Got camera image");
+    ROS_INFO("Got depth camera info");
     camera_model.fromCameraInfo(dm_cinfo_msg);
     d_fx = camera_model.fx();
     d_fy = camera_model.fy();
@@ -32,6 +52,12 @@ void dm_cinfo_callback(const sensor_msgs::CameraInfo& dm_cinfo_msg)
     d_cy = camera_model.cy();
     got_dm_cinfo = true;
   }
+}
+
+Point cursor_pos;
+void mouse_callback([[maybe_unused]]int event, int x, int y, [[maybe_unused]]int flags, [[maybe_unused]]void* userdata)
+{
+  cursor_pos = Point(x, y);
 }
 
 double get_height(const Eigen::Vector3d& c2w_z, uint16_t px_x, uint16_t px_y, double depth_m)
@@ -141,6 +167,8 @@ int main(int argc, char** argv)
   // Initialize transform listener
   tf2_ros::TransformListener* tf_listener = new tf2_ros::TransformListener(tf_buffer);
   // Initialize other subs and pubs
+  ros::Subscriber thermal_sub = nh.subscribe("thermal_image", 1, thermal_callback, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber rgb_sub = nh.subscribe("rgb_image", 1, rgb_callback, ros::TransportHints().tcpNoDelay());
   ros::Subscriber depthmap_sub = nh.subscribe("depth_map", 1, depthmap_callback, ros::TransportHints().tcpNoDelay());
   ros::Subscriber dm_cinfo_sub = nh.subscribe("camera_info", 1, dm_cinfo_callback, ros::TransportHints().tcpNoDelay());
   ros::Publisher detected_UAV_pub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("detected_uav", 10);
@@ -150,7 +178,18 @@ int main(int argc, char** argv)
 
   cout << "----------------------------------------------------------" << std::endl;
 
+  int window_flags = WINDOW_NORMAL | WINDOW_KEEPRATIO | WINDOW_GUI_NORMAL;
+  string rgb_winname = "RGB_image";
+  string thermal_winname = "thermal_image";
+  string dm_winname = "raw_depth";
+  string det_winname = "detections";
+  cv::namedWindow(rgb_winname, window_flags);
+  cv::namedWindow(thermal_winname, window_flags);
+  cv::namedWindow(dm_winname, window_flags);
+  cv::namedWindow(det_winname, window_flags);
+  setMouseCallback(det_winname, mouse_callback, NULL);
   bool paused = false;
+  bool fill_blobs = true;
   cv_bridge::CvImage source_img;
   ros::Rate r(10);
   while (ros::ok())
@@ -282,14 +321,38 @@ int main(int argc, char** argv)
       /* int potential = 0; */
       /* int unsure = 0; */
       int sure = 0;
+      bool displaying_info = false;
       for (const auto& blob : blobs)
       {
         sure++;
 
         auto max = blob.contours.size();
-        for (size_t it = blob.contours.size()-1; it; it--)
+        if (fill_blobs)
         {
-          cv::drawContours(dbg_img.image, blob.contours, it, Scalar(0, 65535, 65535/max*it), CV_FILLED);
+          if (!blob.contours.empty())
+          for (size_t it = blob.contours.size()-1; it; it--)
+          {
+            cv::drawContours(dbg_img.image, blob.contours, it, Scalar(0, 65535, 65535/max*it), CV_FILLED);
+            auto cur_blob = blob.contours.at(it);
+            if (!displaying_info && pointPolygonTest(cur_blob, cursor_pos, false) > 0)
+            {
+              // display information about this contour
+              displaying_info = true;
+              cv::putText(dbg_img.image, string("avg_depth: ") + to_string(blob.avg_depth), Point(0, 50), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+              cv::putText(dbg_img.image, string("confidence: ") + to_string(blob.confidence), Point(0, 65), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+              cv::putText(dbg_img.image, string("repeatability: ") + to_string(blob.contours.size()), Point(0, 80), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+              cv::putText(dbg_img.image, string("convexity: ") + to_string(blob.convexity), Point(0, 95), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+              cv::putText(dbg_img.image, string("angle: ") + to_string(blob.angle), Point(0, 110), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+              cv::putText(dbg_img.image, string("area: ") + to_string(blob.area), Point(0, 125), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+              cv::putText(dbg_img.image, string("circularity: ") + to_string(blob.circularity), Point(0, 140), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+              cv::putText(dbg_img.image, string("radius: ") + to_string(blob.radius), Point(0, 155), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+              cv::putText(dbg_img.image, string("inertia: ") + to_string(blob.inertia), Point(0, 170), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+            }
+          }
+        } else
+        {
+          cv::circle(dbg_img.image, blob.location, blob.radius, Scalar(0, 0, 65535), 2);
+        
         }
       }
       /* cv::putText(dbg_img.image, string("potential: ") + to_string(potential), Point(0, 40), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(255, 0, 0), 3); */
@@ -300,11 +363,47 @@ int main(int argc, char** argv)
 
       //}
 
-      imshow("image_raw", raw_im);
-      imshow("found_blobs", dbg_img.image);
-      if (waitKey(25) == ' ')
+      if (new_rgb)
       {
-        paused = !paused;
+        cv::Mat rgb_im = (cv_bridge::toCvCopy(last_rgb_msg, sensor_msgs::image_encodings::BGR8))->image;
+        imshow(rgb_winname, rgb_im);
+      }
+      if (new_thermal)
+      {
+        cv::Mat thermal_im = (cv_bridge::toCvCopy(last_thermal_msg, string("16UC1")))->image;
+        double min;
+        double max;
+        cv::minMaxIdx(thermal_im, &min, &max);
+        cv::Mat im_8UC1;
+        thermal_im.convertTo(im_8UC1, CV_8UC1, 255 / (max-min), -min); 
+        cv::Mat im_colormapped;
+        applyColorMap(im_8UC1, im_colormapped, cv::COLORMAP_JET);
+        imshow(thermal_winname, im_colormapped);
+      }
+      {
+        double min;
+        double max;
+        cv::minMaxIdx(raw_im, &min, &max);
+        cv::Mat im_8UC1;
+        raw_im.convertTo(im_8UC1, CV_8UC1, 255 / (max-min), -min); 
+        cv::Mat im_colormapped;
+        applyColorMap(im_8UC1, im_colormapped, cv::COLORMAP_JET);
+        cv::Mat unknown_pixels;
+        inRange(raw_im, 0, 0, unknown_pixels);
+        cv::Mat blackness = cv::Mat::zeros(im_colormapped.size(), im_colormapped.type());
+        blackness.copyTo(im_colormapped, unknown_pixels);
+        imshow(dm_winname, im_colormapped);
+      }
+      imshow(det_winname, dbg_img.image);
+      int key = waitKey(25);
+      switch (key)
+      {
+        case ' ':
+          paused = !paused;
+          break;
+        case 'f':
+          fill_blobs = !fill_blobs;
+          break;
       }
       sensor_msgs::ImagePtr out_msg = dbg_img.toImageMsg();
       thresholded_pub.publish(out_msg);

@@ -25,6 +25,8 @@ double median(cv::Mat image, cv::Mat mask)
     }
   }
 
+  if (vals.empty())
+    return std::numeric_limits<double>::quiet_NaN();
   nth_element(vals.begin(), vals.begin()+vals.size()/2, vals.end());
   return vals.at(vals.size()/2);
 }
@@ -33,6 +35,7 @@ double median(cv::Mat image, cv::Mat mask)
 #ifdef DEBUG_BLOB_DETECTOR
 double cur_depth;
 #endif
+
 /* method void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Blob>& blobs) const //{ */
 /* inspired by https://github.com/opencv/opencv/blob/3.4/modules/features2d/src/blobdetector.cpp */
 void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Blob>& blobs) const
@@ -42,6 +45,8 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vecto
   std::vector<std::vector<Point>> contours;
   /* findContours(tmpBinaryImage, contours, RETR_LIST, CHAIN_APPROX_NONE); */
   findContours(binaryImage, contours, RETR_LIST, CHAIN_APPROX_NONE);
+  Mat known_pixels;
+  cv::inRange(image, 1, std::numeric_limits<uint16_t>::max(), known_pixels);
 
 #ifdef DEBUG_BLOB_DETECTOR
   Mat keypointsImage;
@@ -56,6 +61,10 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vecto
     Blob blob;
     blob.confidence = 1;
     Moments moms = moments(Mat(contours[contourIdx]));
+    blob.area = moms.m00;
+    if (moms.m00 == 0.0)
+      continue;
+
     if (params.filter_by_area)
     {
       double area = moms.m00;
@@ -63,26 +72,25 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vecto
         continue;
     }
 
-    if (params.filter_by_circularity)
     {
       double area = moms.m00;
       double perimeter = arcLength(Mat(contours[contourIdx]), true);
       double ratio = 4 * CV_PI * area / (perimeter * perimeter);
-      if (ratio < params.min_circularity || ratio >= params.max_circularity)
+      blob.circularity = ratio;
+      if (params.filter_by_circularity && (ratio < params.min_circularity || ratio >= params.max_circularity))
         continue;
     }
 
-    if (params.filter_by_orientation)
     {
       constexpr double eps = 1e-3;
       double angle = 0;
       if (abs(moms.mu20 - moms.mu02) > eps)
-        angle = 0.5 * atan2((2 * moms.mu11), (moms.mu20 - moms.mu02));
-      if (angle < params.min_angle || angle > params.max_angle)
+        angle = abs(0.5 * atan2((2 * moms.mu11), (moms.mu20 - moms.mu02)));
+      blob.angle = angle;
+      if (params.filter_by_orientation && (angle < params.min_angle || angle > params.max_angle))
         continue;
     }
 
-    if (params.filter_by_inertia)
     {
       double denominator = std::sqrt(std::pow(2 * moms.mu11, 2) + std::pow(moms.mu20 - moms.mu02, 2));
       constexpr double eps = 1e-2;
@@ -102,13 +110,13 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vecto
         ratio = 1;
       }
 
-      if (ratio < params.min_inertia_ratio || ratio >= params.max_inertia_ratio)
+      blob.inertia = ratio;
+      if (params.filter_by_inertia && (ratio < params.min_inertia_ratio || ratio >= params.max_inertia_ratio))
         continue;
 
       blob.confidence = ratio * ratio;
     }
 
-    if (params.filter_by_convexity)
     {
       std::vector<Point> hull;
       convexHull(Mat(contours[contourIdx]), hull);
@@ -117,17 +125,18 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vecto
       if (fabs(hullArea) < DBL_EPSILON)
         continue;
       double ratio = area / hullArea;
-      if (ratio < params.min_convexity || ratio >= params.max_convexity)
+      blob.convexity = ratio;
+      if (params.filter_by_convexity && (ratio < params.min_convexity || ratio >= params.max_convexity))
         continue;
     }
 
     // compute blob average depth
-    if (params.filter_by_color)
     {
-      Mat mask(image.size(), CV_8UC1);
-      drawContours(mask, contours, contourIdx, Scalar(1), CV_FILLED);
       Rect roi = boundingRect(contours[contourIdx]);
-      double avg_color = median(image(roi), mask(roi));
+      Mat mask(roi.size(), CV_8UC1);
+      drawContours(mask, contours, contourIdx, Scalar(1), CV_FILLED, LINE_8, noArray(), INT_MAX, -roi.tl());
+      cv::bitwise_and(mask, known_pixels(roi), mask);
+      double avg_color = median(image(roi), mask);
       /* Scalar tmp = mean(image(roi), mask(roi)); */
       /* avg_color = tmp[0]; */
       /* for (const Point& pt : contours[contourIdx]) */
@@ -136,14 +145,12 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vecto
       /* } */
       /* avg_color = avg_color/contours[contourIdx].size(); */
 
-      if (avg_color < params.min_depth || avg_color > params.max_depth)
-        continue;
-
       blob.avg_depth = avg_color / 1000.0;
+
+      if (params.filter_by_color && (avg_color < params.min_depth || avg_color > params.max_depth))
+        continue;
     }
 
-    if (moms.m00 == 0.0)
-      continue;
     blob.location = Point2d(moms.m10 / moms.m00, moms.m01 / moms.m00);
 
     // compute blob radius
@@ -264,8 +271,13 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat image_raw, std::vector<Blo
     Blob result_blob;
     result_blob.confidence = normalizer / cur_blobs.size();
     result_blob.location = sumPoint;
-    result_blob.radius = (float)(cur_blobs[cur_blobs.size() / 2].radius);
+    result_blob.radius = cur_blobs[cur_blobs.size() / 2].radius;
     result_blob.avg_depth = cur_blobs[cur_blobs.size() / 2].avg_depth;
+    result_blob.convexity = cur_blobs[cur_blobs.size() / 2].convexity;
+    result_blob.angle = cur_blobs[cur_blobs.size() / 2].angle;
+    result_blob.area = cur_blobs[cur_blobs.size() / 2].area;
+    result_blob.circularity = cur_blobs[cur_blobs.size() / 2].circularity;
+    result_blob.inertia = cur_blobs[cur_blobs.size() / 2].inertia;
     result_blob.contours = contours;
     ret_blobs.push_back(result_blob);
   }

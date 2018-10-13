@@ -12,6 +12,11 @@ struct Blob
   cv::Point2d location;
   double radius;
   double avg_depth;
+  double circularity;
+  double convexity;
+  double angle;
+  uint32_t area;
+  double inertia;
   std::vector<std::vector<cv::Point> > contours;
 };
 
