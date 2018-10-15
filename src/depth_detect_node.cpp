@@ -11,7 +11,7 @@ bool new_thermal = false;
 sensor_msgs::Image last_thermal_msg;
 void thermal_callback(const sensor_msgs::Image& thermal_msg)
 {
-  ROS_INFO("Got new thermal image");
+  ROS_INFO_THROTTLE(1.0, "Got new thermal image");
   last_thermal_msg = thermal_msg;
   new_thermal = true;
 }
@@ -21,7 +21,7 @@ bool new_rgb = false;
 sensor_msgs::Image last_rgb_msg;
 void rgb_callback(const sensor_msgs::Image& rgb_msg)
 {
-  ROS_INFO("Got new rgb image");
+  ROS_INFO_THROTTLE(1.0, "Got new rgb image");
   last_rgb_msg = rgb_msg;
   new_rgb = true;
 }
@@ -31,7 +31,7 @@ bool new_dm = false;
 sensor_msgs::Image last_dm_msg;
 void depthmap_callback(const sensor_msgs::Image& dm_msg)
 {
-  ROS_INFO("Got new depth image");
+  ROS_INFO_THROTTLE(1.0, "Got new depth image");
   last_dm_msg = dm_msg;
   new_dm = true;
 }
@@ -44,7 +44,7 @@ void dm_cinfo_callback(const sensor_msgs::CameraInfo& dm_cinfo_msg)
 {
   if (!got_dm_cinfo)
   {
-    ROS_INFO("Got depth camera info");
+    ROS_INFO_THROTTLE(1.0, "Got depth camera info");
     camera_model.fromCameraInfo(dm_cinfo_msg);
     d_fx = camera_model.fx();
     d_fy = camera_model.fy();
@@ -106,6 +106,7 @@ int main(int argc, char** argv)
   // Load the image preprocessing parameters
   int& dilate_iterations = drmgr.config.dilate_iterations;
   int& erode_iterations = drmgr.config.erode_iterations;
+  int& erode_ignore_empty_iterations = drmgr.config.erode_ignore_empty_iterations;
   int& gaussianblur_size = drmgr.config.gaussianblur_size;
   int& medianblur_size = drmgr.config.medianblur_size;
   // Load the detection parameters
@@ -181,8 +182,8 @@ int main(int argc, char** argv)
   int window_flags = WINDOW_NORMAL | WINDOW_KEEPRATIO | WINDOW_GUI_NORMAL;
   string rgb_winname = "RGB_image";
   string thermal_winname = "thermal_image";
-  string dm_winname = "raw_depth";
-  string det_winname = "detections";
+  string dm_winname = "depth_image";
+  string det_winname = "depth_detections";
   cv::namedWindow(rgb_winname, window_flags);
   cv::namedWindow(thermal_winname, window_flags);
   cv::namedWindow(dm_winname, window_flags);
@@ -191,10 +192,12 @@ int main(int argc, char** argv)
   bool paused = false;
   bool fill_blobs = true;
   cv_bridge::CvImage source_img;
-  ros::Rate r(10);
+  ros::Rate r(50);
   while (ros::ok())
   {
     ros::spinOnce();
+
+    ros::Time start_t = ros::Time::now();
 
     // Check if we got a new message containing a depthmap
     /* if (new_dm) */
@@ -244,6 +247,9 @@ int main(int argc, char** argv)
       // create the detection image
       cv::Mat detect_im = source_img.image.clone();
       cv::Mat raw_im = source_img.image;
+      cv::Mat unknown_pixels, known_pixels;
+      inRange(raw_im, 0, 0, unknown_pixels);
+      known_pixels = ~unknown_pixels;
       // prepare the debug image
       cv_bridge::CvImage dbg_img = source_img;
 
@@ -260,9 +266,17 @@ int main(int argc, char** argv)
 
       // dilate and erode the image if requested
       {
-        cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(3, 3), Point(-1, -1));
+        cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(6, 3), Point(-1, -1));
         cv::dilate(detect_im, detect_im, element, Point(-1, -1), dilate_iterations);
         cv::erode(detect_im, detect_im, element, Point(-1, -1), erode_iterations);
+
+        // erode without using zero (unknown) pixels
+        if (erode_ignore_empty_iterations > 0)
+        {
+          cv::Mat unknown_as_max = cv::Mat(raw_im.size(), CV_16UC1, std::numeric_limits<uint16_t>::max());
+          raw_im.copyTo(unknown_as_max, known_pixels);
+          cv::erode(unknown_as_max, detect_im, element, Point(-1, -1), erode_ignore_empty_iterations);
+        }
       }
 
       // blur it if requested
@@ -314,45 +328,75 @@ int main(int argc, char** argv)
 
       dbd::DepthBlobDetector detector(params);
       ROS_INFO("[%s]: Starting Blob detector", ros::this_node::getName().c_str());
-      detector.detect(detect_im, raw_im, blobs);
+      detector.detect(detect_im, known_pixels, unknown_pixels, raw_im, blobs);
       ROS_INFO("[%s]: Blob detector finished", ros::this_node::getName().c_str());
 
-      /* cv::drawKeypoints(dbg_img.image, blobs, dbg_img.image, Scalar(0, 0, 255), DrawMatchesFlags::DRAW_OVER_OUTIMG); */
-      /* int potential = 0; */
-      /* int unsure = 0; */
+      cv::Mat rgb_im;
+      if (new_rgb)
+      {
+        rgb_im = (cv_bridge::toCvCopy(last_rgb_msg, sensor_msgs::image_encodings::BGR8))->image;
+      }
+      cv::Mat thermal_im_colormapped;
+      if (new_thermal)
+      {
+        cv::Mat thermal_im = (cv_bridge::toCvCopy(last_thermal_msg, string("16UC1")))->image;
+        double min;
+        double max;
+        cv::minMaxIdx(thermal_im, &min, &max);
+        cv::Mat im_8UC1;
+        thermal_im.convertTo(im_8UC1, CV_8UC1, 255 / (max-min), -min); 
+        applyColorMap(im_8UC1, thermal_im_colormapped, cv::COLORMAP_JET);
+      }
+      cv::Mat dm_im_colormapped;
+      {
+        double min;
+        double max;
+        cv::minMaxIdx(raw_im, &min, &max);
+        cv::Mat im_8UC1;
+        raw_im.convertTo(im_8UC1, CV_8UC1, 255 / (max-min), -min); 
+        applyColorMap(im_8UC1, dm_im_colormapped, cv::COLORMAP_JET);
+        cv::Mat blackness = cv::Mat::zeros(dm_im_colormapped.size(), dm_im_colormapped.type());
+        blackness.copyTo(dm_im_colormapped, unknown_pixels);
+      }
+
       int sure = 0;
       bool displaying_info = false;
       for (const auto& blob : blobs)
       {
-        sure++;
 
         auto max = blob.contours.size();
-        if (fill_blobs)
+        if (!blob.contours.empty())
         {
-          if (!blob.contours.empty())
-          for (size_t it = blob.contours.size()-1; it; it--)
+          sure++;
+          if (fill_blobs)
           {
-            cv::drawContours(dbg_img.image, blob.contours, it, Scalar(0, 65535, 65535/max*it), CV_FILLED);
-            auto cur_blob = blob.contours.at(it);
-            if (!displaying_info && pointPolygonTest(cur_blob, cursor_pos, false) > 0)
+            for (size_t it = blob.contours.size()-1; it; it--)
+            /* size_t it = blob.contours.size()/2; */
             {
-              // display information about this contour
-              displaying_info = true;
-              cv::putText(dbg_img.image, string("avg_depth: ") + to_string(blob.avg_depth), Point(0, 50), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-              cv::putText(dbg_img.image, string("confidence: ") + to_string(blob.confidence), Point(0, 65), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-              cv::putText(dbg_img.image, string("repeatability: ") + to_string(blob.contours.size()), Point(0, 80), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-              cv::putText(dbg_img.image, string("convexity: ") + to_string(blob.convexity), Point(0, 95), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-              cv::putText(dbg_img.image, string("angle: ") + to_string(blob.angle), Point(0, 110), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-              cv::putText(dbg_img.image, string("area: ") + to_string(blob.area), Point(0, 125), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-              cv::putText(dbg_img.image, string("circularity: ") + to_string(blob.circularity), Point(0, 140), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-              cv::putText(dbg_img.image, string("radius: ") + to_string(blob.radius), Point(0, 155), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-              cv::putText(dbg_img.image, string("inertia: ") + to_string(blob.inertia), Point(0, 170), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+              cv::drawContours(dbg_img.image, blob.contours, it, Scalar(0, 65535, 65535/max*it), CV_FILLED);
+              auto cur_blob = blob.contours.at(it);
+              if (!displaying_info && pointPolygonTest(cur_blob, cursor_pos, false) > 0)
+              {
+                // display information about this contour
+                displaying_info = true;
+                cv::putText(dbg_img.image, string("avg_depth: ") + to_string(blob.avg_depth), Point(0, 50), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(dbg_img.image, string("confidence: ") + to_string(blob.confidence), Point(0, 65), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(dbg_img.image, string("repeatability: ") + to_string(blob.contours.size()), Point(0, 80), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(dbg_img.image, string("convexity: ") + to_string(blob.convexity), Point(0, 95), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(dbg_img.image, string("angle: ") + to_string(blob.angle), Point(0, 110), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(dbg_img.image, string("area: ") + to_string(blob.area), Point(0, 125), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(dbg_img.image, string("circularity: ") + to_string(blob.circularity), Point(0, 140), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(dbg_img.image, string("radius: ") + to_string(blob.radius), Point(0, 155), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(dbg_img.image, string("inertia: ") + to_string(blob.inertia), Point(0, 170), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+              }
             }
+          } else
+          {
+            cv::circle(dbg_img.image, blob.location, blob.radius, Scalar(0, 0, 65535), 2);
           }
-        } else
-        {
-          cv::circle(dbg_img.image, blob.location, blob.radius, Scalar(0, 0, 65535), 2);
-        
+          if (new_rgb)
+            cv::circle(rgb_im, blob.location, blob.radius, Scalar(0, 0, 255), 2);
+          cv::circle(dm_im_colormapped, blob.location, blob.radius, Scalar(0, 0, 255), 2);
         }
       }
       /* cv::putText(dbg_img.image, string("potential: ") + to_string(potential), Point(0, 40), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(255, 0, 0), 3); */
@@ -364,38 +408,12 @@ int main(int argc, char** argv)
       //}
 
       if (new_rgb)
-      {
-        cv::Mat rgb_im = (cv_bridge::toCvCopy(last_rgb_msg, sensor_msgs::image_encodings::BGR8))->image;
         imshow(rgb_winname, rgb_im);
-      }
       if (new_thermal)
-      {
-        cv::Mat thermal_im = (cv_bridge::toCvCopy(last_thermal_msg, string("16UC1")))->image;
-        double min;
-        double max;
-        cv::minMaxIdx(thermal_im, &min, &max);
-        cv::Mat im_8UC1;
-        thermal_im.convertTo(im_8UC1, CV_8UC1, 255 / (max-min), -min); 
-        cv::Mat im_colormapped;
-        applyColorMap(im_8UC1, im_colormapped, cv::COLORMAP_JET);
-        imshow(thermal_winname, im_colormapped);
-      }
-      {
-        double min;
-        double max;
-        cv::minMaxIdx(raw_im, &min, &max);
-        cv::Mat im_8UC1;
-        raw_im.convertTo(im_8UC1, CV_8UC1, 255 / (max-min), -min); 
-        cv::Mat im_colormapped;
-        applyColorMap(im_8UC1, im_colormapped, cv::COLORMAP_JET);
-        cv::Mat unknown_pixels;
-        inRange(raw_im, 0, 0, unknown_pixels);
-        cv::Mat blackness = cv::Mat::zeros(im_colormapped.size(), im_colormapped.type());
-        blackness.copyTo(im_colormapped, unknown_pixels);
-        imshow(dm_winname, im_colormapped);
-      }
+        imshow(thermal_winname, thermal_im_colormapped);
+      imshow(dm_winname, dm_im_colormapped);
       imshow(det_winname, dbg_img.image);
-      int key = waitKey(25);
+      int key = waitKey(3);
       switch (key)
       {
         case ' ':
@@ -409,6 +427,9 @@ int main(int argc, char** argv)
       thresholded_pub.publish(out_msg);
 
       cout << "Image processed" << std::endl;
+      ros::Time end_t = ros::Time::now();
+      double dt = (end_t - start_t).toSec();
+      cout << "processing FPS: " << 1/dt << "Hz" << std::endl;
     } else
     {
       r.sleep();

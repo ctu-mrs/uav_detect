@@ -38,15 +38,13 @@ double cur_depth;
 
 /* method void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Blob>& blobs) const //{ */
 /* inspired by https://github.com/opencv/opencv/blob/3.4/modules/features2d/src/blobdetector.cpp */
-void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Blob>& blobs) const
+void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat binaryImage, std::vector<Blob>& blobs) const
 {
   blobs.clear();
 
   std::vector<std::vector<Point>> contours;
   /* findContours(tmpBinaryImage, contours, RETR_LIST, CHAIN_APPROX_NONE); */
   findContours(binaryImage, contours, RETR_LIST, CHAIN_APPROX_NONE);
-  Mat known_pixels;
-  cv::inRange(image, 1, std::numeric_limits<uint16_t>::max(), known_pixels);
 
 #ifdef DEBUG_BLOB_DETECTOR
   Mat keypointsImage;
@@ -187,7 +185,7 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vecto
 
 /* method void DepthBlobDetector::detect(cv::Mat image, std::vector<cv::KeyPoint>& keypoints, cv::Mat mask) //{ */
 /* inspired by https://github.com/opencv/opencv/blob/3.4/modules/features2d/src/blobdetector.cpp */
-void DepthBlobDetector::detect(cv::Mat image, cv::Mat image_raw, std::vector<Blob>& ret_blobs)
+void DepthBlobDetector::detect(cv::Mat image, cv::Mat known_pixels, cv::Mat unknown_pixels, cv::Mat image_raw, std::vector<Blob>& ret_blobs)
 {
   ret_blobs.clear();
   assert(params.min_repeatability != 0);
@@ -217,12 +215,13 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat image_raw, std::vector<Blo
       inRange(grayscaleImage, thresh - params.threshold_width, thresh, binarizedImage);
     else
       inRange(grayscaleImage, params.min_depth, thresh, binarizedImage);
+    /* cv::bitwise_or(binarizedImage, unknown_pixels, binarizedImage); // maybe not such a good idea for detecting the UAV against the sky */
 
 #ifdef DEBUG_BLOB_DETECTOR
     cur_depth = (thresh + params.threshold_width) / 1000.0;
 #endif
     std::vector<Blob> curBlobs;
-    findBlobs(image_raw, binarizedImage, curBlobs);
+    findBlobs(image_raw, known_pixels, binarizedImage, curBlobs);
     std::vector<std::vector<Blob>> newBlobs;
     for (size_t i = 0; i < curBlobs.size(); i++)
     {
