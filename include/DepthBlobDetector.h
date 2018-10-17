@@ -24,12 +24,12 @@ struct Params
 {
   // Filter by color
   bool filter_by_color;
-  uint16_t min_depth;
-  uint16_t max_depth;
+  int min_depth;
+  int max_depth;
   // Filter by area
   bool filter_by_area;
-  uint32_t min_area;
-  uint32_t max_area;
+  int min_area;
+  int max_area;
   // Filter by circularity
   bool filter_by_circularity;
   double min_circularity;
@@ -47,12 +47,12 @@ struct Params
   double min_inertia_ratio;
   double max_inertia_ratio;
   // thresholding
-  uint16_t min_threshold;
-  uint16_t max_threshold;
-  uint16_t threshold_step;
+  int min_threshold;
+  int max_threshold;
+  int threshold_step;
   bool use_threshold_width;
-  uint16_t threshold_width;
-  uint16_t min_repeatability;
+  int threshold_width;
+  int min_repeatability;
   // Other filtering criterions
   double min_dist_between;
 };
@@ -61,7 +61,7 @@ class DepthBlobDetector
 {
   public:
     DepthBlobDetector(const Params& parameters);
-    void detect(cv::Mat image, cv::Mat known_pixels, cv::Mat unknown_pixels, cv::Mat image_raw, std::vector<Blob>& ret_blobs);
+    void detect(cv::Mat image, cv::Mat known_pixels, cv::Mat image_raw, std::vector<Blob>& ret_blobs);
 
   private:
     void findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat binaryImage, std::vector<Blob>& blobs) const;

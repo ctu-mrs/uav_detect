@@ -54,7 +54,6 @@ add_message_files(DIRECTORY msgs FILES
 
 generate_messages(DEPENDENCIES
   std_msgs
-  geometry_msgs
   sensor_msgs
 )
 

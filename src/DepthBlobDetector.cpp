@@ -63,13 +63,16 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat b
     if (moms.m00 == 0.0)
       continue;
 
+    /* Filter by area //{ */
     if (params.filter_by_area)
     {
       double area = moms.m00;
       if (area < params.min_area || area >= params.max_area)
         continue;
     }
+    //}
 
+    /* Filter by circularity //{ */
     {
       double area = moms.m00;
       double perimeter = arcLength(Mat(contours[contourIdx]), true);
@@ -78,7 +81,9 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat b
       if (params.filter_by_circularity && (ratio < params.min_circularity || ratio >= params.max_circularity))
         continue;
     }
+    //}
 
+    /* Filter by orientation //{ */
     {
       constexpr double eps = 1e-3;
       double angle = 0;
@@ -88,7 +93,9 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat b
       if (params.filter_by_orientation && (angle < params.min_angle || angle > params.max_angle))
         continue;
     }
-
+    //}
+    
+    /* Filter by intertia //{ */
     {
       double denominator = std::sqrt(std::pow(2 * moms.mu11, 2) + std::pow(moms.mu20 - moms.mu02, 2));
       constexpr double eps = 1e-2;
@@ -114,7 +121,9 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat b
 
       blob.confidence = ratio * ratio;
     }
+    //}
 
+    /* Filter by convexity //{ */
     {
       std::vector<Point> hull;
       convexHull(Mat(contours[contourIdx]), hull);
@@ -127,31 +136,24 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat b
       if (params.filter_by_convexity && (ratio < params.min_convexity || ratio >= params.max_convexity))
         continue;
     }
+    //}
 
-    // compute blob average depth
+    /* Filter by color (depth) //{ */
     {
       Rect roi = boundingRect(contours[contourIdx]);
       Mat mask(roi.size(), CV_8UC1);
       drawContours(mask, contours, contourIdx, Scalar(1), CV_FILLED, LINE_8, noArray(), INT_MAX, -roi.tl());
       cv::bitwise_and(mask, known_pixels(roi), mask);
       double avg_color = median(image(roi), mask);
-      /* Scalar tmp = mean(image(roi), mask(roi)); */
-      /* avg_color = tmp[0]; */
-      /* for (const Point& pt : contours[contourIdx]) */
-      /* { */
-      /*   avg_color += image.at<uint16_t>(pt); */
-      /* } */
-      /* avg_color = avg_color/contours[contourIdx].size(); */
 
       blob.avg_depth = avg_color / 1000.0;
 
       if (params.filter_by_color && (avg_color < params.min_depth || avg_color > params.max_depth))
         continue;
     }
+    //}
 
-    blob.location = Point2d(moms.m10 / moms.m00, moms.m01 / moms.m00);
-
-    // compute blob radius
+    /* Calculate blob radius //{ */
     {
       std::vector<double> dists;
       for (size_t pointIdx = 0; pointIdx < contours[contourIdx].size(); pointIdx++)
@@ -162,6 +164,9 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat b
       std::sort(dists.begin(), dists.end());
       blob.radius = (dists[(dists.size() - 1) / 2] + dists[dists.size() / 2]) / 2.;
     }
+    //}
+
+    blob.location = Point2d(moms.m10 / moms.m00, moms.m01 / moms.m00);
 
     blob.contours.push_back(contours[contourIdx]);
 
@@ -169,9 +174,6 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat b
 
 #ifdef DEBUG_BLOB_DETECTOR
     drawContours(keypointsImage, contours, contourIdx, Scalar(0, avg_color * 255.0 / params.max_depth, 0), CV_FILLED, LINE_4);
-#endif
-
-#ifdef DEBUG_BLOB_DETECTOR
     circle(keypointsImage, blob.location, 1, Scalar(0, 0, 255), 1);
 #endif
   }
@@ -185,7 +187,7 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat b
 
 /* method void DepthBlobDetector::detect(cv::Mat image, std::vector<cv::KeyPoint>& keypoints, cv::Mat mask) //{ */
 /* inspired by https://github.com/opencv/opencv/blob/3.4/modules/features2d/src/blobdetector.cpp */
-void DepthBlobDetector::detect(cv::Mat image, cv::Mat known_pixels, cv::Mat unknown_pixels, cv::Mat image_raw, std::vector<Blob>& ret_blobs)
+void DepthBlobDetector::detect(cv::Mat image, cv::Mat known_pixels, cv::Mat image_raw, std::vector<Blob>& ret_blobs)
 {
   ret_blobs.clear();
   assert(params.min_repeatability != 0);
@@ -254,7 +256,7 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat known_pixels, cv::Mat unkn
   for (size_t i = 0; i < blobs.size(); i++)
   {
     vector<Blob> cur_blobs = blobs[i];
-    if (cur_blobs.size() < params.min_repeatability)
+    if (cur_blobs.size() < (size_t)params.min_repeatability)
       continue;
     Point2d sumPoint(0, 0);
     double normalizer = 0;

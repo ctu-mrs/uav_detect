@@ -1,5 +1,3 @@
-Detection[] detections
-int32 w_used
-int32 h_used
-sensor_msgs/CameraInfo camera_info
-time stamp
+std_msgs/Header header            # specifies frame in which the detections are specified
+time stamp                        # time stamp of the image used for this detection
+Detection[] detections            # array of detections

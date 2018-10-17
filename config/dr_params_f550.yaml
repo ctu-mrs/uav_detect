@@ -5,19 +5,25 @@ dictitems:
   blob_filter_by_color: true
   blob_filter_by_convexity: true
   blob_filter_by_inertia: true
-  blob_max_area: 10000
-  blob_max_circularity: 0.65
+  blob_filter_by_orientation: true
+  blob_max_angle: 0.4
+  blob_max_area: 5000
+  blob_max_circularity: 0.8
   blob_max_convexity: 1.0
-  blob_max_inertia_ratio: 0.23
-  blob_min_area: 100
-  blob_min_circularity: 0.21
-  blob_min_convexity: 0.46
+  blob_max_inertia_ratio: 0.4
+  blob_min_angle: 0.0
+  blob_min_area: 20
+  blob_min_circularity: 0.3
+  blob_min_convexity: 0.75
   blob_min_dist_between: 10.0
-  blob_min_inertia_ratio: 0.0
-  blob_min_repeatability: 2
+  blob_min_inertia_ratio: 0.01
+  blob_min_repeatability: 4
   blob_threshold_step: 500
   blob_threshold_width: 100
-  dilate_iterations: 2
+  blur_empty_areas: false
+  dilate_iterations: 0
+  erode_ignore_empty_iterations: 5
+  erode_iterations: 0
   gaussianblur_size: 0
   groups: !!python/object/new:dynamic_reconfigure.encoding.Config
     dictitems:
@@ -30,26 +36,32 @@ dictitems:
               blob_filter_by_color: true
               blob_filter_by_convexity: true
               blob_filter_by_inertia: true
-              blob_max_area: 10000
-              blob_max_circularity: 0.65
+              blob_filter_by_orientation: true
+              blob_max_angle: 0.4
+              blob_max_area: 5000
+              blob_max_circularity: 0.8
               blob_max_convexity: 1.0
-              blob_max_inertia_ratio: 0.23
-              blob_min_area: 100
-              blob_min_circularity: 0.21
-              blob_min_convexity: 0.46
+              blob_max_inertia_ratio: 0.4
+              blob_min_angle: 0.0
+              blob_min_area: 20
+              blob_min_circularity: 0.3
+              blob_min_convexity: 0.75
               blob_min_dist_between: 10.0
-              blob_min_inertia_ratio: 0.0
-              blob_min_repeatability: 2
+              blob_min_inertia_ratio: 0.01
+              blob_min_repeatability: 4
               blob_threshold_step: 500
               blob_threshold_width: 100
-              dilate_iterations: 2
+              blur_empty_areas: false
+              dilate_iterations: 0
+              erode_ignore_empty_iterations: 5
+              erode_iterations: 0
               gaussianblur_size: 0
               groups: !!python/object/new:dynamic_reconfigure.encoding.Config
                 state: []
               id: 1
-              max_depth: 11000
+              max_depth: 13000
               medianblur_size: 0
-              min_depth: 300
+              min_depth: 4000
               name: Params
               parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
                 state: []
@@ -67,8 +79,8 @@ dictitems:
       state: true
       type: ''
     state: []
-  max_depth: 11000
+  max_depth: 13000
   medianblur_size: 0
-  min_depth: 300
+  min_depth: 4000
   use_threshold_width: false
 state: []
