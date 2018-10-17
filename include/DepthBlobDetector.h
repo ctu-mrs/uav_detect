@@ -53,6 +53,8 @@ struct Params
   int min_repeatability;
   // Other filtering criterions
   double min_dist_between;
+
+  Params(uav_detect::DepthMapParamsConfig cfg);
 };
 
 class DepthBlobDetector

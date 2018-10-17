@@ -6,9 +6,8 @@ using namespace std;
 using namespace dbd;
 
 DepthBlobDetector::DepthBlobDetector(const Params& parameters)
-{
-  params = parameters;
-}
+  : params(parameters)
+{}
 
 double median(cv::Mat image, cv::Mat mask)
 {
@@ -35,6 +34,40 @@ double median(cv::Mat image, cv::Mat mask)
 #ifdef DEBUG_BLOB_DETECTOR
 double cur_depth;
 #endif
+
+Params::Params(uav_detect::DepthMapParamsConfig cfg)
+{
+  // Filter by color
+  filter_by_color = cfg.filter_by_color;
+  min_depth = cfg.min_depth;
+  max_depth = cfg.max_depth;
+  use_threshold_width = cfg.use_threshold_width;
+  threshold_step = cfg.threshold_step;
+  threshold_width = cfg.threshold_width;
+  // Filter by area
+  filter_by_area = cfg.filter_by_area;
+  min_area = cfg.min_area;
+  max_area = cfg.max_area;
+  // Filter by circularity
+  filter_by_circularity = cfg.filter_by_circularity;
+  min_circularity = cfg.min_circularity;
+  max_circularity = cfg.max_circularity;
+  // Filter by orientation
+  filter_by_orientation = cfg.filter_by_orientation;
+  min_angle = cfg.min_angle;
+  max_angle = cfg.max_angle;
+  // Filter by convexity
+  filter_by_convexity = cfg.filter_by_convexity;
+  min_convexity = cfg.min_convexity;
+  max_convexity = cfg.max_convexity;
+  // Filter by inertia
+  filter_by_inertia = cfg.filter_by_inertia;
+  min_inertia_ratio = cfg.min_inertia_ratio;
+  max_inertia_ratio = cfg.max_inertia_ratio;
+  // Other filtering criterions
+  min_dist_between = cfg.min_dist_between;
+  min_repeatability = cfg.min_repeatability;
+}
 
 /* method void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Blob>& blobs) const //{ */
 /* inspired by https://github.com/opencv/opencv/blob/3.4/modules/features2d/src/blobdetector.cpp */

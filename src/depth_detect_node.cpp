@@ -79,75 +79,48 @@ int main(int argc, char** argv)
   /* double camera_delay = load_param<double>(nh, "camera_delay");; */
   // LOAD DYNAMIC PARAMETERS
   drmgr_t drmgr;
+  if (!drmgr.loaded_successfully())
+  {
+    ROS_ERROR("Some dynamic parameter default values were not loaded successfully, ending the node");
+    ros::shutdown();
+  }
   // Load the image preprocessing parameters
   int& dilate_iterations = drmgr.config.dilate_iterations;
   int& erode_iterations = drmgr.config.erode_iterations;
   int& erode_ignore_empty_iterations = drmgr.config.erode_ignore_empty_iterations;
   int& gaussianblur_size = drmgr.config.gaussianblur_size;
   int& medianblur_size = drmgr.config.medianblur_size;
-  // Load the detection parameters
-  dbd::Params params;
-  // Filter by color
-  params.filter_by_color = drmgr.config.filter_by_color;
-  params.min_depth = drmgr.config.min_depth;
-  params.max_depth = drmgr.config.max_depth;
-  params.use_threshold_width = drmgr.config.use_threshold_width;
-  params.threshold_step = drmgr.config.threshold_step;
-  params.threshold_width = drmgr.config.threshold_width;
-  // Filter by area
-  params.filter_by_area = drmgr.config.filter_by_area;
-  params.min_area = drmgr.config.min_area;
-  params.max_area = drmgr.config.max_area;
-  // Filter by circularity
-  params.filter_by_circularity = drmgr.config.filter_by_circularity;
-  params.min_circularity = drmgr.config.min_circularity;
-  params.max_circularity = drmgr.config.max_circularity;
-  // Filter by orientation
-  params.filter_by_orientation = drmgr.config.filter_by_orientation;
-  params.min_angle = drmgr.config.min_angle;
-  params.max_angle = drmgr.config.max_angle;
-  // Filter by convexity
-  params.filter_by_convexity = drmgr.config.filter_by_convexity;
-  params.min_convexity = drmgr.config.min_convexity;
-  params.max_convexity = drmgr.config.max_convexity;
-  // Filter by inertia
-  params.filter_by_inertia = drmgr.config.filter_by_inertia;
-  params.min_inertia_ratio = drmgr.config.min_inertia_ratio;
-  params.max_inertia_ratio = drmgr.config.max_inertia_ratio;
-  // Other filtering criterions
-  params.min_dist_between = drmgr.config.min_dist_between;
-  params.min_repeatability = drmgr.config.min_repeatability;
 
-  ROS_INFO("[%s]: Loading default values of dynamically reconfigurable variables", ros::this_node::getName().c_str());
-  // Load default values of dynamically reconfigurable parameters
-  pl.load_param("dilate_iterations", dilate_iterations);
-  pl.load_param("erode_iterations", erode_iterations);
-  pl.load_param("erode_ignore_empty_iterations", erode_ignore_empty_iterations);
-  pl.load_param("gaussianblur_size", gaussianblur_size);
-  pl.load_param("medianblur_size", medianblur_size);
-  pl.load_param("filter_by_color", params.filter_by_color);
-  pl.load_param("min_depth", params.min_depth);
-  pl.load_param("max_depth", params.max_depth);
-  pl.load_param("use_threshold_width", params.use_threshold_width);
-  pl.load_param("threshold_step", params.threshold_step);
-  pl.load_param("threshold_width", params.threshold_width);
-  pl.load_param("filter_by_area", params.filter_by_area);
-  pl.load_param("min_area", params.min_area);
-  pl.load_param("max_area", params.max_area);
-  pl.load_param("filter_by_circularity", params.filter_by_circularity);
-  pl.load_param("min_circularity", params.min_circularity);
-  pl.load_param("max_circularity", params.max_circularity);
-  pl.load_param("filter_by_orientation", params.filter_by_orientation);
-  pl.load_param("min_angle", params.min_angle);
-  pl.load_param("max_angle", params.max_angle);
-  pl.load_param("filter_by_convexity", params.filter_by_convexity);
-  pl.load_param("min_convexity", params.min_convexity);
-  pl.load_param("max_convexity", params.max_convexity);
-  pl.load_param("filter_by_inertia", params.filter_by_inertia);
-  pl.load_param("min_inertia_ratio", params.min_inertia_ratio);
-  pl.load_param("max_inertia_ratio", params.max_inertia_ratio);
-  pl.load_param("min_dist_between", params.min_dist_between);
-  pl.load_param("min_repeatability", params.min_repeatability);
+  /* ROS_INFO("[%s]: Loading default values of dynamically reconfigurable variables", ros::this_node::getName().c_str()); */
+  /* // Load default values of dynamically reconfigurable parameters */
+  /* pl.load_param("dilate_iterations", dilate_iterations); */
+  /* pl.load_param("erode_iterations", erode_iterations); */
+  /* pl.load_param("erode_ignore_empty_iterations", erode_ignore_empty_iterations); */
+  /* pl.load_param("gaussianblur_size", gaussianblur_size); */
+  /* pl.load_param("medianblur_size", medianblur_size); */
+  /* pl.load_param("filter_by_color", params.filter_by_color); */
+  /* pl.load_param("min_depth", params.min_depth); */
+  /* pl.load_param("max_depth", params.max_depth); */
+  /* pl.load_param("use_threshold_width", params.use_threshold_width); */
+  /* pl.load_param("threshold_step", params.threshold_step); */
+  /* pl.load_param("threshold_width", params.threshold_width); */
+  /* pl.load_param("filter_by_area", params.filter_by_area); */
+  /* pl.load_param("min_area", params.min_area); */
+  /* pl.load_param("max_area", params.max_area); */
+  /* pl.load_param("filter_by_circularity", params.filter_by_circularity); */
+  /* pl.load_param("min_circularity", params.min_circularity); */
+  /* pl.load_param("max_circularity", params.max_circularity); */
+  /* pl.load_param("filter_by_orientation", params.filter_by_orientation); */
+  /* pl.load_param("min_angle", params.min_angle); */
+  /* pl.load_param("max_angle", params.max_angle); */
+  /* pl.load_param("filter_by_convexity", params.filter_by_convexity); */
+  /* pl.load_param("min_convexity", params.min_convexity); */
+  /* pl.load_param("max_convexity", params.max_convexity); */
+  /* pl.load_param("filter_by_inertia", params.filter_by_inertia); */
+  /* pl.load_param("min_inertia_ratio", params.min_inertia_ratio); */
+  /* pl.load_param("max_inertia_ratio", params.max_inertia_ratio); */
+  /* pl.load_param("min_dist_between", params.min_dist_between); */
+  /* pl.load_param("min_repeatability", params.min_repeatability); */
 
   if (!pl.loaded_successfully())
   {
@@ -280,7 +253,7 @@ int main(int argc, char** argv)
 
       /* Use OpenCV SimpleBlobDetector to find blobs //{ */
       vector<dbd::Blob> blobs;
-      dbd::DepthBlobDetector detector(params);
+      dbd::DepthBlobDetector detector(dbd::Params(drmgr.config));
       ROS_INFO("[%s]: Starting Blob detector", ros::this_node::getName().c_str());
       detector.detect(detect_im, known_pixels, raw_im, blobs);
       ROS_INFO("[%s]: Blob detector finished", ros::this_node::getName().c_str());
