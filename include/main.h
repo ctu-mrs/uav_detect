@@ -29,6 +29,10 @@
 #include <uav_detect/DepthMapParamsConfig.h>
 #include <uav_detect/Detection.h>
 #include <uav_detect/Detections.h>
+#include <uav_detect/ImagePixel.h>
+#include <uav_detect/Contour.h>
+#include <uav_detect/BlobDetection.h>
+#include <uav_detect/BlobDetections.h>
 #include <mrs_lib/ParamLoader.h>
 
 Eigen::Affine3d tf2_to_eigen(const tf2::Transform& tf2_t);

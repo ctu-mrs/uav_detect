@@ -50,6 +50,10 @@ set(Eigen_LIBRARIES ${Eigen_LIBRARIES})
 add_message_files(DIRECTORY msgs FILES
   Detection.msg
   Detections.msg
+  Contour.msg
+  ImagePixel.msg
+  BlobDetection.msg
+  BlobDetections.msg
 )
 
 generate_messages(DEPENDENCIES

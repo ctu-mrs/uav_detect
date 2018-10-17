@@ -205,7 +205,6 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat known_pixels, cv::Mat imag
 
   std::vector<std::vector<Blob>> blobs;
   int thresh_start = params.min_depth;
-  std::cout << params.min_depth << endl;
   if (params.use_threshold_width)
     thresh_start = params.min_depth + params.threshold_width;
   for (int thresh = thresh_start; thresh < params.max_depth; thresh += params.threshold_step)

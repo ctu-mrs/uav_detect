@@ -179,6 +179,7 @@ int main(int argc, char** argv)
   ros::Subscriber depthmap_sub = nh.subscribe("depthmap", 1, depthmap_callback, ros::TransportHints().tcpNoDelay());
    /* ros::Subscriber dm_cinfo_sub = nh.subscribe("camera_info", 1, dm_cinfo_callback, ros::TransportHints().tcpNoDelay()); */ 
   ros::Publisher detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); 
+  ros::Publisher detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1);
   ros::Publisher processed_deptmap_pub = nh.advertise<sensor_msgs::Image&>("processed_depthmap", 1);
   //}
 
@@ -280,7 +281,6 @@ int main(int argc, char** argv)
 
       /* Use OpenCV SimpleBlobDetector to find blobs //{ */
       vector<dbd::Blob> blobs;
-      cout << params.min_depth << endl;
       dbd::DepthBlobDetector detector(params);
       ROS_INFO("[%s]: Starting Blob detector", ros::this_node::getName().c_str());
       detector.detect(detect_im, known_pixels, raw_im, blobs);
@@ -290,6 +290,7 @@ int main(int argc, char** argv)
 
       //}
       
+      /* Create and publish the message with detections //{ */
       uav_detect::Detections dets;
       dets.header.frame_id = source_msg.header.frame_id;
       dets.header.stamp = source_msg.header.stamp;
@@ -316,14 +317,57 @@ int main(int argc, char** argv)
         dets.detections.push_back(det);
       }
       detections_pub.publish(dets);
+      //}
 
       if (processed_deptmap_pub.getNumSubscribers() > 0)
       {
-        // publish the debug message
+        /* Create and publish the debug image //{ */
         cv_bridge::CvImage processed_depthmap_cvb = source_msg;
         processed_depthmap_cvb.image = detect_im;
         sensor_msgs::ImagePtr out_msg = processed_depthmap_cvb.toImageMsg();
         processed_deptmap_pub.publish(out_msg);
+        //}
+      }
+
+      if (detected_blobs_pub.getNumSubscribers() > 0)
+      {
+        /* Create and publish the message with raw blob data //{ */
+        uav_detect::BlobDetections dets;
+        dets.header.frame_id = source_msg.header.frame_id;
+        dets.header.stamp = source_msg.header.stamp;
+        dets.blobs.reserve(blobs.size());
+        for (const dbd::Blob& blob : blobs)
+        {
+          uav_detect::BlobDetection det;
+
+          det.avg_depth = blob.avg_depth;
+          det.confidence = blob.confidence;
+          det.repeatability = blob.contours.size();
+          det.convexity = blob.convexity;
+          det.angle = blob.angle;
+          det.area = blob.area;
+          det.circularity = blob.circularity;
+          det.radius = blob.radius;
+          det.inertia = blob.inertia;
+          det.contours.reserve(blob.contours.size());
+          for (const auto& cont : blob.contours)
+          {
+            Contour cnt;
+            cnt.pixels.reserve(cont.size());
+            for (const auto& pt : cont)
+            {
+              uav_detect::ImagePixel px;
+              px.x = pt.x;
+              px.y = pt.y;
+              cnt.pixels.push_back(px);
+            }
+            det.contours.push_back(cnt);
+          }
+
+          dets.blobs.push_back(det);
+        }
+        detected_blobs_pub.publish(dets);
+        //}
       }
 
       cout << "Image processed" << std::endl;
