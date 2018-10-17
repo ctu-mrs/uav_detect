@@ -82,12 +82,22 @@ include_directories(include
   # ~/git/darknet_ocl/src
 )
 
-add_executable(depth_detect_node src/depth_detect_node.cpp src/DepthBlobDetector.cpp src/utils.cpp)
+add_executable(depth_detect_node src/depth_detect_node.cpp src/DepthBlobDetector.cpp)
 add_dependencies(depth_detect_node
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS}
 )
 target_link_libraries(depth_detect_node
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+)
+
+add_executable(dbg_display_node src/dbg_display_node.cpp)
+add_dependencies(dbg_display_node
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+target_link_libraries(dbg_display_node
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
 )

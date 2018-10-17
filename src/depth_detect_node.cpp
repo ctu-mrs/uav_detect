@@ -238,7 +238,6 @@ int main(int argc, char** argv)
       cv::Mat raw_im = source_msg.image;
       cv::Mat known_pixels;
       inRange(raw_im, 1, std::numeric_limits<uint16_t>::max(), known_pixels);
-      known_pixels = known_pixels;
 
       if (drmgr.config.blur_empty_areas)
       {
@@ -340,9 +339,10 @@ int main(int argc, char** argv)
         {
           uav_detect::BlobDetection det;
 
+          det.x = blob.location.x;
+          det.y = blob.location.y;
           det.avg_depth = blob.avg_depth;
           det.confidence = blob.confidence;
-          det.repeatability = blob.contours.size();
           det.convexity = blob.convexity;
           det.angle = blob.angle;
           det.area = blob.area;

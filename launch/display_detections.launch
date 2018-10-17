@@ -1,0 +1,17 @@
+<launch>
+
+  <arg name="uav_name" default="$(optenv UAV_NAME uav)"/>
+
+  <group ns="$(arg uav_name)">
+    
+    <node pkg="uav_detect" name="uav_display" type="dbg_display_node" output="screen" >
+      <remap from="~depthmap" to="/$(arg uav_name)/rs_d435/aligned_depth_to_color/image_raw" />
+      <remap from="~rgb_img" to="/$(arg uav_name)/rs_d435/color/image_rect_color" />
+      <remap from="~blob_detections" to="/$(arg uav_name)/uav_detection/blob_detections" />
+      <remap from="~processed_depthmap" to="/$(arg uav_name)/uav_detection/processed_depthmap" />
+
+    </node>
+
+  </group>
+
+</launch>

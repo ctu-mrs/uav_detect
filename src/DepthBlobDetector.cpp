@@ -153,6 +153,8 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat b
     }
     //}
 
+    blob.location = Point2d(moms.m10 / moms.m00, moms.m01 / moms.m00);
+
     /* Calculate blob radius //{ */
     {
       std::vector<double> dists;
@@ -165,8 +167,6 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat b
       blob.radius = (dists[(dists.size() - 1) / 2] + dists[dists.size() / 2]) / 2.;
     }
     //}
-
-    blob.location = Point2d(moms.m10 / moms.m00, moms.m01 / moms.m00);
 
     blob.contours.push_back(contours[contourIdx]);
 
