@@ -6,6 +6,7 @@ using namespace std;
 using namespace uav_detect;
 using namespace Eigen;
 
+/* Callbacks //{ */
 // Callback for the depth map
 bool new_dm = false;
 sensor_msgs::Image last_dm_msg;
@@ -39,6 +40,7 @@ void depthmap_callback(const sensor_msgs::Image& dm_msg)
 /*   Eigen::Vector3d pos((px_x-d_cx)/d_fx*depth_m, (px_y-d_cy)/d_fy*depth_m, depth_m); */
 /*   return c2w_z.dot(pos); */
 /* } */
+//}
 
 // shortcut type to the dynamic reconfigure manager template instance
 typedef mrs_lib::DynamicReconfigureMgr<uav_detect::DepthMapParamsConfig> drmgr_t;
@@ -176,7 +178,7 @@ int main(int argc, char** argv)
   // Initialize other subs and pubs
   ros::Subscriber depthmap_sub = nh.subscribe("depthmap", 1, depthmap_callback, ros::TransportHints().tcpNoDelay());
    /* ros::Subscriber dm_cinfo_sub = nh.subscribe("camera_info", 1, dm_cinfo_callback, ros::TransportHints().tcpNoDelay()); */ 
-   /* ros::Publisher detected_UAV_pub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("detected_uav", 10); */ 
+  ros::Publisher detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); 
   ros::Publisher processed_deptmap_pub = nh.advertise<sensor_msgs::Image&>("processed_depthmap", 1);
   //}
 
@@ -278,6 +280,7 @@ int main(int argc, char** argv)
 
       /* Use OpenCV SimpleBlobDetector to find blobs //{ */
       vector<dbd::Blob> blobs;
+      cout << params.min_depth << endl;
       dbd::DepthBlobDetector detector(params);
       ROS_INFO("[%s]: Starting Blob detector", ros::this_node::getName().c_str());
       detector.detect(detect_im, known_pixels, raw_im, blobs);
@@ -286,6 +289,33 @@ int main(int argc, char** argv)
       cout << "Number of blobs: " << blobs.size() << std::endl;
 
       //}
+      
+      uav_detect::Detections dets;
+      dets.header.frame_id = source_msg.header.frame_id;
+      dets.header.stamp = source_msg.header.stamp;
+      dets.detections.reserve(blobs.size());
+      for (const dbd::Blob& blob : blobs)
+      {
+        uav_detect::Detection det;
+        det.class_ID = -1;
+
+        det.roi.x_offset = 0;
+        det.roi.y_offset = 0;
+        det.roi.width = detect_im.cols;
+        det.roi.height = detect_im.rows;
+
+        cv::Rect brect = cv::boundingRect(blob.contours.at(blob.contours.size()/2));
+        det.x = brect.x/double(detect_im.cols);
+        det.y = brect.y/double(detect_im.rows);
+        det.depth = blob.avg_depth;
+        det.width = brect.width/double(detect_im.cols);
+        det.height = brect.height/double(detect_im.cols);
+
+        det.confidence = -1;
+
+        dets.detections.push_back(det);
+      }
+      detections_pub.publish(dets);
 
       if (processed_deptmap_pub.getNumSubscribers() > 0)
       {

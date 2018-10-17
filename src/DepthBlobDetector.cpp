@@ -173,7 +173,7 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat b
     blobs.push_back(blob);
 
 #ifdef DEBUG_BLOB_DETECTOR
-    drawContours(keypointsImage, contours, contourIdx, Scalar(0, avg_color * 255.0 / params.max_depth, 0), CV_FILLED, LINE_4);
+    drawContours(keypointsImage, contours, contourIdx, Scalar(0, blob.avg_depth * 255.0 / params.max_depth, 0), CV_FILLED, LINE_4);
     circle(keypointsImage, blob.location, 1, Scalar(0, 0, 255), 1);
 #endif
   }
@@ -204,10 +204,11 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat known_pixels, cv::Mat imag
   }
 
   std::vector<std::vector<Blob>> blobs;
-  uint16_t thresh_start = params.min_threshold;
+  int thresh_start = params.min_depth;
+  std::cout << params.min_depth << endl;
   if (params.use_threshold_width)
-    thresh_start = params.min_threshold + params.threshold_width;
-  for (uint16_t thresh = thresh_start; thresh < params.max_threshold; thresh += params.threshold_step)
+    thresh_start = params.min_depth + params.threshold_width;
+  for (int thresh = thresh_start; thresh < params.max_depth; thresh += params.threshold_step)
   {
     Mat binarizedImage;
 #ifdef DEBUG_BLOB_DETECTOR
@@ -220,7 +221,10 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat known_pixels, cv::Mat imag
     /* cv::bitwise_or(binarizedImage, unknown_pixels, binarizedImage); // maybe not such a good idea for detecting the UAV against the sky */
 
 #ifdef DEBUG_BLOB_DETECTOR
-    cur_depth = (thresh + params.threshold_width) / 1000.0;
+    if (params.use_threshold_width)
+      cur_depth = (thresh + params.threshold_width) / 1000.0;
+    else
+      cur_depth = thresh / 1000.0;
 #endif
     std::vector<Blob> curBlobs;
     findBlobs(image_raw, known_pixels, binarizedImage, curBlobs);

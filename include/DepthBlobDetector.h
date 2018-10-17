@@ -47,8 +47,6 @@ struct Params
   double min_inertia_ratio;
   double max_inertia_ratio;
   // thresholding
-  int min_threshold;
-  int max_threshold;
   int threshold_step;
   bool use_threshold_width;
   int threshold_width;

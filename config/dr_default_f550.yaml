@@ -9,35 +9,35 @@ gaussianblur_size: 0
 medianblur_size: 0
 
 # filtration of detected blobs
-blob_filter_by_area: true
-blob_min_area: 20
-blob_max_area: 5000
+filter_by_area: true
+min_area: 20
+max_area: 5000
 
-blob_filter_by_circularity: true
-blob_min_circularity: 0.3
-blob_max_circularity: 0.8
+filter_by_circularity: true
+min_circularity: 0.3
+max_circularity: 0.8
 
-blob_filter_by_orientation: true
-blob_min_angle: 0.0
-blob_max_angle: 0.4
+filter_by_orientation: true
+min_angle: 0.0
+max_angle: 0.4
 
-blob_filter_by_inertia: true
-blob_min_inertia_ratio: 0.01
-blob_max_inertia_ratio: 0.4
+filter_by_inertia: true
+min_inertia_ratio: 0.01
+max_inertia_ratio: 0.4
 
-blob_filter_by_convexity: true
-blob_min_convexity: 0.75
-blob_max_convexity: 1.0
+filter_by_convexity: true
+min_convexity: 0.75
+max_convexity: 1.0
 
-blob_filter_by_color: true
+filter_by_color: true
 min_depth: 4000
 max_depth: 13000
 
 # further filtration
-blob_min_dist_between: 10.0
-blob_min_repeatability: 4
+min_dist_between: 10.0
+min_repeatability: 4
 
 # deprecated parameters
 use_threshold_width: false
-blob_threshold_step: 500
-blob_threshold_width: 100
+threshold_step: 500
+threshold_width: 100
