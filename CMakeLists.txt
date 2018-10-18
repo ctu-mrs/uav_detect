@@ -22,6 +22,7 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_eigen
   tf2_geometry_msgs
   mrs_lib
+  nodelet
 )
 
 find_file(DISTCC_FULL_PATH distcc)
@@ -88,6 +89,16 @@ add_dependencies(depth_detect_node
   ${catkin_EXPORTED_TARGETS}
 )
 target_link_libraries(depth_detect_node
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+)
+
+add_library(LocalizeSingle src/localize_single_nodelet.cpp src/utils.cpp)
+add_dependencies(LocalizeSingle
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+target_link_libraries(LocalizeSingle
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
 )

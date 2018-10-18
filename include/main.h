@@ -35,6 +35,4 @@
 #include <uav_detect/BlobDetections.h>
 #include <mrs_lib/ParamLoader.h>
 
-Eigen::Affine3d tf2_to_eigen(const tf2::Transform& tf2_t);
-
 #endif //  MAIN_H

@@ -345,7 +345,8 @@ int main(int argc, char** argv)
 
       cout << "Image processed" << std::endl;
       ros::Time end_t = ros::Time::now();
-      double dt = (end_t - start_t).toSec();
+      static double dt = (end_t - start_t).toSec();
+      dt = 0.9*dt + 0.1*(end_t - start_t).toSec();
       cout << "processing FPS: " << 1/dt << "Hz" << std::endl;
     } else
     {

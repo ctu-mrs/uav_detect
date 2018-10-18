@@ -1,0 +1,6 @@
+<library path="lib/libLocalizeSingle">
+  <class name="uav_detect/LocalizeSingle" type="uav_detect::LocalizeSingle" base_class_type="nodelet::Nodelet">
+    <description>Nodelet for calculating a 3D position of a single detected object from the detections message</description>
+  </class>
+</library>
+
