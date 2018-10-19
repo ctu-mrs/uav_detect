@@ -21,6 +21,7 @@ namespace uav_detect
     tf2_ros::Buffer m_tf_buffer;
     std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
     ros::Subscriber m_sub_detections;
+    ros::Subscriber m_sub_camera_info;
     ros::Timer m_lkf_update_timer;
     ros::Timer m_main_loop_timer;
 
@@ -57,6 +58,7 @@ namespace uav_detect
       m_tf_listener_ptr = std::make_unique<tf2_ros::TransformListener>(m_tf_buffer);
       // Initialize other subs and pubs
       m_sub_detections = nh.subscribe("detections", 1, &LocalizeSingle::detections_callback, this, ros::TransportHints().tcpNoDelay());
+      m_sub_camera_info = nh.subscribe("camera_info", 1, &LocalizeSingle::camera_info_callback, this, ros::TransportHints().tcpNoDelay());
       //}
 
       m_lkf_update_timer = nh.createTimer(ros::Duration(m_lkf_dt), &LocalizeSingle::lkf_update, this);
@@ -68,6 +70,43 @@ namespace uav_detect
 
   private:
 
+    /* detection_to_3dpoint() method //{ */
+    Eigen::Vector3d detection_to_3dpoint(uav_detect::Detection det)
+    {
+      Eigen::Vector3d ret;
+      double u = det.x * det.roi.width + det.roi.x_offset;
+      double v = det.y * det.roi.height + det.roi.y_offset;
+      double x = (u - m_camera_model.cx())/m_camera_model.fx();
+      double y = (v - m_camera_model.cy())/m_camera_model.fy();
+      ret << x, y, 1.0;
+      ret *= det.depth;
+      return ret;
+    }
+    //}
+
+    /* get_transform_to_world() method //{ */
+    bool get_transform_to_world(string frame_name, Eigen::Affine3d tf)
+    {
+      try
+      {
+        const ros::Duration timeout(1.0 / 6.0);
+        geometry_msgs::TransformStamped transform;
+        // Obtain transform from world into uav frame
+        transform = m_tf_buffer.lookupTransform(frame_name, m_world_frame, m_last_detections_msg.header.stamp, timeout);
+        /* tf2::convert(transform, world2uav_transform); */
+
+        // Obtain transform from camera frame into world
+        tf = tf2_to_eigen(transform.transform).inverse();
+      }
+      catch (tf2::TransformException& ex)
+      {
+        ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", m_world_frame.c_str(), frame_name.c_str(), ex.what());
+        return false;
+      }
+      return true;
+    }
+    //}
+
     /* main_loop() method //{ */
     void main_loop([[maybe_unused]] const ros::TimerEvent& evt)
     {
@@ -77,39 +116,33 @@ namespace uav_detect
       {
         cout << "Processsing new detections" << std::endl;
 
-        /* // Construct a new world to camera transform //{ */
-        /* Eigen::Affine3d c2w_tf; */
-        /* geometry_msgs::TransformStamped transform; */
-        /* tf2::Transform world2uav_transform; */
-        /* tf2::Vector3 origin; */
-        /* tf2::Quaternion orientation; */
-        /* try */
-        /* { */
-        /*   const ros::Duration timeout(1.0 / 6.0); */
-        /*   // Obtain transform from world into uav frame */
-        /*   transform = tf_buffer.lookupTransform(uav_frame, world_frame, last_dm_msg.header.stamp, timeout); */
-        /*   /1* tf2::convert(transform, world2uav_transform); *1/ */
-        /*   origin.setValue(transform.transform.translation.x, transform.transform.translation.y, transform.transform.translation.z); */
+        string sensor_frame = m_last_detections_msg.header.frame_id;
+        // Construct a new world to camera transform
+        Eigen::Affine3d s2w_tf;
+        bool tf_ok = get_transform_to_world(sensor_frame, s2w_tf);
 
-        /*   orientation.setX(transform.transform.rotation.x); */
-        /*   orientation.setY(transform.transform.rotation.y); */
-        /*   orientation.setZ(transform.transform.rotation.z); */
-        /*   orientation.setW(transform.transform.rotation.w); */
-
-        /*   world2uav_transform.setOrigin(origin); */
-        /*   world2uav_transform.setRotation(orientation); */
-
-        /*   // Obtain transform from camera frame into world */
-        /*   c2w_tf = tf2_to_eigen(uav2camera_transform * world2uav_transform).inverse(); */
-        /* } */
-        /* catch (tf2::TransformException& ex) */
-        /* { */
-        /*   ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", world_frame.c_str(), uav_frame.c_str(), ex.what()); */
-        /*   continue; */
-        /* } */
-        /* //} */
+        if (!tf_ok)
+          return;
 
         // TODO: process the detections, create new lkfs etc.
+        for (const uav_detect::Detection& det : m_last_detections_msg.detections)
+        {
+          Eigen::Vector3d det_pos = detection_to_3dpoint(det);
+          Eigen::Matrix3d det_cov; // TODO!
+
+          {
+            std::lock_guard<std::mutex> lck(m_lkfs_mtx);
+            for (const mrs_lib::Lkf& lkf : m_lkfs)
+            {
+              // TODO:
+              Eigen::Vector3d lkf_pos = lkf.getStates().block<3, 1>(0, 0);
+              Eigen::Matrix3d lkf_cov = lkf.getCovariance().block<3, 3>(0, 0);
+              double divergence = kullback_leibler_divergence(det_pos, det_cov, lkf_pos, lkf_cov);
+            
+            }
+          }
+        
+        }
 
         cout << "Detections processed" << std::endl;
         ros::Time end_t = ros::Time::now();
@@ -123,6 +156,9 @@ namespace uav_detect
   private:
     bool m_new_detections;
     uav_detect::Detections m_last_detections_msg;
+    bool m_got_camera_info;
+    image_geometry::PinholeCameraModel m_camera_model;
+
 
     /* Callbacks //{ */
 
@@ -132,6 +168,17 @@ namespace uav_detect
       ROS_INFO_THROTTLE(1.0, "Getting detections");
       m_last_detections_msg = detections_msg;
       m_new_detections = true;
+    }
+    
+    // Callback for the camera info
+    void camera_info_callback(const sensor_msgs::CameraInfo& cinfo_msg)
+    {
+      if (!m_got_camera_info)
+      {
+        ROS_INFO_THROTTLE(1.0, "Got camera info");
+        m_camera_model.fromCameraInfo(cinfo_msg);
+        m_got_camera_info = true;
+      }
     }
     //}
 
@@ -143,8 +190,13 @@ namespace uav_detect
     void lkf_update(const ros::TimerEvent& evt)
     {
       double dt = (evt.current_real - evt.last_real).toSec();
-      Eigen::Matrix<double, 4, 4> A;
-      A << 1, 0, dt, 0, 0, 1, 0, dt, 0, 0, 1, 0, 0, 0, 0, 1;
+      Eigen::Matrix<double, 6, 6> A;
+      A << 1, 0, 0, dt, 0, 0,
+           0, 1, 0, 0, dt, 0,
+           0, 0, 1, 0, 0, dt,
+           0, 0, 0, 1, 0, 0,
+           0, 0, 0, 0, 1, 0,
+           0, 0, 0, 0, 0, 1;
 
       {
         std::lock_guard<std::mutex> lck(m_lkfs_mtx);
@@ -157,6 +209,13 @@ namespace uav_detect
     }
     //}
 
+  private:
+    double kullback_leibler_divergence(Eigen::Vector3d mu0, Eigen::Matrix3d sigma0, Eigen::Vector3d mu1, Eigen::Matrix3d sigma1)
+    {
+      const unsigned k = 2; // number of dimensions
+      double div = 0.5*( (sigma1.inverse()*sigma0).trace() + (mu1-mu0).transpose()*(sigma1.inverse())*(mu1-mu0) - k + log((sigma1.determinant())/sigma0.determinant()));
+      return div;
+    }
   };
 };
 

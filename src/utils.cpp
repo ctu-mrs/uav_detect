@@ -11,5 +11,23 @@ Eigen::Affine3d tf2_to_eigen(const tf2::Transform& tf2_t)
   eig_t(1, 3) = tf2_t.getOrigin().getY();
   eig_t(2, 3) = tf2_t.getOrigin().getZ();
   return eig_t;
-}/*//}*/
+}
+
+Eigen::Affine3d tf2_to_eigen(const geometry_msgs::Transform& tf2_t)
+{
+  Eigen::Affine3d eig_t;
+  Eigen::Quaterniond eig_q;
+  eig_q.x() = tf2_t.rotation.x;
+  eig_q.y() = tf2_t.rotation.y;
+  eig_q.z() = tf2_t.rotation.z;
+  eig_q.w() = tf2_t.rotation.w;
+  eig_t.linearExt() = eig_q.toRotationMatrix();
+
+  eig_t(0, 3) = tf2_t.translation.x;
+  eig_t(1, 3) = tf2_t.translation.y;
+  eig_t(2, 3) = tf2_t.translation.z;
+  return eig_t;
+}
+
+/*//}*/
 
