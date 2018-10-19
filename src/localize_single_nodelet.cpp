@@ -7,23 +7,34 @@
 using namespace cv;
 using namespace std;
 using namespace uav_detect;
-using namespace Eigen;
+/* using namespace Eigen; */
 
 namespace uav_detect
 {
   class LocalizeSingle : public nodelet::Nodelet
   {
   private:
+
+    /* Parameters, loaded from ROS //{ */
     double m_lkf_dt;
     string m_world_frame;
+    double m_xy_covariance_coeff;
+    double m_z_covariance_coeff;
+    double m_max_update_divergence;
+    double m_max_lkf_uncertainty;
+    double m_lkf_process_noise;
+    //}
 
   private:
+
+    /* ROS related variables //{ */
     tf2_ros::Buffer m_tf_buffer;
     std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
     ros::Subscriber m_sub_detections;
     ros::Subscriber m_sub_camera_info;
     ros::Timer m_lkf_update_timer;
     ros::Timer m_main_loop_timer;
+    //}
 
   public:
 
@@ -45,6 +56,11 @@ namespace uav_detect
       ROS_INFO("Loading static parameters:");
       pl.load_param("world_frame", m_world_frame, std::string("local_origin"));
       pl.load_param("lkf_dt", m_lkf_dt);
+      pl.load_param("xy_covariance_coeff", m_xy_covariance_coeff);
+      pl.load_param("z_covariance_coeff", m_z_covariance_coeff);
+      pl.load_param("max_update_divergence", m_max_update_divergence);
+      pl.load_param("max_lkf_uncertainty", m_max_lkf_uncertainty);
+      pl.load_param("lkf_process_noise", m_lkf_process_noise);
 
       if (!pl.loaded_successfully())
       {
@@ -71,7 +87,7 @@ namespace uav_detect
   private:
 
     /* detection_to_3dpoint() method //{ */
-    Eigen::Vector3d detection_to_3dpoint(uav_detect::Detection det)
+    Eigen::Vector3d detection_to_3dpoint(const uav_detect::Detection& det)
     {
       Eigen::Vector3d ret;
       double u = det.x * det.roi.width + det.roi.x_offset;
@@ -85,7 +101,7 @@ namespace uav_detect
     //}
 
     /* get_transform_to_world() method //{ */
-    bool get_transform_to_world(string frame_name, Eigen::Affine3d tf)
+    bool get_transform_to_world(const string& frame_name, Eigen::Affine3d& tf_out)
     {
       try
       {
@@ -96,7 +112,7 @@ namespace uav_detect
         /* tf2::convert(transform, world2uav_transform); */
 
         // Obtain transform from camera frame into world
-        tf = tf2_to_eigen(transform.transform).inverse();
+        tf_out = tf2_to_eigen(transform.transform).inverse();
       }
       catch (tf2::TransformException& ex)
       {
@@ -104,6 +120,94 @@ namespace uav_detect
         return false;
       }
       return true;
+    }
+    //}
+
+    /* calc_position_covariance() method //{ */
+    /* position_sf is position of the detection in 3D in the frame of the sensor (camera) */
+    Eigen::Matrix3d calc_position_covariance(const Eigen::Vector3d& position_sf)
+    {
+      /* Calculates the corresponding covariance matrix of the estimated 3D position */
+      Eigen::Matrix3d pos_cov = Eigen::Matrix3d::Identity();  // prepare the covariance matrix
+      const double tol = 1e-9;
+      pos_cov(0, 0) = pos_cov(1, 1) = m_xy_covariance_coeff;
+
+      pos_cov(2, 2) = position_sf(2)*sqrt(position_sf(2))*m_z_covariance_coeff;
+      if (pos_cov(2, 2) < 0.33*m_z_covariance_coeff)
+        pos_cov(2, 2) = 0.33*m_z_covariance_coeff;
+
+      // Find the rotation matrix to rotate the covariance to point in the direction of the estimated position
+      const Eigen::Vector3d a(0.0, 0.0, 1.0);
+      const Eigen::Vector3d b = position_sf.normalized();
+      const Eigen::Vector3d v = a.cross(b);
+      const double sin_ab = v.norm();
+      const double cos_ab = a.dot(b);
+      Eigen::Matrix3d vec_rot = Eigen::Matrix3d::Identity();
+      if (sin_ab < tol)  // unprobable, but possible - then it is identity or 180deg
+      {
+        if (cos_ab + 1.0 < tol)  // that would be 180deg
+        {
+          vec_rot << -1.0, 0.0, 0.0,
+                     0.0, -1.0, 0.0,
+                     0.0, 0.0, 1.0;
+        } // otherwise its identity
+      } else  // otherwise just construct the matrix
+      {
+        Eigen::Matrix3d v_x; v_x << 0.0, -v(2), v(1),
+                                    v(2), 0.0, -v(0),
+                                    -v(1), v(0), 0.0;
+        vec_rot = Eigen::Matrix3d::Identity() + v_x + (1-cos_ab)/(sin_ab*sin_ab)*(v_x*v_x);
+      }
+      rotate_covariance(pos_cov, vec_rot);  // rotate the covariance to point in direction of est. position
+      return pos_cov;
+    }
+    //}
+
+    Eigen::Matrix3d rotate_covariance(const Eigen::Matrix3d& covariance, const Eigen::Matrix3d& rotation)
+    {
+      return rotation*covariance*rotation.transpose();  // rotate the covariance to point in direction of est. position
+    }
+
+    /* calc_LKF_uncertainty() method //{ */
+    double calc_LKF_uncertainty(const mrs_lib::Lkf& lkf)
+    {
+      Eigen::Matrix3d position_covariance = lkf.getCovariance().block<3, 3>(0, 0);
+      double determinant = position_covariance.determinant();
+      return sqrt(determinant);
+    }
+    //}
+
+    struct pos_cov_t
+    {
+      Eigen::Vector3d position;
+      Eigen::Matrix3d covariance;
+    };
+
+    /* find_closest_measurement() method //{ */
+    /* returns position of the closest measurement in the pos_covs vector */
+    size_t find_closest_measurement(const mrs_lib::Lkf& lkf, const std::vector<pos_cov_t>& pos_covs, double& min_divergence_out)
+    {
+      const Eigen::Vector3d& lkf_pos = lkf.getStates().block<3, 1>(0, 0);
+      const Eigen::Matrix3d& lkf_cov = lkf.getCovariance().block<3, 3>(0, 0);
+      double min_divergence = std::numeric_limits<double>::max();
+      size_t min_div_it = 0;
+
+      // Find measurement with smallest divergence from this LKF and assign the measurement to it
+      for (size_t it = 0; it < pos_covs.size(); it++)
+      {
+        const auto& pos_cov = pos_covs.at(it);
+        const Eigen::Vector3d& det_pos = pos_cov.position;
+        const Eigen::Matrix3d& det_cov = pos_cov.covariance;
+        const double divergence = kullback_leibler_divergence(det_pos, det_cov, lkf_pos, lkf_cov);
+      
+        if (divergence < min_divergence)
+        {
+          min_divergence = divergence;
+          min_div_it = it;
+        }
+      }
+      min_divergence_out = min_divergence;
+      return min_div_it;
     }
     //}
 
@@ -125,23 +229,79 @@ namespace uav_detect
           return;
 
         // TODO: process the detections, create new lkfs etc.
-        for (const uav_detect::Detection& det : m_last_detections_msg.detections)
+        // TODO: assignment problem?? (https://en.wikipedia.org/wiki/Hungarian_algorithm)
         {
-          Eigen::Vector3d det_pos = detection_to_3dpoint(det);
-          Eigen::Matrix3d det_cov; // TODO!
+          size_t n_meas = m_last_detections_msg.detections.size();
+          vector<int> meas_used(n_meas, 0);
+          vector<pos_cov_t> pos_covs;
+          pos_covs.reserve(n_meas);
 
+          /* Calculate 3D positions and covariances of the detections //{ */
+          for (const uav_detect::Detection& det : m_last_detections_msg.detections)
+          {
+            const Eigen::Vector3d det_pos = s2w_tf*detection_to_3dpoint(det);
+            const Eigen::Matrix3d det_cov = rotate_covariance(calc_position_covariance(det_pos), s2w_tf.rotation());
+
+            pos_cov_t pos_cov;
+            pos_cov.position = det_pos;
+            pos_cov.covariance = det_cov;
+            pos_covs.push_back(pos_cov);
+          }
+          //}
+
+          /* Process the LKFs - assign measurements and kick out too uncertain ones //{ */
+          if (!m_lkfs.empty())
           {
             std::lock_guard<std::mutex> lck(m_lkfs_mtx);
-            for (const mrs_lib::Lkf& lkf : m_lkfs)
+            for (list<mrs_lib::Lkf>::iterator it = std::begin(m_lkfs); it != std::end(m_lkfs); it++)
             {
-              // TODO:
-              Eigen::Vector3d lkf_pos = lkf.getStates().block<3, 1>(0, 0);
-              Eigen::Matrix3d lkf_cov = lkf.getCovariance().block<3, 3>(0, 0);
-              double divergence = kullback_leibler_divergence(det_pos, det_cov, lkf_pos, lkf_cov);
-            
+              auto& lkf = *it;
+
+              /* Assign a measurement to the LKF based on the smallest divergence //{ */
+              {
+                double divergence;
+                size_t closest_it = find_closest_measurement(lkf, pos_covs, divergence);
+
+                /* Evaluate whether the divergence is small enough to justify the update //{ */
+                if (divergence < m_max_update_divergence)
+                {
+                  Eigen::Vector3d closest_pos = pos_covs.at(closest_it).position;
+                  Eigen::Matrix3d closest_cov = pos_covs.at(closest_it).covariance;
+                  lkf.setMeasurement(closest_pos, closest_cov);
+                  lkf.doCorrection();
+                  meas_used.at(closest_it)++;
+                }
+                //}
+
+              }
+              //}
+
+              /* Check if the uncertainty of this LKF is too high and if so, delete it //{ */
+              {
+                double uncertainty = calc_LKF_uncertainty(lkf);
+                if (uncertainty > m_max_lkf_uncertainty)
+                {
+                  it = m_lkfs.erase(it);
+                  it--;
+                }
+              }
+              //}
+
             }
           }
-        
+          //}
+
+          /* Instantiate new LKFs for unused measurements //{ */
+          {
+            std::lock_guard<std::mutex> lck(m_lkfs_mtx);
+            for (size_t it = 0; it < n_meas; it++)
+            {
+              if (meas_used.at(it) < 1)
+                create_new_lkf(m_lkfs, pos_covs.at(it));
+            }
+          }
+          //}
+
         }
 
         cout << "Detections processed" << std::endl;
@@ -158,7 +318,6 @@ namespace uav_detect
     uav_detect::Detections m_last_detections_msg;
     bool m_got_camera_info;
     image_geometry::PinholeCameraModel m_camera_model;
-
 
     /* Callbacks //{ */
 
@@ -184,19 +343,66 @@ namespace uav_detect
 
   private:
     std::mutex m_lkfs_mtx;
-    std::vector<mrs_lib::Lkf> m_lkfs;
+    std::list<mrs_lib::Lkf> m_lkfs;
+    static const int c_n_states = 6;
+    static const int c_n_inputs = 0;
+    static const int c_n_measurements = 3;
+    typedef Eigen::Matrix<double, c_n_states, c_n_states> lkf_A_t;
+    typedef Eigen::Matrix<double, c_n_states, c_n_inputs> lkf_B_t;
+    typedef Eigen::Matrix<double, c_n_measurements, c_n_states> lkf_P_t;
+    typedef Eigen::Matrix<double, c_n_states, c_n_states> lkf_R_t;
+    typedef Eigen::Matrix<double, c_n_measurements, c_n_measurements> lkf_Q_t;
 
-    /* Timers //{ */
-    void lkf_update(const ros::TimerEvent& evt)
+    lkf_A_t create_A(double dt)
     {
-      double dt = (evt.current_real - evt.last_real).toSec();
-      Eigen::Matrix<double, 6, 6> A;
+      lkf_A_t A;
       A << 1, 0, 0, dt, 0, 0,
            0, 1, 0, 0, dt, 0,
            0, 0, 1, 0, 0, dt,
            0, 0, 0, 1, 0, 0,
            0, 0, 0, 0, 1, 0,
            0, 0, 0, 0, 0, 1;
+      return A;
+    }
+
+    lkf_P_t create_P()
+    {
+      lkf_P_t P;
+      P << 1, 0, 0, 0, 0, 0,
+           0, 1, 0, 0, 0, 0,
+           0, 0, 1, 0, 0, 0;
+      return P;
+    }
+
+    lkf_R_t create_R()
+    {
+      lkf_R_t R = m_lkf_process_noise*lkf_R_t::Identity();
+      return R;
+    }
+
+    /* create_new_lkf() method //{ */
+    void create_new_lkf(std::list<mrs_lib::Lkf>& lkfs, pos_cov_t& initialization)
+    {
+      const int n_states = 6;
+      const int n_inputs = 0;
+      const int n_measurements = 3;
+      const lkf_A_t A; // changes in dependence on the measured dt, so leave blank for now
+      const lkf_B_t B; // zero rows zero cols matrix
+      const lkf_P_t P = create_P();
+      const lkf_R_t R = create_R();
+      const lkf_Q_t Q = initialization.covariance;
+    
+      lkfs.emplace_back(n_states, n_inputs, n_measurements, A, B, R, Q, P);
+      lkfs.back().setMeasurement(initialization.position, initialization.covariance);
+      // TODO: initialize the LKF properly
+    }
+    //}
+
+    /* lkf_update() method //{ */
+    void lkf_update(const ros::TimerEvent& evt)
+    {
+      double dt = (evt.current_real - evt.last_real).toSec();
+      lkf_A_t A = create_A(dt);
 
       {
         std::lock_guard<std::mutex> lck(m_lkfs_mtx);
