@@ -23,6 +23,7 @@ namespace uav_detect
     double m_max_update_divergence;
     double m_max_lkf_uncertainty;
     double m_lkf_process_noise;
+    double m_init_vel_cov;
     //}
 
   private:
@@ -61,6 +62,7 @@ namespace uav_detect
       pl.load_param("max_update_divergence", m_max_update_divergence);
       pl.load_param("max_lkf_uncertainty", m_max_lkf_uncertainty);
       pl.load_param("lkf_process_noise", m_lkf_process_noise);
+      pl.load_param("init_vel_cov", m_init_vel_cov);
 
       if (!pl.loaded_successfully())
       {
@@ -344,9 +346,16 @@ namespace uav_detect
   private:
     std::mutex m_lkfs_mtx;
     std::list<mrs_lib::Lkf> m_lkfs;
+
+    /* Definitions of the LKF (consts, typedefs, etc.) //{ */
     static const int c_n_states = 6;
     static const int c_n_inputs = 0;
     static const int c_n_measurements = 3;
+
+    typedef Eigen::Matrix<double, c_n_states, 1> lkf_x_t;
+    typedef Eigen::Matrix<double, c_n_inputs, 1> lkf_u_t;
+    typedef Eigen::Matrix<double, c_n_measurements, 1> lkf_z_t;
+
     typedef Eigen::Matrix<double, c_n_states, c_n_states> lkf_A_t;
     typedef Eigen::Matrix<double, c_n_states, c_n_inputs> lkf_B_t;
     typedef Eigen::Matrix<double, c_n_measurements, c_n_states> lkf_P_t;
@@ -379,6 +388,7 @@ namespace uav_detect
       lkf_R_t R = m_lkf_process_noise*lkf_R_t::Identity();
       return R;
     }
+    //}
 
     /* create_new_lkf() method //{ */
     void create_new_lkf(std::list<mrs_lib::Lkf>& lkfs, pos_cov_t& initialization)
@@ -390,11 +400,20 @@ namespace uav_detect
       const lkf_B_t B; // zero rows zero cols matrix
       const lkf_P_t P = create_P();
       const lkf_R_t R = create_R();
-      const lkf_Q_t Q = initialization.covariance;
+      const lkf_Q_t Q; // depends on the measurement, so leave blank for now
     
       lkfs.emplace_back(n_states, n_inputs, n_measurements, A, B, R, Q, P);
-      lkfs.back().setMeasurement(initialization.position, initialization.covariance);
-      // TODO: initialize the LKF properly
+      mrs_lib::Lkf& new_lkf = lkfs.back();
+
+      // Initialize the LKF using the new measurement
+      lkf_x_t init_state;
+      init_state.block<3, 1>(0, 0) = initialization.position;
+      lkf_R_t init_state_cov;
+      init_state_cov.block<3, 3>(0, 0) = initialization.covariance;
+      init_state_cov.block<3, 3>(3, 3) = m_init_vel_cov*Eigen::Matrix3d::Identity();
+
+      new_lkf.setStates(init_state);
+      new_lkf.setCovariance(init_state_cov);
     }
     //}
 
