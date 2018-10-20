@@ -33,6 +33,7 @@ namespace uav_detect
     std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
     ros::Subscriber m_sub_detections;
     ros::Subscriber m_sub_camera_info;
+    ros::Publisher m_pub_localized_uav;
     ros::Timer m_lkf_update_timer;
     ros::Timer m_main_loop_timer;
     //}
@@ -77,6 +78,7 @@ namespace uav_detect
       // Initialize other subs and pubs
       m_sub_detections = nh.subscribe("detections", 1, &LocalizeSingle::detections_callback, this, ros::TransportHints().tcpNoDelay());
       m_sub_camera_info = nh.subscribe("camera_info", 1, &LocalizeSingle::camera_info_callback, this, ros::TransportHints().tcpNoDelay());
+      m_pub_localized_uav = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("localized_uav", 10);
       //}
 
       m_lkf_update_timer = nh.createTimer(ros::Duration(m_lkf_dt), &LocalizeSingle::lkf_update, this);
@@ -213,6 +215,41 @@ namespace uav_detect
     }
     //}
 
+    /* create_message() method //{ */
+    geometry_msgs::PoseWithCovarianceStamped create_message(const mrs_lib::Lkf& lkf)
+    {
+      geometry_msgs::PoseWithCovarianceStamped msg;
+
+      msg.header.frame_id = m_world_frame;
+      msg.header.stamp = m_last_detections_msg.header.stamp;
+
+      {
+        const Eigen::Vector3d position = lkf.getStates().block<3, 1>(0, 0);
+        msg.pose.pose.position.x = position(0);
+        msg.pose.pose.position.y = position(1);
+        msg.pose.pose.position.z = position(2);
+      }
+
+      msg.pose.pose.orientation.w = 1.0;
+
+      {
+        const Eigen::Matrix3d covariance = lkf.getCovariance().block<3, 3>(0, 0);
+        for (int r = 0; r < 6; r++)
+        {
+          for (int c = 0; c < 6; c++)
+          {
+            if (r < 3 && c < 3)
+              msg.pose.covariance[r*6 + c] = covariance(r, c);
+            else if (r == c)
+              msg.pose.covariance[r*6 + c] = 666;
+          }
+        }
+      }
+
+      return msg;
+    }
+    //}
+
     /* main_loop() method //{ */
     void main_loop([[maybe_unused]] const ros::TimerEvent& evt)
     {
@@ -220,7 +257,7 @@ namespace uav_detect
 
       if (m_new_detections)
       {
-        cout << "Processsing new detections" << std::endl;
+        cout << "Processsing " << m_last_detections_msg.detections.size() << " new detections" << std::endl;
 
         string sensor_frame = m_last_detections_msg.header.frame_id;
         // Construct a new world to camera transform
@@ -230,7 +267,10 @@ namespace uav_detect
         if (!tf_ok)
           return;
 
-        // TODO: process the detections, create new lkfs etc.
+        // observer pointer, which will contain the most likely LKF
+        mrs_lib::Lkf const * most_certain_lkf;
+        bool most_certain_lkf_found = false;
+        /* Process the detections and update the LKFs, find the most certain LKF after the update //{ */
         // TODO: assignment problem?? (https://en.wikipedia.org/wiki/Hungarian_algorithm)
         {
           size_t n_meas = m_last_detections_msg.detections.size();
@@ -251,15 +291,16 @@ namespace uav_detect
           }
           //}
 
-          /* Process the LKFs - assign measurements and kick out too uncertain ones //{ */
+          /* Process the LKFs - assign measurements and kick out too uncertain ones, find the most certain one //{ */
           if (!m_lkfs.empty())
           {
+            double min_uncertainty = std::numeric_limits<double>::max();
             std::lock_guard<std::mutex> lck(m_lkfs_mtx);
             for (list<mrs_lib::Lkf>::iterator it = std::begin(m_lkfs); it != std::end(m_lkfs); it++)
             {
               auto& lkf = *it;
 
-              /* Assign a measurement to the LKF based on the smallest divergence //{ */
+              /* Assign a measurement to the LKF based on the smallest divergence and update the LKF //{ */
               {
                 double divergence;
                 size_t closest_it = find_closest_measurement(lkf, pos_covs, divergence);
@@ -278,13 +319,18 @@ namespace uav_detect
               }
               //}
 
-              /* Check if the uncertainty of this LKF is too high and if so, delete it //{ */
+              /* Check if the uncertainty of this LKF is too high and if so, delete it, otherwise consider it for the most certain LKF //{ */
               {
                 double uncertainty = calc_LKF_uncertainty(lkf);
                 if (uncertainty > m_max_lkf_uncertainty)
                 {
                   it = m_lkfs.erase(it);
                   it--;
+                } else if (uncertainty < min_uncertainty)
+                {
+                  min_uncertainty = uncertainty;
+                  most_certain_lkf = &lkf;
+                  most_certain_lkf_found = true;
                 }
               }
               //}
@@ -293,7 +339,7 @@ namespace uav_detect
           }
           //}
 
-          /* Instantiate new LKFs for unused measurements //{ */
+          /* Instantiate new LKFs for unused measurements (these are not considered as candidates for the most certain LKF) //{ */
           {
             std::lock_guard<std::mutex> lck(m_lkfs_mtx);
             for (size_t it = 0; it < n_meas; it++)
@@ -305,6 +351,15 @@ namespace uav_detect
           //}
 
         }
+        //}
+
+        /* Publish message of the most likely LKF (if found) //{ */
+        if (most_certain_lkf_found)
+        {
+          geometry_msgs::PoseWithCovarianceStamped msg = create_message(*most_certain_lkf);
+          m_pub_localized_uav.publish(msg);
+        }
+        //}
 
         cout << "Detections processed" << std::endl;
         ros::Time end_t = ros::Time::now();

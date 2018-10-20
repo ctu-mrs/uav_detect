@@ -4,7 +4,7 @@
 
   <group ns="$(arg uav_name)">
     
-    <node pkg="nodelet" type="nodelet" name="uav_localization" args="standalone uav_detect/LocalizeSingle" output="screen">
+    <node pkg="nodelet" type="nodelet" name="uav_localization" args="standalone uav_detect/LocalizeSingle" output="screen" launch-prefix="gdb -ex run --args">
       
       <rosparam file="$(find uav_detect)/config/localize_single.yaml" />
       <param name="uav_name" value="$(arg uav_name)" />
