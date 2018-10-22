@@ -193,6 +193,8 @@ namespace uav_detect
       for (size_t it = 0; it < pos_covs.size(); it++)
       {
         const auto& pos_cov = pos_covs.at(it);
+        if (pos_cov.covariance.array().isNaN().any())
+          ROS_ERROR("Covariance of LKF contains NaNs!");
         const Eigen::Vector3d& det_pos = pos_cov.position;
         const Eigen::Matrix3d& det_cov = pos_cov.covariance;
         const double divergence = kullback_leibler_divergence(det_pos, det_cov, lkf_pos, lkf_cov);
@@ -265,10 +267,15 @@ namespace uav_detect
         if (!tf_ok)
           return;
 
-        // observer pointer, which will contain the most likely LKF
+        // keep track of how many LKFs are created and kicked out in this iteration
+        int starting_lkfs = 0;
+        int new_lkfs = 0;
+        int kicked_out_lkfs = 0;
+        int ending_lkfs = 0;
+        // observer pointer, which will contain the most likely LKF (if any)
         mrs_lib::Lkf const * most_certain_lkf;
         bool most_certain_lkf_found = false;
-        /* Process the detections and update the LKFs, find the most certain LKF after the update //{ */
+        /* Process the detections and update the LKFs, find the most certain LKF after the update, kick out uncertain LKFs //{ */
         // TODO: assignment problem?? (https://en.wikipedia.org/wiki/Hungarian_algorithm)
         {
           size_t n_meas = last_detections_msg.detections.size();
@@ -279,8 +286,15 @@ namespace uav_detect
           /* Calculate 3D positions and covariances of the detections //{ */
           for (const uav_detect::Detection& det : last_detections_msg.detections)
           {
-            const Eigen::Vector3d det_pos = s2w_tf*detection_to_3dpoint(det);
-            const Eigen::Matrix3d det_cov = rotate_covariance(calc_position_covariance(det_pos), s2w_tf.rotation());
+            const Eigen::Vector3d det_pos_sf = detection_to_3dpoint(det);
+            const Eigen::Vector3d det_pos = s2w_tf*det_pos_sf;
+            const Eigen::Matrix3d det_cov_sf = calc_position_covariance(det_pos_sf);
+            const Eigen::Matrix3d det_cov = rotate_covariance(det_cov_sf, s2w_tf.rotation());
+            if (det_cov.array().isNaN().any())
+            {
+              ROS_ERROR("Constructed covariance of detection [%.2f, %.2f, %.2f] contains NaNs!", det.x, det.y, det.depth);
+              ROS_ERROR("detection 3d position: [%.2f, %.2f, %.2f]", det_pos(0), det_pos(1), det_pos(2));
+            }
 
             pos_cov_t pos_cov;
             pos_cov.position = det_pos;
@@ -290,49 +304,54 @@ namespace uav_detect
           //}
 
           /* Process the LKFs - assign measurements and kick out too uncertain ones, find the most certain one //{ */
-          if (!m_lkfs.empty())
           {
             double min_uncertainty = std::numeric_limits<double>::max();
+
             std::lock_guard<std::mutex> lck(m_lkfs_mtx);
-            for (list<mrs_lib::Lkf>::iterator it = std::begin(m_lkfs); it != std::end(m_lkfs); it++)
+            starting_lkfs = m_lkfs.size();
+            if (!m_lkfs.empty())
             {
-              auto& lkf = *it;
-
-              /* Assign a measurement to the LKF based on the smallest divergence and update the LKF //{ */
+              for (list<mrs_lib::Lkf>::iterator it = std::begin(m_lkfs); it != std::end(m_lkfs); it++)
               {
-                double divergence;
-                size_t closest_it = find_closest_measurement(lkf, pos_covs, divergence);
+                auto& lkf = *it;
 
-                /* Evaluate whether the divergence is small enough to justify the update //{ */
-                if (divergence < m_max_update_divergence)
+                /* Assign a measurement to the LKF based on the smallest divergence and update the LKF //{ */
                 {
-                  Eigen::Vector3d closest_pos = pos_covs.at(closest_it).position;
-                  Eigen::Matrix3d closest_cov = pos_covs.at(closest_it).covariance;
-                  lkf.setMeasurement(closest_pos, closest_cov);
-                  lkf.doCorrection();
-                  meas_used.at(closest_it)++;
+                  double divergence;
+                  size_t closest_it = find_closest_measurement(lkf, pos_covs, divergence);
+
+                  /* Evaluate whether the divergence is small enough to justify the update //{ */
+                  if (divergence < m_max_update_divergence)
+                  {
+                    Eigen::Vector3d closest_pos = pos_covs.at(closest_it).position;
+                    Eigen::Matrix3d closest_cov = pos_covs.at(closest_it).covariance;
+                    lkf.setMeasurement(closest_pos, closest_cov);
+                    lkf.doCorrection();
+                    meas_used.at(closest_it)++;
+                  }
+                  //}
+
+                }
+                //}
+
+                /* Check if the uncertainty of this LKF is too high and if so, delete it, otherwise consider it for the most certain LKF //{ */
+                {
+                  double uncertainty = calc_LKF_uncertainty(lkf);
+                  if (uncertainty > m_max_lkf_uncertainty || std::isnan(uncertainty))
+                  {
+                    it = m_lkfs.erase(it);
+                    it--;
+                    kicked_out_lkfs++;
+                  } else if (uncertainty < min_uncertainty)
+                  {
+                    min_uncertainty = uncertainty;
+                    most_certain_lkf = &lkf;
+                    most_certain_lkf_found = true;
+                  }
                 }
                 //}
 
               }
-              //}
-
-              /* Check if the uncertainty of this LKF is too high and if so, delete it, otherwise consider it for the most certain LKF //{ */
-              {
-                double uncertainty = calc_LKF_uncertainty(lkf);
-                if (uncertainty > m_max_lkf_uncertainty)
-                {
-                  it = m_lkfs.erase(it);
-                  it--;
-                } else if (uncertainty < min_uncertainty)
-                {
-                  min_uncertainty = uncertainty;
-                  most_certain_lkf = &lkf;
-                  most_certain_lkf_found = true;
-                }
-              }
-              //}
-
             }
           }
           //}
@@ -343,8 +362,12 @@ namespace uav_detect
             for (size_t it = 0; it < n_meas; it++)
             {
               if (meas_used.at(it) < 1)
+              {
                 create_new_lkf(m_lkfs, pos_covs.at(it));
+                new_lkfs++;
+              }
             }
+            ending_lkfs = m_lkfs.size();
           }
           //}
 
@@ -354,8 +377,12 @@ namespace uav_detect
         /* Publish message of the most likely LKF (if found) //{ */
         if (most_certain_lkf_found)
         {
+          cout << "Publishing most certain LKF result" << endl;
           geometry_msgs::PoseWithCovarianceStamped msg = create_message(*most_certain_lkf, last_detections_msg.header.stamp);
           m_pub_localized_uav.publish(msg);
+        } else
+        {
+          cout << "No LKF is certain yet, publishing nothing" << endl;
         }
         //}
 
@@ -364,6 +391,7 @@ namespace uav_detect
         static double dt = (end_t - start_t).toSec();
         dt = 0.9 * dt + 0.1 * (end_t - start_t).toSec();
         cout << "processing FPS: " << 1 / dt << "Hz" << std::endl;
+        cout << "LKFs: " << starting_lkfs << " - " << kicked_out_lkfs << " + " << new_lkfs << " = " << ending_lkfs << endl;
       }
     }
     //}

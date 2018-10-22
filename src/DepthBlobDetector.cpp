@@ -181,7 +181,7 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat b
 
       blob.avg_depth = avg_color / 1000.0;
 
-      if (params.filter_by_color && (avg_color < params.min_depth || avg_color > params.max_depth))
+      if (params.filter_by_color && (std::isnan(avg_color) || avg_color < params.min_depth || avg_color > params.max_depth))
         continue;
     }
     //}
@@ -196,8 +196,11 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat b
         Point2d pt = contours[contourIdx][pointIdx];
         dists.push_back(norm(blob.location - pt));
       }
-      std::sort(dists.begin(), dists.end());
-      blob.radius = (dists[(dists.size() - 1) / 2] + dists[dists.size() / 2]) / 2.;
+      std::nth_element(dists.begin(), dists.begin() + dists.size()/2, dists.end());
+      double post_median = dists.at(dists.size()/2);
+      std::nth_element(dists.begin(), dists.begin() + (dists.size()-1)/2, dists.end());
+      double pre_median = dists.at((dists.size()-1)/2);
+      blob.radius = (pre_median + post_median) / 2.;
     }
     //}
 

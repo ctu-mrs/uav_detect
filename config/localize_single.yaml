@@ -34,8 +34,8 @@ lkf_dt: 0.02
 # max_dist: 15.0
 xy_covariance_coeff: 0.1
 z_covariance_coeff: 0.3
-max_update_divergence: 0.8
-max_lkf_uncertainty: 5.0
+max_update_divergence: 5.0
+max_lkf_uncertainty: 50.0
 lkf_process_noise: 0.3
 init_vel_cov: 4.0
 # dist_corr_p0: -1.0
