@@ -22,12 +22,12 @@ namespace uav_detect
         return Lkf::doCorrection();
       }
 
-      unsigned getNCorrections(void) const
+      int getNCorrections(void) const
       {
         return m_n_corrections;
       }
 
     protected:
-      unsigned m_n_corrections;
+      int m_n_corrections;
   };
 }

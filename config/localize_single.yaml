@@ -38,6 +38,7 @@ max_update_divergence: 5.0
 max_lkf_uncertainty: 1.0
 lkf_process_noise: 3.0  # it is scaled by dt in the code, so should it be given scaled to seconds here
 init_vel_cov: 4.0
+min_corrs_to_consider: 20 # how many corrections must the KF have received before it is considered potentially stable
 # dist_corr_p0: -1.0
 # dist_corr_p1: 0.7
 
