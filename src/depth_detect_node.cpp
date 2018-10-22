@@ -278,11 +278,11 @@ int main(int argc, char** argv)
         det.roi.height = detect_im.rows;
 
         cv::Rect brect = cv::boundingRect(blob.contours.at(blob.contours.size()/2));
-        det.x = brect.x/double(detect_im.cols);
-        det.y = brect.y/double(detect_im.rows);
+        det.x = (brect.x + brect.width/2.0)/double(detect_im.cols);
+        det.y = (brect.y + brect.height/2.0)/double(detect_im.rows);
         det.depth = blob.avg_depth;
         det.width = brect.width/double(detect_im.cols);
-        det.height = brect.height/double(detect_im.cols);
+        det.height = brect.height/double(detect_im.rows);
 
         det.confidence = -1;
 
