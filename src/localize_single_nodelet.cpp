@@ -341,7 +341,7 @@ namespace uav_detect
                                     -v(1), v(0), 0.0;
         vec_rot = Eigen::Matrix3d::Identity() + v_x + (1-cos_ab)/(sin_ab*sin_ab)*(v_x*v_x);
       }
-      rotate_covariance(pos_cov, vec_rot);  // rotate the covariance to point in direction of est. position
+      pos_cov = rotate_covariance(pos_cov, vec_rot);  // rotate the covariance to point in direction of est. position
       return pos_cov;
     }
     //}
