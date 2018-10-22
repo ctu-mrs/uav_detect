@@ -48,6 +48,8 @@
   <build_depend>image_geometry</build_depend>
   <build_depend>nav_msgs</build_depend>
   <build_depend>message_generation</build_depend>
+  <build_depend>tf2</build_depend>
+  <build_depend>tf2_geometry_msgs</build_depend>
   <build_depend>mrs_lib</build_depend>
   <build_depend>nodelet</build_depend>
   
@@ -57,7 +59,8 @@
   <run_depend>std_msgs</run_depend>
   <run_depend>dynamic_reconfigure</run_depend>
   <run_depend>libopencv-dev</run_depend>
-  <run_depend>tf</run_depend>
+  <run_depend>tf2</run_depend>
+  <run_depend>tf2_geometry_msgs</run_depend>
   <run_depend>mavros_msgs</run_depend>
   <run_depend>cv_bridge</run_depend>
   <run_depend>image_transport</run_depend>

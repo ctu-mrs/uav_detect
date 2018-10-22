@@ -276,8 +276,8 @@ namespace uav_detect
       Eigen::Vector3d ret;
       double u = det.x * det.roi.width + det.roi.x_offset;
       double v = det.y * det.roi.height + det.roi.y_offset;
-      double x = (u - m_camera_model.cx())/m_camera_model.fx();
-      double y = (v - m_camera_model.cy())/m_camera_model.fy();
+      double x = (u - m_camera_model.cx() - m_camera_model.Tx())/m_camera_model.fx();
+      double y = (v - m_camera_model.cy() - m_camera_model.Ty())/m_camera_model.fy();
       ret << x, y, 1.0;
       ret *= det.depth;
       return ret;

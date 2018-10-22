@@ -112,3 +112,13 @@ target_link_libraries(dbg_display_node
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
 )
+
+add_executable(backproject_display_node src/backproject_display_node.cpp)
+add_dependencies(backproject_display_node
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+target_link_libraries(backproject_display_node
+  ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
+)
