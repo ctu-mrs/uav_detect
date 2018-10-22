@@ -462,9 +462,9 @@ namespace uav_detect
       return P;
     }
 
-    lkf_R_t create_R()
+    lkf_R_t create_R(double dt)
     {
-      lkf_R_t R = m_lkf_process_noise*lkf_R_t::Identity();
+      lkf_R_t R = dt*m_lkf_process_noise*lkf_R_t::Identity();
       return R;
     }
     //}
@@ -478,7 +478,7 @@ namespace uav_detect
       const lkf_A_t A; // changes in dependence on the measured dt, so leave blank for now
       const lkf_B_t B; // zero rows zero cols matrix
       const lkf_P_t P = create_P();
-      const lkf_R_t R = create_R();
+      const lkf_R_t R; // depends on the measured dt, so leave blank for now
       const lkf_Q_t Q; // depends on the measurement, so leave blank for now
     
       lkfs.emplace_back(m_last_lkf_ID, n_states, n_inputs, n_measurements, A, B, R, Q, P);
@@ -502,12 +502,14 @@ namespace uav_detect
     {
       double dt = (evt.current_real - evt.last_real).toSec();
       lkf_A_t A = create_A(dt);
+      lkf_R_t R = create_R(dt);
 
       {
         std::lock_guard<std::mutex> lck(m_lkfs_mtx);
         for (auto& lkf : m_lkfs)
         {
           lkf.setA(A);
+          lkf.setR(R);
           lkf.iterateWithoutCorrection();
         }
       }
