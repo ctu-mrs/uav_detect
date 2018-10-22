@@ -31,8 +31,8 @@ namespace uav_detect
     /* ROS related variables //{ */
     tf2_ros::Buffer m_tf_buffer;
     std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
-    ros::Subscriber m_sub_detections;
-    ros::Subscriber m_sub_camera_info;
+    mrs_lib::SubscribeHandlerPtr<uav_detect::Detections> m_sh_detections_ptr;
+    mrs_lib::SubscribeHandlerPtr<sensor_msgs::CameraInfo> m_sh_cinfo_ptr;
     ros::Publisher m_pub_localized_uav;
     ros::Timer m_lkf_update_timer;
     ros::Timer m_main_loop_timer;
@@ -40,13 +40,6 @@ namespace uav_detect
 
   public:
 
-    /* LocalizeSingle() constructor //{ */
-    LocalizeSingle()
-      : m_new_detections(false)
-    {
-    }
-    //}
-    
     /* onInit() method //{ */
     void onInit()
     {
@@ -76,8 +69,9 @@ namespace uav_detect
       // Initialize transform listener
       m_tf_listener_ptr = std::make_unique<tf2_ros::TransformListener>(m_tf_buffer);
       // Initialize other subs and pubs
-      m_sub_detections = nh.subscribe("detections", 1, &LocalizeSingle::detections_callback, this, ros::TransportHints().tcpNoDelay());
-      m_sub_camera_info = nh.subscribe("camera_info", 1, &LocalizeSingle::camera_info_callback, this, ros::TransportHints().tcpNoDelay());
+      mrs_lib::SubscribeMgr smgr;
+      m_sh_detections_ptr = smgr.create_handler_threadsafe<uav_detect::Detections>(nh, "detections", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+      m_sh_cinfo_ptr = smgr.create_handler_threadsafe<sensor_msgs::CameraInfo>(nh, "camera_info", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
       m_pub_localized_uav = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("localized_uav", 10);
       //}
 
@@ -105,18 +99,17 @@ namespace uav_detect
     //}
 
     /* get_transform_to_world() method //{ */
-    bool get_transform_to_world(const string& frame_name, Eigen::Affine3d& tf_out)
+    bool get_transform_to_world(const string& frame_name, ros::Time stamp, Eigen::Affine3d& tf_out)
     {
       try
       {
-        const ros::Duration timeout(1.0 / 6.0);
+        const ros::Duration timeout(1.0 / 100.0);
         geometry_msgs::TransformStamped transform;
-        // Obtain transform from world into uav frame
-        transform = m_tf_buffer.lookupTransform(frame_name, m_world_frame, m_last_detections_msg.header.stamp, timeout);
-        /* tf2::convert(transform, world2uav_transform); */
+        // Obtain transform from snesor into world frame
+        transform = m_tf_buffer.lookupTransform(m_world_frame, frame_name, stamp, timeout);
 
         // Obtain transform from camera frame into world
-        tf_out = tf2_to_eigen(transform.transform).inverse();
+        tf_out = tf2_to_eigen(transform.transform);
       }
       catch (tf2::TransformException& ex)
       {
@@ -216,12 +209,12 @@ namespace uav_detect
     //}
 
     /* create_message() method //{ */
-    geometry_msgs::PoseWithCovarianceStamped create_message(const mrs_lib::Lkf& lkf)
+    geometry_msgs::PoseWithCovarianceStamped create_message(const mrs_lib::Lkf& lkf, ros::Time stamp)
     {
       geometry_msgs::PoseWithCovarianceStamped msg;
 
       msg.header.frame_id = m_world_frame;
-      msg.header.stamp = m_last_detections_msg.header.stamp;
+      msg.header.stamp = stamp;
 
       {
         const Eigen::Vector3d position = lkf.getStates().block<3, 1>(0, 0);
@@ -255,14 +248,19 @@ namespace uav_detect
     {
       ros::Time start_t = ros::Time::now();
 
-      if (m_new_detections)
+      if (m_sh_detections_ptr->new_data() && m_sh_cinfo_ptr->has_data())
       {
-        cout << "Processsing " << m_last_detections_msg.detections.size() << " new detections" << std::endl;
+        if (!m_sh_cinfo_ptr->used_data())
+          m_camera_model.fromCameraInfo(m_sh_cinfo_ptr->get_data());
 
-        string sensor_frame = m_last_detections_msg.header.frame_id;
+        uav_detect::Detections last_detections_msg = m_sh_detections_ptr->get_data();
+
+        cout << "Processsing " << last_detections_msg.detections.size() << " new detections" << std::endl;
+
+        string sensor_frame = last_detections_msg.header.frame_id;
         // Construct a new world to camera transform
         Eigen::Affine3d s2w_tf;
-        bool tf_ok = get_transform_to_world(sensor_frame, s2w_tf);
+        bool tf_ok = get_transform_to_world(sensor_frame, last_detections_msg.header.stamp, s2w_tf);
 
         if (!tf_ok)
           return;
@@ -273,13 +271,13 @@ namespace uav_detect
         /* Process the detections and update the LKFs, find the most certain LKF after the update //{ */
         // TODO: assignment problem?? (https://en.wikipedia.org/wiki/Hungarian_algorithm)
         {
-          size_t n_meas = m_last_detections_msg.detections.size();
+          size_t n_meas = last_detections_msg.detections.size();
           vector<int> meas_used(n_meas, 0);
           vector<pos_cov_t> pos_covs;
           pos_covs.reserve(n_meas);
 
           /* Calculate 3D positions and covariances of the detections //{ */
-          for (const uav_detect::Detection& det : m_last_detections_msg.detections)
+          for (const uav_detect::Detection& det : last_detections_msg.detections)
           {
             const Eigen::Vector3d det_pos = s2w_tf*detection_to_3dpoint(det);
             const Eigen::Matrix3d det_cov = rotate_covariance(calc_position_covariance(det_pos), s2w_tf.rotation());
@@ -356,7 +354,7 @@ namespace uav_detect
         /* Publish message of the most likely LKF (if found) //{ */
         if (most_certain_lkf_found)
         {
-          geometry_msgs::PoseWithCovarianceStamped msg = create_message(*most_certain_lkf);
+          geometry_msgs::PoseWithCovarianceStamped msg = create_message(*most_certain_lkf, last_detections_msg.header.stamp);
           m_pub_localized_uav.publish(msg);
         }
         //}
@@ -371,32 +369,7 @@ namespace uav_detect
     //}
 
   private:
-    bool m_new_detections;
-    uav_detect::Detections m_last_detections_msg;
-    bool m_got_camera_info;
     image_geometry::PinholeCameraModel m_camera_model;
-
-    /* Callbacks //{ */
-
-    // Callback for the detections
-    void detections_callback(const uav_detect::Detections& detections_msg)
-    {
-      ROS_INFO_THROTTLE(1.0, "Getting detections");
-      m_last_detections_msg = detections_msg;
-      m_new_detections = true;
-    }
-    
-    // Callback for the camera info
-    void camera_info_callback(const sensor_msgs::CameraInfo& cinfo_msg)
-    {
-      if (!m_got_camera_info)
-      {
-        ROS_INFO_THROTTLE(1.0, "Got camera info");
-        m_camera_model.fromCameraInfo(cinfo_msg);
-        m_got_camera_info = true;
-      }
-    }
-    //}
 
   private:
     std::mutex m_lkfs_mtx;
