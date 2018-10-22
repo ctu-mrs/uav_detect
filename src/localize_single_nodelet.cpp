@@ -136,10 +136,10 @@ namespace uav_detect
 
           /* Process the LKFs - assign measurements and kick out too uncertain ones, find the most certain one //{ */
           {
-            double min_uncertainty = std::numeric_limits<double>::max();
             // the LKF must have received at least m_min_corrs_to_consider corrections
             // in order to be considered for the search of the most certain LKF
             int max_corrections = m_min_corrs_to_consider;
+            double picked_uncertainty;
 
             std::lock_guard<std::mutex> lck(m_lkfs_mtx);
             starting_lkfs = m_lkfs.size();
@@ -170,21 +170,21 @@ namespace uav_detect
 
                 /* Check if the uncertainty of this LKF is too high and if so, delete it, otherwise consider it for the most certain LKF //{ */
                 {
+                  // First, check the uncertainty
                   double uncertainty = calc_LKF_uncertainty(lkf);
                   if (uncertainty > m_max_lkf_uncertainty || std::isnan(uncertainty))
                   {
                     it = m_lkfs.erase(it);
                     it--;
                     kicked_out_lkfs++;
-                  } else if (uncertainty < min_uncertainty)
-                  {
-                    min_uncertainty = uncertainty;
-                  }
+                  } else
+                  // If LKF survived,  consider it as candidate to be picked
                   if (lkf.getNCorrections() > max_corrections)
                   {
                     most_certain_lkf = &lkf;
                     most_certain_lkf_found = true;
                     max_corrections = lkf.getNCorrections();
+                    picked_uncertainty = uncertainty;
                   }
                 }
                 //}
@@ -192,7 +192,7 @@ namespace uav_detect
               }
             }
             if (most_certain_lkf_found)
-              cout << "Most certain LKF found with " << min_uncertainty << " uncertainty " << " and " << most_certain_lkf->getNCorrections() << " correction iterations" << endl;
+              cout << "Most certain LKF found with " << picked_uncertainty << " uncertainty " << " and " << most_certain_lkf->getNCorrections() << " correction iterations" << endl;
           }
           //}
 
