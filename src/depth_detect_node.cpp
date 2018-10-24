@@ -1,13 +1,13 @@
 #include "main.h"
 #include "DepthBlobDetector.h"
+#include <uav_detect/DetectionParamsConfig.h>
 
 using namespace cv;
 using namespace std;
 using namespace uav_detect;
-using namespace Eigen;
 
 // shortcut type to the dynamic reconfigure manager template instance
-typedef mrs_lib::DynamicReconfigureMgr<uav_detect::DepthMapParamsConfig> drmgr_t;
+typedef mrs_lib::DynamicReconfigureMgr<uav_detect::DetectionParamsConfig> drmgr_t;
 
 int main(int argc, char** argv)
 {

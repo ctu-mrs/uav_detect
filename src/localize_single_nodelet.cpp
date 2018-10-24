@@ -1,13 +1,20 @@
 #include "main.h"
+
+#include <Eigen/Geometry>
+
+#include <nodelet/nodelet.h>
+
 #include "utils.h"
 #include "LkfAssociation.h"
 
-#include <nodelet/nodelet.h>
+#include <uav_detect/LocalizationParamsConfig.h>
 
 using namespace cv;
 using namespace std;
 using namespace uav_detect;
-/* using namespace Eigen; */
+
+// shortcut type to the dynamic reconfigure manager template instance
+typedef mrs_lib::DynamicReconfigureMgr<uav_detect::LocalizationParamsConfig> drmgr_t;
 
 namespace uav_detect
 {

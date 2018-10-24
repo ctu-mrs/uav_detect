@@ -34,7 +34,7 @@ double median(cv::Mat image, cv::Mat mask)
 double cur_depth;
 #endif //}
 
-Params::Params(uav_detect::DepthMapParamsConfig cfg)
+Params::Params(uav_detect::DetectionParamsConfig cfg)
 {
   // Filter by color
   filter_by_color = cfg.filter_by_color;

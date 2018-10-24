@@ -7,7 +7,7 @@
     <node pkg="uav_detect" name="uav_detection" type="depth_detect_node" output="screen" >
       
       <!-- <rosparam file="$(find uav_detect)/config/filter_single.yaml" /> -->
-      <rosparam file="$(find uav_detect)/config/dr_default_f550.yaml" />
+      <rosparam file="$(find uav_detect)/config/detection_params_F550.yaml" />
       <param name="uav_name" value="$(arg uav_name)" />
     
       <!-- <remap from="~thermal_image" to="/thermal/image_raw" /> -->

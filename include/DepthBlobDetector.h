@@ -2,6 +2,7 @@
 #define DEPTHBLOBDETECTOR_H
 
 #include "main.h"
+#include <uav_detect/DetectionParamsConfig.h>
 
 namespace dbd
 {
@@ -54,7 +55,7 @@ struct Params
   // Other filtering criterions
   double min_dist_between;
 
-  Params(uav_detect::DepthMapParamsConfig cfg);
+  Params(uav_detect::DetectionParamsConfig cfg);
 };
 
 class DepthBlobDetector

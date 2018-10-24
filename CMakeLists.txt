@@ -63,7 +63,8 @@ generate_messages(DEPENDENCIES
 )
 
 generate_dynamic_reconfigure_options(
-  config/dm_params.cfg
+  config/detection_params.cfg
+  config/localization_params.cfg
   )
 
 catkin_package(

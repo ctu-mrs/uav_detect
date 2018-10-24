@@ -20,14 +20,11 @@
 #include <image_geometry/pinhole_camera_model.h>
 #include <cv_bridge/cv_bridge.h>
 
-#include <Eigen/Geometry>
-
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 
 #include <list>
 
-#include <uav_detect/DepthMapParamsConfig.h>
 #include <uav_detect/Detection.h>
 #include <uav_detect/Detections.h>
 #include <uav_detect/ImagePixel.h>
