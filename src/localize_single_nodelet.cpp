@@ -104,8 +104,7 @@ namespace uav_detect
         int kicked_out_lkfs = 0;
         int ending_lkfs = 0;
         // observer pointer, which will contain the most likely LKF (if any)
-        Lkf const * most_certain_lkf;
-        bool most_certain_lkf_found = false;
+        Lkf const * most_certain_lkf = nullptr;
         /* Process the detections and update the LKFs, find the most certain LKF after the update, kick out uncertain LKFs //{ */
         // TODO: assignment problem?? (https://en.wikipedia.org/wiki/Hungarian_algorithm)
         {
@@ -182,7 +181,6 @@ namespace uav_detect
                   if (lkf.getNCorrections() > max_corrections)
                   {
                     most_certain_lkf = &lkf;
-                    most_certain_lkf_found = true;
                     max_corrections = lkf.getNCorrections();
                     picked_uncertainty = uncertainty;
                   }
@@ -191,7 +189,7 @@ namespace uav_detect
 
               }
             }
-            if (most_certain_lkf_found)
+            if (most_certain_lkf != nullptr)
               cout << "Most certain LKF found with " << picked_uncertainty << " uncertainty " << " and " << most_certain_lkf->getNCorrections() << " correction iterations" << endl;
           }
           //}
@@ -215,7 +213,7 @@ namespace uav_detect
         //}
 
         /* Publish message of the most likely LKF (if found) //{ */
-        if (most_certain_lkf_found)
+        if (most_certain_lkf != nullptr)
         {
           cout << "Publishing most certain LKF result from LKF#" << most_certain_lkf->ID << endl;
           geometry_msgs::PoseWithCovarianceStamped msg = create_message(*most_certain_lkf, last_detections_msg.header.stamp);
