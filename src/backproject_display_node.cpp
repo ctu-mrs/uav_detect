@@ -45,11 +45,11 @@ int main(int argc, char** argv)
   mrs_lib::SubscribeHandlerPtr<uav_detect::DetectionsConstPtr> sh_det;
   mrs_lib::SubscribeHandlerPtr<sensor_msgs::CameraInfo> sh_cinfo;
 
-  mrs_lib::SubscribeMgr smgr;
-  sh_pose = smgr.create_handler_threadsafe<geometry_msgs::PoseWithCovarianceStamped>(nh, "localized_uav", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
-  sh_img = smgr.create_handler_threadsafe<sensor_msgs::ImageConstPtr>(nh, "image_rect", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
-  sh_det = smgr.create_handler_threadsafe<uav_detect::DetectionsConstPtr>(nh, "detections", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
-  sh_cinfo = smgr.create_handler_threadsafe<sensor_msgs::CameraInfo>(nh, "camera_info", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+  mrs_lib::SubscribeMgr smgr(nh);
+  sh_pose = smgr.create_handler_threadsafe<geometry_msgs::PoseWithCovarianceStamped>("localized_uav", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+  sh_img = smgr.create_handler_threadsafe<sensor_msgs::ImageConstPtr>("image_rect", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+  sh_det = smgr.create_handler_threadsafe<uav_detect::DetectionsConstPtr>("detections", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+  sh_cinfo = smgr.create_handler_threadsafe<sensor_msgs::CameraInfo>("camera_info", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
 
   tf2_ros::Buffer tf_buffer;
   tf2_ros::TransformListener tf_listener = tf2_ros::TransformListener(tf_buffer);

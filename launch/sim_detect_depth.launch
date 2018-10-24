@@ -6,14 +6,10 @@
     
     <node pkg="uav_detect" name="uav_detection" type="depth_detect_node" output="screen" >
       
-      <!-- <rosparam file="$(find uav_detect)/config/filter_single.yaml" /> -->
-      <rosparam file="$(find uav_detect)/config/dr_default_f550.yaml" />
-      <param name="uav_name" value="$(arg uav_name)" />
+      <rosparam file="$(find uav_detect)/config/sim_dr_default_f550.yaml" />
+      <param name="unknown_pixel_value" value="12000" />
     
-      <!-- <remap from="~thermal_image" to="/thermal/image_raw" /> -->
-      <!-- <remap from="~rgb_image" to="/$(arg uav_name)/rs_d435/color/image_rect_color" /> -->
       <remap from="~depthmap" to="/$(arg uav_name)/realsense/camera/depth/image_raw" />
-      <!-- <remap from="~camera_info" to="/$(arg uav_name)/rs_d435/aligned_depth_to_color/camera_info" /> -->
 
     </node>
   

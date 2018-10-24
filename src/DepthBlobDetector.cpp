@@ -30,10 +30,9 @@ double median(cv::Mat image, cv::Mat mask)
   return vals.at(vals.size()/2);
 }
 
-
-#ifdef DEBUG_BLOB_DETECTOR
+#ifdef DEBUG_BLOB_DETECTOR //{
 double cur_depth;
-#endif
+#endif //}
 
 Params::Params(uav_detect::DepthMapParamsConfig cfg)
 {
@@ -71,21 +70,20 @@ Params::Params(uav_detect::DepthMapParamsConfig cfg)
 
 /* method void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Blob>& blobs) const //{ */
 /* inspired by https://github.com/opencv/opencv/blob/3.4/modules/features2d/src/blobdetector.cpp */
-void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat binaryImage, std::vector<Blob>& blobs) const
+void DepthBlobDetector::findBlobs(cv::Mat binary_image, cv::Mat orig_image, std::vector<Blob>& ret_blobs) const
 {
-  blobs.clear();
+  ret_blobs.clear();
 
   std::vector<std::vector<Point>> contours;
-  /* findContours(tmpBinaryImage, contours, RETR_LIST, CHAIN_APPROX_NONE); */
-  findContours(binaryImage, contours, RETR_LIST, CHAIN_APPROX_NONE);
+  findContours(binary_image, contours, RETR_LIST, CHAIN_APPROX_NONE);
 
-#ifdef DEBUG_BLOB_DETECTOR
+#ifdef DEBUG_BLOB_DETECTOR //{
   Mat keypointsImage;
   cvtColor(binaryImage, keypointsImage, CV_GRAY2RGB);
 
   drawContours(keypointsImage, contours, -1, Scalar(0, 255, 0));
   imshow("opencv_debug", keypointsImage);
-#endif
+#endif //}
 
   for (size_t contourIdx = 0; contourIdx < contours.size(); contourIdx++)
   {
@@ -176,8 +174,8 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat b
       Rect roi = boundingRect(contours[contourIdx]);
       Mat mask(roi.size(), CV_8UC1);
       drawContours(mask, contours, contourIdx, Scalar(1), CV_FILLED, LINE_8, noArray(), INT_MAX, -roi.tl());
-      cv::bitwise_and(mask, known_pixels(roi), mask);
-      double avg_color = median(image(roi), mask);
+      /* cv::bitwise_and(mask, known_pixels(roi), mask); */
+      double avg_color = median(orig_image(roi), mask);
 
       blob.avg_depth = avg_color / 1000.0;
 
@@ -206,38 +204,27 @@ void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat known_pixels, cv::Mat b
 
     blob.contours.push_back(contours[contourIdx]);
 
-    blobs.push_back(blob);
+    ret_blobs.push_back(blob);
 
-#ifdef DEBUG_BLOB_DETECTOR
+#ifdef DEBUG_BLOB_DETECTOR //{
     drawContours(keypointsImage, contours, contourIdx, Scalar(0, blob.avg_depth * 255.0 / params.max_depth, 0), CV_FILLED, LINE_4);
     circle(keypointsImage, blob.location, 1, Scalar(0, 0, 255), 1);
-#endif
+#endif //}
   }
-#ifdef DEBUG_BLOB_DETECTOR
+#ifdef DEBUG_BLOB_DETECTOR //{
   cv::putText(keypointsImage, string("cur_depth: ") + to_string(cur_depth), Point(0, 120), FONT_HERSHEY_SIMPLEX, 1.5, Scalar(0, 0, 255), 3);
   imshow("opencv_debug", keypointsImage);
   waitKey(50);
-#endif
+#endif //}
 }
 //}
 
 /* method void DepthBlobDetector::detect(cv::Mat image, std::vector<cv::KeyPoint>& keypoints, cv::Mat mask) //{ */
 /* inspired by https://github.com/opencv/opencv/blob/3.4/modules/features2d/src/blobdetector.cpp */
-void DepthBlobDetector::detect(cv::Mat image, cv::Mat known_pixels, cv::Mat image_raw, std::vector<Blob>& ret_blobs)
+void DepthBlobDetector::detect(cv::Mat image, std::vector<Blob>& ret_blobs)
 {
   ret_blobs.clear();
   assert(params.min_repeatability != 0);
-  Mat grayscaleImage;
-  if (image.channels() == 3 || image.channels() == 4)
-    cvtColor(image, grayscaleImage, COLOR_BGR2GRAY);
-  else
-    grayscaleImage = image;
-
-  if (grayscaleImage.type() != CV_8UC1 && grayscaleImage.type() != CV_16UC1)
-  {
-    ROS_ERROR("Blob detector only supports 8-bit and 16-bit images!");
-    return;
-  }
 
   std::vector<std::vector<Blob>> blobs;
   int thresh_start = params.min_depth;
@@ -245,24 +232,23 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat known_pixels, cv::Mat imag
     thresh_start = params.min_depth + params.threshold_width;
   for (int thresh = thresh_start; thresh < params.max_depth; thresh += params.threshold_step)
   {
-    Mat binarizedImage;
-#ifdef DEBUG_BLOB_DETECTOR
-    ROS_INFO("[%s]: using threshold %u", ros::this_node::getName().c_str(), thresh);
-#endif
-    if (params.use_threshold_width)
-      inRange(grayscaleImage, thresh - params.threshold_width, thresh, binarizedImage);
-    else
-      inRange(grayscaleImage, params.min_depth, thresh, binarizedImage);
-    /* cv::bitwise_or(binarizedImage, unknown_pixels, binarizedImage); // maybe not such a good idea for detecting the UAV against the sky */
+    Mat binary_image;
 
-#ifdef DEBUG_BLOB_DETECTOR
+    if (params.use_threshold_width)
+      inRange(image, thresh - params.threshold_width, thresh, binary_image);
+    else
+      inRange(image, params.min_depth, thresh, binary_image);
+
+#ifdef DEBUG_BLOB_DETECTOR //{
+    ROS_INFO("[%s]: using threshold %u", ros::this_node::getName().c_str(), thresh);
     if (params.use_threshold_width)
       cur_depth = (thresh + params.threshold_width) / 1000.0;
     else
       cur_depth = thresh / 1000.0;
-#endif
+#endif //}
+
     std::vector<Blob> curBlobs;
-    findBlobs(image_raw, known_pixels, binarizedImage, curBlobs);
+    findBlobs(binary_image, image, curBlobs);
     std::vector<std::vector<Blob>> newBlobs;
     for (size_t i = 0; i < curBlobs.size(); i++)
     {
@@ -322,9 +308,5 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat known_pixels, cv::Mat imag
     ret_blobs.push_back(result_blob);
   }
 
-  /* if (!mask.empty()) */
-  /* { */
-  /*     KeyPointsFilter::runByPixelsMask(keypoints, mask); */
-  /* } */
 }
 //}

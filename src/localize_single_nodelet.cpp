@@ -61,9 +61,9 @@ namespace uav_detect
       // Initialize transform listener
       m_tf_listener_ptr = std::make_unique<tf2_ros::TransformListener>(m_tf_buffer);
       // Initialize other subs and pubs
-      mrs_lib::SubscribeMgr smgr;
-      m_sh_detections_ptr = smgr.create_handler_threadsafe<uav_detect::Detections>(nh, "detections", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
-      m_sh_cinfo_ptr = smgr.create_handler_threadsafe<sensor_msgs::CameraInfo>(nh, "camera_info", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+      mrs_lib::SubscribeMgr smgr(nh);
+      m_sh_detections_ptr = smgr.create_handler_threadsafe<uav_detect::Detections>("detections", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+      m_sh_cinfo_ptr = smgr.create_handler_threadsafe<sensor_msgs::CameraInfo>("camera_info", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
       m_pub_localized_uav = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("localized_uav", 10);
       //}
 
