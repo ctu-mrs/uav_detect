@@ -512,7 +512,9 @@ namespace uav_detect
       // Initialize the LKF using the new measurement
       lkf_x_t init_state;
       init_state.block<3, 1>(0, 0) = initialization.position;
+      init_state.block<3, 1>(3, 0) = Eigen::Vector3d::Zero();
       lkf_R_t init_state_cov;
+      init_state_cov.setZero();
       init_state_cov.block<3, 3>(0, 0) = initialization.covariance;
       init_state_cov.block<3, 3>(3, 3) = m_init_vel_cov*Eigen::Matrix3d::Identity();
 
