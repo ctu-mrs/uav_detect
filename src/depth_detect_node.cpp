@@ -210,13 +210,13 @@ int main(int argc, char** argv)
       cv::Mat detect_im = source_msg.image.clone();
       cv::Mat raw_im = source_msg.image;
       cv::Mat known_pixels;
-      inRange(raw_im, 1, std::numeric_limits<uint16_t>::max(), known_pixels);
+      cv::compare(raw_im, 0, known_pixels, cv::CMP_GT);
 
       if (drmgr.config.blur_empty_areas)
       {
         cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(20, 5), Point(-1, -1));
         cv::Mat mask, tmp;
-        cv::inRange(detect_im, 0, 0, mask);
+        cv::compare(detect_im, 0, mask, cv::CMP_EQ);
         cv::dilate(detect_im, tmp, element, Point(-1, -1), 3);
         /* cv::GaussianBlur(tmp, tmp, Size(19, 75), 40); */
         cv::blur(detect_im, tmp, Size(115, 215));

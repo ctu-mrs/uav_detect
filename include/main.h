@@ -35,6 +35,7 @@
 #include <uav_detect/BlobDetection.h>
 #include <uav_detect/BlobDetections.h>
 #include <mrs_lib/ParamLoader.h>
+#include <mrs_lib/DynamicReconfigureMgr.h>
 #include <mrs_lib/SubscribeHandler.h>
 
 #endif //  MAIN_H
