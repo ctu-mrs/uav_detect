@@ -64,6 +64,8 @@ int main(int argc, char** argv)
 
   ros::NodeHandle nh = ros::NodeHandle("~");
 
+  mrs_lib::ParamLoader pl(nh);
+
   /** Create publishers and subscribers //{**/
   // Initialize other subs and pubs
   ros::Subscriber rgb_sub = nh.subscribe("rgb_img", 1, rgb_callback, ros::TransportHints().tcpNoDelay());
@@ -128,13 +130,18 @@ int main(int argc, char** argv)
       {
         double min;
         double max;
-        cv::minMaxIdx(source_img, &min, &max);
+        cv::Mat unknown_pixels;
+        cv::compare(source_img, 0, unknown_pixels, cv::CMP_EQ);
+#ifndef SIMULATION
+        cv::minMaxIdx(source_img, &min, &max, nullptr, nullptr, ~unknown_pixels);
+#else
+        min = 0.0;
+        max = 12000.0;
+#endif
         cv::Mat im_8UC1;
         source_img.convertTo(im_8UC1, CV_8UC1, 255 / (max-min), -min); 
         applyColorMap(im_8UC1, dm_im_colormapped, cv::COLORMAP_JET);
         cv::Mat blackness = cv::Mat::zeros(dm_im_colormapped.size(), dm_im_colormapped.type());
-        cv::Mat unknown_pixels;
-        inRange(source_img, 0, 0, unknown_pixels);
         blackness.copyTo(dm_im_colormapped, unknown_pixels);
       }
 

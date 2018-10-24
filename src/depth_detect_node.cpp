@@ -225,7 +225,11 @@ int main(int argc, char** argv)
 
       // dilate and erode the image if requested
       {
+#ifndef SIMULATION
         cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(6, 3), Point(-1, -1));
+#else
+        cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(9, 9), Point(-1, -1));
+#endif
         cv::dilate(detect_im, detect_im, element, Point(-1, -1), dilate_iterations);
         cv::erode(detect_im, detect_im, element, Point(-1, -1), erode_iterations);
 

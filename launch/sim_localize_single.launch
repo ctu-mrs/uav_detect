@@ -1,0 +1,19 @@
+<launch>
+
+  <arg name="uav_name" default="$(optenv UAV_NAME uav)"/>
+
+  <group ns="$(arg uav_name)">
+    
+    <node pkg="nodelet" type="nodelet" name="uav_localization" args="standalone uav_detect/LocalizeSingle" output="screen" >
+      
+      <rosparam file="$(find uav_detect)/config/localize_single.yaml" />
+      <param name="uav_name" value="$(arg uav_name)" />
+    
+      <remap from="~detections" to="/$(arg uav_name)/uav_detection/detections" />
+      <remap from="~camera_info" to="/$(arg uav_name)/realsense/camera/depth/camera_info/" />
+
+    </node>
+  
+  </group>
+
+</launch>
