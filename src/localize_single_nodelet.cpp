@@ -46,7 +46,8 @@ namespace uav_detect
       pl.load_param("z_covariance_coeff", m_z_covariance_coeff);
       pl.load_param("max_update_divergence", m_max_update_divergence);
       pl.load_param("max_lkf_uncertainty", m_max_lkf_uncertainty);
-      pl.load_param("lkf_process_noise", m_lkf_process_noise);
+      pl.load_param("lkf_process_noise_vel", m_lkf_process_noise_vel);
+      pl.load_param("lkf_process_noise_pos", m_lkf_process_noise_pos);
       pl.load_param("init_vel_cov", m_init_vel_cov);
       pl.load_param("min_corrs_to_consider", m_min_corrs_to_consider);
 
@@ -247,7 +248,8 @@ namespace uav_detect
     double m_z_covariance_coeff;
     double m_max_update_divergence;
     double m_max_lkf_uncertainty;
-    double m_lkf_process_noise;
+    double m_lkf_process_noise_pos;
+    double m_lkf_process_noise_vel;
     double m_init_vel_cov;
     int m_min_corrs_to_consider;
     //}
@@ -488,7 +490,9 @@ namespace uav_detect
 
     lkf_R_t create_R(double dt)
     {
-      lkf_R_t R = dt*m_lkf_process_noise*lkf_R_t::Identity();
+      lkf_R_t R = lkf_R_t::Identity();
+      R.block<3, 3>(0, 0) *= dt*m_lkf_process_noise_pos;
+      R.block<3, 3>(3, 3) *= dt*m_lkf_process_noise_vel;
       return R;
     }
     //}

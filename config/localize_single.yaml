@@ -1,51 +1,23 @@
-lkf_dt: 0.02
+# Localization parameters
 
-# frame names
-# uav_frame: 'fcu_uav'
-# use_ocam: true
-
-# ############### Camera parameters (for top-mounted Mobius cam) ###############
-# camera_delay: 130 # ms
-
-# camera_offset_x: 0.0
-# camera_offset_y: 0.24
-# camera_offset_z: -0.11
-
-# camera_offset_roll: 90.0
-# camera_offset_pitch: -120.0
-# camera_offset_yaw: 0.0
-
-# # Simulation parameters
-# # camera_offset_x: 0.0
-# # camera_offset_y: -0.04
-# # camera_offset_z: -0.2
-
-# # camera_offset_roll: 45 #degrees
-# # camera_offset_pitch: -90  #degrees
-# # camera_offset_yaw: 45  #degrees
-
-# ############### Depthmap related parameters  ###############
-# height_threshold: 1.0 # metres above ground
-# bg_dist: 1.0 # metres from background to be filtered
-
-# ############### Distance estimation parameters ###############
-# UAV_width: 0.3 # metres
-# dist_filter_window: 3
-# max_dist: 15.0
+# LKF update rate
+lkf_dt: 0.02 # seconds
+# Default covariance of the detection measurement in the XY direction (in camera CS)
 xy_covariance_coeff: 0.1
+# Covariance coefficient of the detection measurement in the Z direction (in camera CS)
+# This coefficient is scaled by z*sqrt(z) to obtain the resulting covariance in Z direction.
 z_covariance_coeff: 0.3
+# Maximal divergence between a measurement and a LKF for the measurement to be considered
+# for association to the LKF
 max_update_divergence: 5.0
+# If a LKF exceeds this uncertainty, it is kicked out of the pool of active LKFs.
 max_lkf_uncertainty: 1.0
-lkf_process_noise: 3.0  # it is scaled by dt in the code, so should it be given scaled to seconds here
+# Process noise of the LKF position states
+lkf_process_noise_pos: 1.0  # it is scaled by dt in the code, so should it be given scaled to seconds here
+# Process noise of the LKF velocity states
+lkf_process_noise_vel: 3.0  # it is scaled by dt in the code, so should it be given scaled to seconds here
+# Initial covariance of velocity states at LKF initialization
 init_vel_cov: 4.0
-min_corrs_to_consider: 20 # how many corrections must the KF have received before it is considered potentially stable
-# dist_corr_p0: -1.0
-# dist_corr_p1: 0.7
-
-# ############### Position estimation parameters ###############
-# min_x: -.inf
-# max_x: .inf
-# min_y: -.inf
-# max_y: .inf
-# min_z: 0.0
-# max_z: .inf
+# A LKF must have received at least this many corrections before it is considered as
+# a candidate for publishing.
+min_corrs_to_consider: 20
