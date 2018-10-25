@@ -24,7 +24,8 @@ windows:
       layout: even-vertical
       panes:
         #{ takeoff uav1
-        - 'export UAV_NAME=uav1;
+        - '
+          export UAV_NAME=uav1;
           waitForControl;
           rosservice call /$UAV_NAME/mavros/cmd/arming 1;
           rosservice call /$UAV_NAME/mavros/set_mode 0 offboard;
@@ -32,10 +33,12 @@ windows:
           rosservice call /$UAV_NAME/mav_manager/takeoff;
           sleep 5;
           rosservice call /$UAV_NAME/control_manager/switch_tracker mrs_trackers/LineTracker;
-          rosservice call /$UAV_NAME/control_manager/goto "goal: [0.0, 0.0, 5.0, 0.0]"'
+          rosservice call /$UAV_NAME/control_manager/goto "goal: [-5.0, 0.0, 5.0, 0.0]"
+          '
         #}
         #{ takeoff uav2
-        - 'export UAV_NAME=uav2;
+        - '
+          export UAV_NAME=uav2;
           waitForControl;
           rosservice call /$UAV_NAME/mavros/cmd/arming 1;
           rosservice call /$UAV_NAME/mavros/set_mode 0 offboard;
@@ -43,5 +46,14 @@ windows:
           rosservice call /$UAV_NAME/mav_manager/takeoff;
           sleep 5;
           rosservice call /$UAV_NAME/control_manager/switch_tracker mrs_trackers/LineTracker;
-          rosservice call /$UAV_NAME/control_manager/goto "goal: [5.0, 0.0, 5.0, 0.0]"'
+          rosservice call /$UAV_NAME/control_manager/goto "goal: [4.0, 0.0, 5.0, 0.0]"
+          '
         #}
+  - random_flier:
+      layout: even-vertical
+      panes:
+        - '
+          export UAV_NAME=uav2; waitForControl;
+          sleep 10;
+          roslaunch uav_detect random_flier.launch
+          '
