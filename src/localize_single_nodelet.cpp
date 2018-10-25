@@ -198,8 +198,16 @@ namespace uav_detect
                     it--;
                     kicked_out_lkfs++;
                   } else
-                  // If LKF survived,  consider it as candidate to be picked
-                  if (lkf.getNCorrections() > max_corrections)
+                  // If LKF survived,  consider it as candidate to be picked.
+                  // The LKF is picked if it has higher number of corrections than the found maximum.
+                  // If it has the same number of corrections as a previously found maximum then uncertainties are
+                  // compared to decide which is going to be picked.
+                  if (
+                      // current LKF has higher or equal number of corrections as is the current max. found
+                      lkf.getNCorrections() >= max_corrections
+                      // no LKF has been picker yet OR cur LKF has higher number of corrections OR cur LKF has same number of corrections but lower uncertainty
+                   && (most_certain_lkf == nullptr  || lkf.getNCorrections() > max_corrections  || uncertainty < picked_uncertainty)
+                      )
                   {
                     most_certain_lkf = &lkf;
                     max_corrections = lkf.getNCorrections();
