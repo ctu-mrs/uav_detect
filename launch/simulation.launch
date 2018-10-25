@@ -31,8 +31,8 @@
   <!-- specify additional model path -->
   <env name="GAZEBO_MODEL_PATH" value="$(env GAZEBO_MODEL_PATH):$(find uav_detect)/gazebo/models" />
 
-  <node name="realsense_tf_publisher" pkg="tf2_ros" type="static_transform_publisher" args="0.3 0 -0.05 1.57 3.14 1.57 fcu_uav1 color_realsense_uav1" />
-  <node name="realsense_tf_publisher" pkg="tf2_ros" type="static_transform_publisher" args="0 0 0 0 0 0 color_realsense_uav1 depth_realsense_uav1" />
+  <node name="realsense_color_tf_publisher" pkg="tf2_ros" type="static_transform_publisher" args="0.3 0 -0.05 1.57 3.14 1.57 fcu_uav1 color_realsense_uav1" />
+  <node name="realsense_depth_tf_publisher" pkg="tf2_ros" type="static_transform_publisher" args="0 0 0 0 0 0 color_realsense_uav1 depth_realsense_uav1" />
 
   <!-- start gazebo server-->
   <node name="gazebo" pkg="gazebo_ros" type="$(arg script_type)" respawn="false" output="screen"
