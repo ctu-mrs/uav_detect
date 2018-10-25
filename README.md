@@ -1,3 +1,7 @@
+# DEPRECATED: use branch `depth` for the latest version
+
+--------------------------------------------------------------------------------------------------------------------------------------
+
 # MAV camera detection using tiny-yolo neural network, Darknet, ROS and OpenCL.
 
 This repository contains the different variants of the detection and relative localization system.
