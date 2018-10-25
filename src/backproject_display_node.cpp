@@ -52,7 +52,7 @@ int main(int argc, char** argv)
   sh_cinfo = smgr.create_handler_threadsafe<sensor_msgs::CameraInfo>("camera_info", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
 
   tf2_ros::Buffer tf_buffer;
-  tf2_ros::TransformListener tf_listener = tf2_ros::TransformListener(tf_buffer);
+  tf2_ros::TransformListener tf_listener(tf_buffer);
 
   if (!smgr.loaded_successfully())
   {

@@ -39,7 +39,11 @@ ELSE()
   message(STATUS "Not found distcc, not using distributed compilation")
 ENDIF()
 
-set(CMAKE_CXX_FLAGS "-std=c++17 -Wall -g -O0 -DEIGEN_INITIALIZE_MATRICES_BY_NAN -DSIMULATION")
+set(CMAKE_CXX_FLAGS "-g -O0 -DEIGEN_INITIALIZE_MATRICES_BY_NAN")
+set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -DEIGEN_INITIALIZE_MATRICES_BY_NAN")
+set(CMAKE_CXX_FLAGS_RELEASE "-Werr -O2")
+
+add_compile_options("-std=c++17" "-Wall")
 
 find_package(OpenCV REQUIRED)
 
