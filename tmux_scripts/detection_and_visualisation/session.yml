@@ -1,0 +1,23 @@
+name: detection_and_visualization
+# root: ~/
+
+startup_window: main
+# startup_pane: 1
+pre_window: export UAV_NAME=uav1
+
+windows:
+  - main:
+      layout: tiled
+      panes:
+        - roslaunch uav_detect sim_detect_depth.launch
+        - roslaunch uav_detect sim_localize_single.launch
+        - roslaunch uav_detect sim_display_detections.launch
+        - roslaunch uav_detect sim_backproject_location.launch
+  - rqt_reconfigure:
+      layout: even-vertical
+      panes:
+        - rosrun rqt_reconfigure rqt_reconfigure
+  - bash:
+      layout: even-vertical
+      panes:
+        - mv -n layout-UAV_LOCALIZATION.json ~/.layouts/; ~/.i3/layout_manager.sh UAV_LOCALIZATION
