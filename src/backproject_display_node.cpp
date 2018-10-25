@@ -48,7 +48,7 @@ int main(int argc, char** argv)
   mrs_lib::SubscribeMgr smgr(nh);
   sh_pose = smgr.create_handler_threadsafe<geometry_msgs::PoseWithCovarianceStamped>("localized_uav", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
   sh_img = smgr.create_handler_threadsafe<sensor_msgs::ImageConstPtr>("image_rect", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
-  sh_det = smgr.create_handler_threadsafe<uav_detect::DetectionsConstPtr>("detections", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+  /* sh_det = smgr.create_handler_threadsafe<uav_detect::DetectionsConstPtr>("detections", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0)); */
   sh_cinfo = smgr.create_handler_threadsafe<sensor_msgs::CameraInfo>("camera_info", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
 
   tf2_ros::Buffer tf_buffer;
@@ -64,10 +64,10 @@ int main(int argc, char** argv)
   std::string window_name = "backprojected_detection";
   cv::namedWindow(window_name, window_flags);
   image_geometry::PinholeCameraModel camera_model;
-  ros::Rate r(100);
+  ros::Rate r(30);
 
   std::list<sensor_msgs::ImageConstPtr> img_buffer;
-  std::list<uav_detect::DetectionsConstPtr> det_buffer;
+  /* std::list<uav_detect::DetectionsConstPtr> det_buffer; */
 
   while (ros::ok())
   {
@@ -81,17 +81,16 @@ int main(int argc, char** argv)
     if (sh_img->new_data())
       add_to_buffer(sh_img->get_data(), img_buffer);
 
-    if (sh_det->new_data())
-      add_to_buffer(sh_det->get_data(), det_buffer);
+    /* if (sh_det->new_data()) */
+    /*   add_to_buffer(sh_det->get_data(), det_buffer); */
 
     bool has_data = sh_pose->has_data() && sh_img->has_data();
-    bool new_data = sh_pose->new_data();
 
-    if (has_data && new_data && sh_cinfo->used_data() && sh_det->used_data())
+    if (has_data && sh_cinfo->used_data() /* && sh_det->used_data() */)
     {
       geometry_msgs::PoseWithCovarianceStamped pose_in = sh_pose->get_data();
       sensor_msgs::ImageConstPtr img_ros = find_closest(pose_in.header.stamp, img_buffer);
-      uav_detect::DetectionsConstPtr dets = find_closest(pose_in.header.stamp, det_buffer);
+      /* uav_detect::DetectionsConstPtr dets = find_closest(pose_in.header.stamp, det_buffer); */
 
       geometry_msgs::Point point_transformed;
       try
