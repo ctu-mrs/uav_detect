@@ -1,52 +1,16 @@
 #include "main.h"
+#include "display_utils.h"
+
+#include <uav_detect/BlobDetection.h>
+#include <uav_detect/BlobDetections.h>
+#include <uav_detect/Contour.h>
+
 #define OPENCV_VISUALISE
 
 using namespace cv;
 using namespace std;
 using namespace uav_detect;
 using namespace Eigen;
-
-/* Callbacks //{ */
-// Callback for the rgb image
-bool new_rgb = false;
-sensor_msgs::Image last_rgb_msg;
-void rgb_callback(const sensor_msgs::Image& rgb_msg)
-{
-  ROS_INFO_THROTTLE(1.0, "Getting new rgb images");
-  last_rgb_msg = rgb_msg;
-  new_rgb = true;
-}
-
-// Callback for the depth map
-bool new_dm = false;
-sensor_msgs::Image last_dm_msg;
-void depthmap_callback(const sensor_msgs::Image& dm_msg)
-{
-  ROS_INFO_THROTTLE(1.0, "Getting new depth images");
-  last_dm_msg = dm_msg;
-  new_dm = true;
-}
-
-// Callback for the depth map
-bool new_processed_dm = false;
-sensor_msgs::Image last_processed_dm_msg;
-void processed_depthmap_callback(const sensor_msgs::Image& processed_dm_msg)
-{
-  ROS_INFO_THROTTLE(1.0, "Getting new processed depth images");
-  last_processed_dm_msg = processed_dm_msg;
-  new_processed_dm = true;
-}
-
-// Callback for the depth map
-bool new_blobs = false;
-uav_detect::BlobDetections last_blobs_msg;
-void blobs_callback(const uav_detect::BlobDetections& blobs_msg)
-{
-  ROS_INFO_THROTTLE(1.0, "Getting new blobs");
-  last_blobs_msg = blobs_msg;
-  new_blobs = true;
-}
-//}
 
 #ifdef OPENCV_VISUALISE //{
 Point cursor_pos;
@@ -68,12 +32,23 @@ int main(int argc, char** argv)
 
   /** Create publishers and subscribers //{**/
   // Initialize other subs and pubs
-  ros::Subscriber rgb_sub = nh.subscribe("rgb_img", 1, rgb_callback, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber depthmap_sub = nh.subscribe("depthmap", 1, depthmap_callback, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber processed_depthmap_sub = nh.subscribe("processed_depthmap", 1, processed_depthmap_callback, ros::TransportHints().tcpNoDelay());
-  ros::Subscriber detected_blobs_pub = nh.subscribe("blob_detections", 1, blobs_callback, ros::TransportHints().tcpNoDelay());
-  /* ros::Publisher detected_UAV_sub = nh.subscribe("detected_uav", 10); */
-  /* ros::Publisher dbg_img_sub = nh.subscribe("debug_im", 1); */
+  mrs_lib::SubscribeHandlerPtr<sensor_msgs::ImageConstPtr> sh_dm;
+  mrs_lib::SubscribeHandlerPtr<sensor_msgs::ImageConstPtr> sh_dmp;
+  mrs_lib::SubscribeHandlerPtr<sensor_msgs::ImageConstPtr> sh_img;
+  mrs_lib::SubscribeHandlerPtr<uav_detect::BlobDetections> sh_blobs;
+
+  mrs_lib::SubscribeMgr smgr(nh);
+  sh_dm = smgr.create_handler_threadsafe<sensor_msgs::ImageConstPtr>("depthmap", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+  sh_dmp = smgr.create_handler_threadsafe<sensor_msgs::ImageConstPtr>("processed_depthmap", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+  sh_img = smgr.create_handler_threadsafe<sensor_msgs::ImageConstPtr>("rgb_img", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+  sh_blobs = smgr.create_handler_threadsafe<uav_detect::BlobDetections>("blob_detections", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+
+  if (!smgr.loaded_successfully())
+  {
+    ROS_ERROR("[%s]: Failed to subscribe some nodes", ros::this_node::getName().c_str());
+    ros::shutdown();
+  }
+
   //}
 
 #ifdef OPENCV_VISUALISE //{
@@ -89,43 +64,58 @@ int main(int argc, char** argv)
   //}
 #endif  //}
   
-  ros::Rate r(50);
+  ros::Rate r(30);
   bool paused = false;
   bool fill_blobs = true;
   cv::Mat source_img, processed_img;
   uav_detect::BlobDetections cur_detections;
   bool cur_detections_initialized;
 
+  std::list<sensor_msgs::ImageConstPtr> dm_buffer;
+  std::list<sensor_msgs::ImageConstPtr> dmp_buffer;
+  std::list<sensor_msgs::ImageConstPtr> img_buffer;
+
   while (ros::ok())
   {
     ros::spinOnce();
   
-    if (new_dm && new_blobs && new_processed_dm)
+    if (sh_dm->new_data())
+      add_to_buffer(sh_dm->get_data(), dm_buffer);
+    if (sh_dmp->new_data())
+      add_to_buffer(sh_dmp->get_data(), dmp_buffer);
+    if (sh_img->new_data())
+      add_to_buffer(sh_img->get_data(), img_buffer);
+
+    bool has_data = sh_dm->has_data() && sh_dmp->has_data() && sh_img->has_data() && sh_blobs->has_data();
+
+    if (has_data)
     {
+      ROS_INFO("[%s]: Drawing, paused: %d, filling blobs: %d", ros::this_node::getName().c_str(), paused, fill_blobs);
+      if (!paused || !cur_detections_initialized)
+      {
+        cur_detections = sh_blobs->get_data();
+        cur_detections_initialized = true;
+      }
+
       if (!paused || source_img.empty())
       {
-        source_img = (cv_bridge::toCvCopy(last_dm_msg, string("16UC1")))->image;
-        new_dm = false;
+        sensor_msgs::ImageConstPtr img_ros = find_closest(cur_detections.header.stamp, dm_buffer);
+        source_img = (cv_bridge::toCvCopy(img_ros, string("16UC1")))->image;
       }
 
       if (!paused || processed_img.empty())
       {
-        cv::cvtColor((cv_bridge::toCvCopy(last_processed_dm_msg, string("16UC1")))->image, processed_img, COLOR_GRAY2BGR);
-        new_processed_dm = false;
-      }
-
-      if (!paused || !cur_detections_initialized)
-      {
-        cur_detections = last_blobs_msg;
-        new_blobs = false;
-        cur_detections_initialized = true;
+        sensor_msgs::ImageConstPtr img_ros = find_closest(cur_detections.header.stamp, dmp_buffer);
+        cv::cvtColor((cv_bridge::toCvCopy(img_ros, string("16UC1")))->image, processed_img, COLOR_GRAY2BGR);
       }
 
       cv::Mat rgb_im;
-      if ((!paused && new_rgb) || (rgb_im.empty() && new_rgb))
+      if ((!paused && sh_img->has_data()) || (rgb_im.empty() && sh_img->has_data()))
       {
-        rgb_im = (cv_bridge::toCvCopy(last_rgb_msg, sensor_msgs::image_encodings::BGR8))->image;
+        sensor_msgs::ImageConstPtr img_ros = find_closest(cur_detections.header.stamp, img_buffer);
+        rgb_im = (cv_bridge::toCvCopy(img_ros, sensor_msgs::image_encodings::BGR8))->image;
       }
+
       cv::Mat dm_im_colormapped;
       {
         double min;
@@ -145,6 +135,8 @@ int main(int argc, char** argv)
         blackness.copyTo(dm_im_colormapped, unknown_pixels);
       }
 
+      cv::Mat processed_im_copy;
+      processed_img.copyTo(processed_im_copy);
       int sure = 0;
       bool displaying_info = false;
       for (const auto& blob : cur_detections.blobs)
@@ -167,38 +159,38 @@ int main(int argc, char** argv)
 
               vector<vector<cv::Point>> cnts;
               cnts.push_back(cnt);
-              cv::drawContours(processed_img, cnts, 0, Scalar(0, 65535, 65535/max*it), CV_FILLED);
+              cv::drawContours(processed_im_copy, cnts, 0, Scalar(0, 65535, 65535/max*it), CV_FILLED);
               if (!displaying_info && pointPolygonTest(cnt, cursor_pos, false) > 0)
               {
                 // display information about this contour
                 displaying_info = true;
-                cv::putText(processed_img, string("avg_depth: ") + to_string(blob.avg_depth), Point(0, 50), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-                cv::putText(processed_img, string("confidence: ") + to_string(blob.confidence), Point(0, 65), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-                cv::putText(processed_img, string("repeatability: ") + to_string(blob.contours.size()), Point(0, 80), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-                cv::putText(processed_img, string("convexity: ") + to_string(blob.convexity), Point(0, 95), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-                cv::putText(processed_img, string("angle: ") + to_string(blob.angle), Point(0, 110), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-                cv::putText(processed_img, string("area: ") + to_string(blob.area), Point(0, 125), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-                cv::putText(processed_img, string("circularity: ") + to_string(blob.circularity), Point(0, 140), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-                cv::putText(processed_img, string("radius: ") + to_string(blob.radius), Point(0, 155), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-                cv::putText(processed_img, string("inertia: ") + to_string(blob.inertia), Point(0, 170), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(processed_im_copy, string("avg_depth: ") + to_string(blob.avg_depth), Point(0, 50), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(processed_im_copy, string("confidence: ") + to_string(blob.confidence), Point(0, 65), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(processed_im_copy, string("repeatability: ") + to_string(blob.contours.size()), Point(0, 80), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(processed_im_copy, string("convexity: ") + to_string(blob.convexity), Point(0, 95), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(processed_im_copy, string("angle: ") + to_string(blob.angle), Point(0, 110), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(processed_im_copy, string("area: ") + to_string(blob.area), Point(0, 125), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(processed_im_copy, string("circularity: ") + to_string(blob.circularity), Point(0, 140), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(processed_im_copy, string("radius: ") + to_string(blob.radius), Point(0, 155), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(processed_im_copy, string("inertia: ") + to_string(blob.inertia), Point(0, 170), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
               }
             }
           } else
           {
-            cv::circle(processed_img, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 65535), 2);
+            cv::circle(processed_im_copy, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 65535), 2);
           }
-          if (new_rgb)
+          if (!rgb_im.empty())
             cv::circle(rgb_im, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 255), 2);
           cv::circle(dm_im_colormapped, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 255), 2);
         }
       }
-      cv::putText(processed_img, string("found: ") + to_string(sure), Point(0, 30), FONT_HERSHEY_SIMPLEX, 1.1, Scalar(0, 0, 65535), 2);
+      cv::putText(processed_im_copy, string("found: ") + to_string(sure), Point(0, 30), FONT_HERSHEY_SIMPLEX, 1.1, Scalar(0, 0, 65535), 2);
 
 #ifdef OPENCV_VISUALISE //{
-      if (new_rgb)
+      if (!rgb_im.empty())
         imshow(rgb_winname, rgb_im);
       imshow(dm_winname, dm_im_colormapped);
-      imshow(det_winname, processed_img);
+      imshow(det_winname, processed_im_copy);
       int key = waitKey(3);
       switch (key)
       {
@@ -213,9 +205,8 @@ int main(int argc, char** argv)
 
     /* sensor_msgs::ImagePtr out_msg = dbg_img.toImageMsg(); */
     /* thresholded_pub.publish(out_msg); */
-
-      cout << "Image processed" << endl;
     }
+
     r.sleep();
   }
 }

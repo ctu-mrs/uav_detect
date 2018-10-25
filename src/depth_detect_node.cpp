@@ -1,6 +1,11 @@
 #include "main.h"
-#include "DepthBlobDetector.h"
+
+#include <uav_detect/BlobDetection.h>
+#include <uav_detect/BlobDetections.h>
+#include <uav_detect/Contour.h>
 #include <uav_detect/DetectionParamsConfig.h>
+
+#include "DepthBlobDetector.h"
 
 using namespace cv;
 using namespace std;

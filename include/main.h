@@ -28,9 +28,6 @@
 #include <uav_detect/Detection.h>
 #include <uav_detect/Detections.h>
 #include <uav_detect/ImagePixel.h>
-#include <uav_detect/Contour.h>
-#include <uav_detect/BlobDetection.h>
-#include <uav_detect/BlobDetections.h>
 #include <mrs_lib/ParamLoader.h>
 #include <mrs_lib/DynamicReconfigureMgr.h>
 #include <mrs_lib/SubscribeHandler.h>
