@@ -43,24 +43,34 @@ namespace uav_detect
     {
       ros::NodeHandle nh = nodelet::Nodelet::getMTPrivateNodeHandle();
 
+      std::string node_name = "LocalizeSingle";
+
       /* Load parameters from ROS //{*/
-      mrs_lib::ParamLoader pl(nh, "LocalizeSingle");
+      mrs_lib::ParamLoader pl(nh, node_name);
       // LOAD STATIC PARAMETERS
       ROS_INFO("Loading static parameters:");
       pl.load_param("world_frame", m_world_frame, std::string("local_origin"));
       pl.load_param("lkf_dt", m_lkf_dt);
-      pl.load_param("xy_covariance_coeff", m_xy_covariance_coeff);
-      pl.load_param("z_covariance_coeff", m_z_covariance_coeff);
-      pl.load_param("max_update_divergence", m_max_update_divergence);
-      pl.load_param("max_lkf_uncertainty", m_max_lkf_uncertainty);
-      pl.load_param("lkf_process_noise_vel", m_lkf_process_noise_vel);
-      pl.load_param("lkf_process_noise_pos", m_lkf_process_noise_pos);
-      pl.load_param("init_vel_cov", m_init_vel_cov);
-      pl.load_param("min_corrs_to_consider", m_min_corrs_to_consider);
 
       if (!pl.loaded_successfully())
       {
         ROS_ERROR("Some compulsory parameters were not loaded successfully, ending the node");
+        ros::shutdown();
+      }
+      
+      // LOAD DYNAMIC PARAMETERS
+      m_drmgr_ptr = make_unique<drmgr_t>(nh, node_name);
+      /* drmgr.map_param("xy_covariance_coeff", m_xy_covariance_coeff); */
+      /* drmgr.map_param("z_covariance_coeff", m_z_covariance_coeff); */
+      /* drmgr.map_param("max_update_divergence", m_max_update_divergence); */
+      /* drmgr.map_param("max_lkf_uncertainty", m_max_lkf_uncertainty); */
+      /* drmgr.map_param("lkf_process_noise_vel", m_lkf_process_noise_vel); */
+      /* drmgr.map_param("lkf_process_noise_pos", m_lkf_process_noise_pos); */
+      /* drmgr.map_param("init_vel_cov", m_init_vel_cov); */
+      /* drmgr.map_param("min_corrs_to_consider", m_min_corrs_to_consider); */
+      if (!m_drmgr_ptr->loaded_successfully())
+      {
+        ROS_ERROR("Some dynamic parameter default values were not loaded successfully, ending the node");
         ros::shutdown();
       }
       //}
@@ -69,7 +79,7 @@ namespace uav_detect
       // Initialize transform listener
       m_tf_listener_ptr = std::make_unique<tf2_ros::TransformListener>(m_tf_buffer);
       // Initialize other subs and pubs
-      mrs_lib::SubscribeMgr smgr(nh);
+      mrs_lib::SubscribeMgr smgr(nh, node_name);
       m_sh_detections_ptr = smgr.create_handler_threadsafe<uav_detect::Detections>("detections", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
       m_sh_cinfo_ptr = smgr.create_handler_threadsafe<sensor_msgs::CameraInfo>("camera_info", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
       m_pub_localized_uav = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("localized_uav", 10);
@@ -143,9 +153,9 @@ namespace uav_detect
 
           /* Process the LKFs - assign measurements and kick out too uncertain ones, find the most certain one //{ */
           {
-            // the LKF must have received at least m_min_corrs_to_consider corrections
+            // the LKF must have received at least min_corrs_to_consider corrections
             // in order to be considered for the search of the most certain LKF
-            int max_corrections = m_min_corrs_to_consider;
+            int max_corrections = m_drmgr_ptr->config.min_corrs_to_consider;
             double picked_uncertainty;
 
             std::lock_guard<std::mutex> lck(m_lkfs_mtx);
@@ -162,7 +172,7 @@ namespace uav_detect
                   size_t closest_it = find_closest_measurement(lkf, pos_covs, divergence);
 
                   /* Evaluate whether the divergence is small enough to justify the update //{ */
-                  if (divergence < m_max_update_divergence)
+                  if (divergence < m_drmgr_ptr->config.max_update_divergence)
                   {
                     Eigen::Vector3d closest_pos = pos_covs.at(closest_it).position;
                     Eigen::Matrix3d closest_cov = pos_covs.at(closest_it).covariance;
@@ -179,7 +189,7 @@ namespace uav_detect
                 {
                   // First, check the uncertainty
                   double uncertainty = calc_LKF_uncertainty(lkf);
-                  if (uncertainty > m_max_lkf_uncertainty || std::isnan(uncertainty))
+                  if (uncertainty > m_drmgr_ptr->config.max_lkf_uncertainty || std::isnan(uncertainty))
                   {
                     it = m_lkfs.erase(it);
                     it--;
@@ -251,17 +261,18 @@ namespace uav_detect
     /* Parameters, loaded from ROS //{ */
     double m_lkf_dt;
     string m_world_frame;
-    double m_xy_covariance_coeff;
-    double m_z_covariance_coeff;
-    double m_max_update_divergence;
-    double m_max_lkf_uncertainty;
-    double m_lkf_process_noise_pos;
-    double m_lkf_process_noise_vel;
-    double m_init_vel_cov;
-    int m_min_corrs_to_consider;
+    /* double m_xy_covariance_coeff; */
+    /* double m_z_covariance_coeff; */
+    /* double m_max_update_divergence; */
+    /* double m_max_lkf_uncertainty; */
+    /* double m_lkf_process_noise_pos; */
+    /* double m_lkf_process_noise_vel; */
+    /* double m_init_vel_cov; */
+    /* int m_min_corrs_to_consider; */
     //}
 
     /* ROS related variables (subscribers, timers etc.) //{ */
+    std::unique_ptr<drmgr_t> m_drmgr_ptr;
     tf2_ros::Buffer m_tf_buffer;
     std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
     mrs_lib::SubscribeHandlerPtr<uav_detect::Detections> m_sh_detections_ptr;
@@ -320,11 +331,11 @@ namespace uav_detect
       /* Calculates the corresponding covariance matrix of the estimated 3D position */
       Eigen::Matrix3d pos_cov = Eigen::Matrix3d::Identity();  // prepare the covariance matrix
       const double tol = 1e-9;
-      pos_cov(0, 0) = pos_cov(1, 1) = m_xy_covariance_coeff;
+      pos_cov(0, 0) = pos_cov(1, 1) = m_drmgr_ptr->config.xy_covariance_coeff;
 
-      pos_cov(2, 2) = position_sf(2)*sqrt(position_sf(2))*m_z_covariance_coeff;
-      if (pos_cov(2, 2) < 0.33*m_z_covariance_coeff)
-        pos_cov(2, 2) = 0.33*m_z_covariance_coeff;
+      pos_cov(2, 2) = position_sf(2)*sqrt(position_sf(2))*m_drmgr_ptr->config.z_covariance_coeff;
+      if (pos_cov(2, 2) < 0.33*m_drmgr_ptr->config.z_covariance_coeff)
+        pos_cov(2, 2) = 0.33*m_drmgr_ptr->config.z_covariance_coeff;
 
       // Find the rotation matrix to rotate the covariance to point in the direction of the estimated position
       const Eigen::Vector3d a(0.0, 0.0, 1.0);
@@ -498,8 +509,8 @@ namespace uav_detect
     lkf_R_t create_R(double dt)
     {
       lkf_R_t R = lkf_R_t::Identity();
-      R.block<3, 3>(0, 0) *= dt*m_lkf_process_noise_pos;
-      R.block<3, 3>(3, 3) *= dt*m_lkf_process_noise_vel;
+      R.block<3, 3>(0, 0) *= dt*m_drmgr_ptr->config.lkf_process_noise_pos;
+      R.block<3, 3>(3, 3) *= dt*m_drmgr_ptr->config.lkf_process_noise_vel;
       return R;
     }
     //}
@@ -527,7 +538,7 @@ namespace uav_detect
       lkf_R_t init_state_cov;
       init_state_cov.setZero();
       init_state_cov.block<3, 3>(0, 0) = initialization.covariance;
-      init_state_cov.block<3, 3>(3, 3) = m_init_vel_cov*Eigen::Matrix3d::Identity();
+      init_state_cov.block<3, 3>(3, 3) = m_drmgr_ptr->config.init_vel_cov*Eigen::Matrix3d::Identity();
 
       new_lkf.setStates(init_state);
       new_lkf.setCovariance(init_state_cov);
