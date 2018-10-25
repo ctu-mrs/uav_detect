@@ -1,5 +1,7 @@
 #include "main.h"
 
+#include <uav_detect/LocalizedUAV.h>
+
 using namespace cv;
 using namespace std;
 using namespace uav_detect;
@@ -40,13 +42,13 @@ int main(int argc, char** argv)
 
   ros::NodeHandle nh = ros::NodeHandle("~");
 
-  mrs_lib::SubscribeHandlerPtr<geometry_msgs::PoseWithCovarianceStamped> sh_pose;
+  mrs_lib::SubscribeHandlerPtr<uav_detect::LocalizedUAV> sh_pose;
   mrs_lib::SubscribeHandlerPtr<sensor_msgs::ImageConstPtr> sh_img;
   mrs_lib::SubscribeHandlerPtr<uav_detect::DetectionsConstPtr> sh_det;
   mrs_lib::SubscribeHandlerPtr<sensor_msgs::CameraInfo> sh_cinfo;
 
   mrs_lib::SubscribeMgr smgr(nh);
-  sh_pose = smgr.create_handler_threadsafe<geometry_msgs::PoseWithCovarianceStamped>("localized_uav", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+  sh_pose = smgr.create_handler_threadsafe<uav_detect::LocalizedUAV>("dbg_localized_uav", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
   sh_img = smgr.create_handler_threadsafe<sensor_msgs::ImageConstPtr>("image_rect", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
   /* sh_det = smgr.create_handler_threadsafe<uav_detect::DetectionsConstPtr>("detections", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0)); */
   sh_cinfo = smgr.create_handler_threadsafe<sensor_msgs::CameraInfo>("camera_info", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
@@ -88,18 +90,18 @@ int main(int argc, char** argv)
 
     if (has_data && sh_cinfo->used_data() /* && sh_det->used_data() */)
     {
-      geometry_msgs::PoseWithCovarianceStamped pose_in = sh_pose->get_data();
-      sensor_msgs::ImageConstPtr img_ros = find_closest(pose_in.header.stamp, img_buffer);
-      /* uav_detect::DetectionsConstPtr dets = find_closest(pose_in.header.stamp, det_buffer); */
+      uav_detect::LocalizedUAV loc_uav = sh_pose->get_data();
+      sensor_msgs::ImageConstPtr img_ros = find_closest(loc_uav.header.stamp, img_buffer);
+      /* uav_detect::DetectionsConstPtr dets = find_closest(loc_uav.header.stamp, det_buffer); */
 
       geometry_msgs::Point point_transformed;
       try
       {
-        geometry_msgs::TransformStamped transform = tf_buffer.lookupTransform(img_ros->header.frame_id, pose_in.header.frame_id, pose_in.header.stamp, ros::Duration(1.0));
-        tf2::doTransform(pose_in.pose.pose.position, point_transformed, transform);
+        geometry_msgs::TransformStamped transform = tf_buffer.lookupTransform(img_ros->header.frame_id, loc_uav.header.frame_id, loc_uav.header.stamp, ros::Duration(1.0));
+        tf2::doTransform(loc_uav.position, point_transformed, transform);
       } catch (tf2::TransformException& ex)
       {
-        ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", pose_in.header.frame_id.c_str(), img_ros->header.frame_id.c_str(), ex.what());
+        ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", loc_uav.header.frame_id.c_str(), img_ros->header.frame_id.c_str(), ex.what());
       }
 
       cv::Point3d pt3d;
@@ -117,7 +119,8 @@ int main(int argc, char** argv)
       cv::circle(img, pt2d, 40, Scalar(0, 0, 255), 2);
       cv::line(img, cv::Point(pt2d.x - 15, pt2d.y), cv::Point(pt2d.x + 15, pt2d.y), Scalar(0, 0, 220));
       cv::line(img, cv::Point(pt2d.x, pt2d.y - 15), cv::Point(pt2d.x, pt2d.y + 15), Scalar(0, 0, 220));
-      cv::putText(img, "distance: " + std::to_string(dist), cv::Point(pt2d.x + 30, pt2d.y + 30), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 255), 2);
+      cv::putText(img, "distance: " + std::to_string(dist), cv::Point(pt2d.x + 35, pt2d.y + 30), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 255), 2);
+      cv::putText(img, "ID: " + std::to_string(loc_uav.lkf_id), cv::Point(pt2d.x + 35, pt2d.y - 30), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 255), 2);
       /* cout << "Backprojected: " << pt2d << endl; */
       /* for (const uav_detect::Detection& det : dets->detections) */
       /* { */

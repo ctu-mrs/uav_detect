@@ -60,6 +60,7 @@ add_message_files(DIRECTORY msgs FILES
   ImagePixel.msg
   BlobDetection.msg
   BlobDetections.msg
+  LocalizedUAV.msg
 )
 
 generate_messages(DEPENDENCIES

@@ -8,7 +8,7 @@
 
       <remap from="~image_rect" to="/$(arg uav_name)/rs_d435/color/image_rect_color" />
       <remap from="~camera_info" to="/$(arg uav_name)/rs_d435/color/camera_info" />
-      <remap from="~localized_uav" to="/$(arg uav_name)/uav_localization/localized_uav" />
+      <remap from="~dbg_localized_uav" to="/$(arg uav_name)/uav_localization/dbg_localized_uav" />
       <remap from="~detections" to="/$(arg uav_name)/uav_detection/detections" />
 
     </node>

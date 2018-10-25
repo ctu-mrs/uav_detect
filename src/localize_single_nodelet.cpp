@@ -8,6 +8,7 @@
 #include "LkfAssociation.h"
 
 #include <uav_detect/LocalizationParamsConfig.h>
+#include <uav_detect/LocalizedUAV.h>
 
 using namespace cv;
 using namespace std;
@@ -78,17 +79,19 @@ namespace uav_detect
       /* Create publishers and subscribers //{ */
       // Initialize transform listener
       m_tf_listener_ptr = std::make_unique<tf2_ros::TransformListener>(m_tf_buffer);
-      // Initialize other subs and pubs
+      // Subscribers
       mrs_lib::SubscribeMgr smgr(nh, node_name);
       m_sh_detections_ptr = smgr.create_handler_threadsafe<uav_detect::Detections>("detections", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
       m_sh_cinfo_ptr = smgr.create_handler_threadsafe<sensor_msgs::CameraInfo>("camera_info", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+      // Publishers
       m_pub_localized_uav = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("localized_uav", 10);
+      m_pub_dbg_localized_uav = nh.advertise<uav_detect::LocalizedUAV>("dbg_localized_uav", 10);
       //}
 
       m_lkf_update_timer = nh.createTimer(ros::Duration(m_lkf_dt), &LocalizeSingle::lkf_update, this);
       m_main_loop_timer = nh.createTimer(ros::Duration(m_lkf_dt), &LocalizeSingle::main_loop, this);
 
-      m_last_lkf_ID = 0;
+      m_last_lkf_id = 0;
 
       cout << "----------------------------------------------------------" << std::endl;
     }
@@ -233,9 +236,15 @@ namespace uav_detect
         /* Publish message of the most likely LKF (if found) //{ */
         if (most_certain_lkf != nullptr)
         {
-          cout << "Publishing most certain LKF result from LKF#" << most_certain_lkf->ID << endl;
+          cout << "Publishing most certain LKF result from LKF#" << most_certain_lkf->id << endl;
           geometry_msgs::PoseWithCovarianceStamped msg = create_message(*most_certain_lkf, last_detections_msg.header.stamp);
           m_pub_localized_uav.publish(msg);
+
+          if (m_pub_dbg_localized_uav.getNumSubscribers() > 0)
+          {
+            uav_detect::LocalizedUAV dbg_msg = to_dbg_message(msg, most_certain_lkf->id);
+            m_pub_dbg_localized_uav.publish(dbg_msg);
+          }
         } else
         {
           cout << "No LKF is certain yet, publishing nothing" << endl;
@@ -278,6 +287,7 @@ namespace uav_detect
     mrs_lib::SubscribeHandlerPtr<uav_detect::Detections> m_sh_detections_ptr;
     mrs_lib::SubscribeHandlerPtr<sensor_msgs::CameraInfo> m_sh_cinfo_ptr;
     ros::Publisher m_pub_localized_uav;
+    ros::Publisher m_pub_dbg_localized_uav;
     ros::Timer m_lkf_update_timer;
     ros::Timer m_main_loop_timer;
     //}
@@ -451,6 +461,21 @@ namespace uav_detect
     }
     //}
 
+    /* to_dbg_message() method //{ */
+    uav_detect::LocalizedUAV to_dbg_message(const geometry_msgs::PoseWithCovarianceStamped& orig_msg, uint32_t lkf_id)
+    {
+      uav_detect::LocalizedUAV msg;
+
+      msg.header = orig_msg.header;
+      msg.position.x = orig_msg.pose.pose.position.x;
+      msg.position.y = orig_msg.pose.pose.position.y;
+      msg.position.z = orig_msg.pose.pose.position.z;
+      msg.lkf_id = lkf_id;
+
+      return msg;
+    }
+    //}
+
   private:
 
     // --------------------------------------------------------------
@@ -466,7 +491,7 @@ namespace uav_detect
     /* LKF - related member variables //{ */
     std::mutex m_lkfs_mtx; // mutex for synchronization of the m_lkfs variable
     std::list<Lkf> m_lkfs; // all currently active LKFs
-    int m_last_lkf_ID; // ID of the last created LKF - used when creating a new LKF to generate a new unique ID
+    int m_last_lkf_id; // ID of the last created LKF - used when creating a new LKF to generate a new unique ID
     //}
     
     /* Definitions of the LKF (consts, typedefs, etc.) //{ */
@@ -526,8 +551,8 @@ namespace uav_detect
       const lkf_R_t R; // depends on the measured dt, so leave blank for now
       const lkf_Q_t Q; // depends on the measurement, so leave blank for now
     
-      lkfs.emplace_back(m_last_lkf_ID, n_states, n_inputs, n_measurements, A, B, R, Q, P);
-      m_last_lkf_ID++;
+      lkfs.emplace_back(m_last_lkf_id, n_states, n_inputs, n_measurements, A, B, R, Q, P);
+      m_last_lkf_id++;
       Lkf& new_lkf = lkfs.back();
 
       // Initialize the LKF using the new measurement

@@ -6,15 +6,15 @@ namespace uav_detect
   class LkfAssociation : public mrs_lib::Lkf
   {
     public:
-      LkfAssociation(const int ID,
+      LkfAssociation(const int id,
                 const int n, const int m, const int p,
                 const Eigen::MatrixXd A, const Eigen::MatrixXd B,
                 const Eigen::MatrixXd R, const Eigen::MatrixXd Q,
                 const Eigen::MatrixXd P)
-        : Lkf(n, m, p, A, B, R, Q, P), ID(ID), m_n_corrections(0)
+        : Lkf(n, m, p, A, B, R, Q, P), id(id), m_n_corrections(0)
       {};
 
-      const int ID;
+      const int id;
 
       virtual Eigen::VectorXd doCorrection(void)
       {
