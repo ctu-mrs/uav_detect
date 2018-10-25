@@ -314,10 +314,9 @@ namespace uav_detect
 
         // Obtain transform from camera frame into world
         tf_out = tf2_to_eigen(transform.transform);
-      }
-      catch (tf2::TransformException& ex)
+      } catch (tf2::TransformException& ex)
       {
-        ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", m_world_frame.c_str(), frame_name.c_str(), ex.what());
+        ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", frame_name.c_str(), m_world_frame.c_str(), ex.what());
         return false;
       }
       return true;

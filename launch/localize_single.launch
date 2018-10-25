@@ -6,7 +6,7 @@
     
     <node pkg="nodelet" type="nodelet" name="uav_localization" args="standalone uav_detect/LocalizeSingle" output="screen" >
       
-      <rosparam file="$(find uav_detect)/config/localize_single_F550.yaml" />
+      <rosparam file="$(find uav_detect)/config/localization_params_F550.yaml" />
       <param name="uav_name" value="$(arg uav_name)" />
     
       <remap from="~detections" to="/$(arg uav_name)/uav_detection/detections" />

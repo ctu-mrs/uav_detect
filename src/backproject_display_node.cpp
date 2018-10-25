@@ -93,9 +93,15 @@ int main(int argc, char** argv)
       sensor_msgs::ImageConstPtr img_ros = find_closest(pose_in.header.stamp, img_buffer);
       uav_detect::DetectionsConstPtr dets = find_closest(pose_in.header.stamp, det_buffer);
 
-      geometry_msgs::TransformStamped transform = tf_buffer.lookupTransform(img_ros->header.frame_id, pose_in.header.frame_id, pose_in.header.stamp, ros::Duration(1.0));
       geometry_msgs::Point point_transformed;
-      tf2::doTransform(pose_in.pose.pose.position, point_transformed, transform);
+      try
+      {
+        geometry_msgs::TransformStamped transform = tf_buffer.lookupTransform(img_ros->header.frame_id, pose_in.header.frame_id, pose_in.header.stamp, ros::Duration(1.0));
+        tf2::doTransform(pose_in.pose.pose.position, point_transformed, transform);
+      } catch (tf2::TransformException& ex)
+      {
+        ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", pose_in.header.frame_id.c_str(), img_ros->header.frame_id.c_str(), ex.what());
+      }
 
       cv::Point3d pt3d;
       pt3d.x = point_transformed.x;

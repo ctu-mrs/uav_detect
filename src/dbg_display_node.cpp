@@ -114,7 +114,7 @@ int main(int argc, char** argv)
         new_processed_dm = false;
       }
 
-      if (!paused || cur_detections_initialized)
+      if (!paused || !cur_detections_initialized)
       {
         cur_detections = last_blobs_msg;
         new_blobs = false;
@@ -122,7 +122,7 @@ int main(int argc, char** argv)
       }
 
       cv::Mat rgb_im;
-      if (new_rgb)
+      if ((!paused && new_rgb) || (rgb_im.empty() && new_rgb))
       {
         rgb_im = (cv_bridge::toCvCopy(last_rgb_msg, sensor_msgs::image_encodings::BGR8))->image;
       }

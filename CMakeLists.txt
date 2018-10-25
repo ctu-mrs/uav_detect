@@ -44,6 +44,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -DEIGEN_INITIALIZE_MATRICES_BY_NAN")
 set(CMAKE_CXX_FLAGS_RELEASE "-Werr -O2")
 
 add_compile_options("-std=c++17" "-Wall")
+add_compile_options("-DSIMULATION")
 
 find_package(OpenCV REQUIRED)
 

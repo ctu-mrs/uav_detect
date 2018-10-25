@@ -1,0 +1,18 @@
+<launch>
+
+  <arg name="uav_name" default="$(optenv UAV_NAME uav)"/>
+
+  <group ns="$(arg uav_name)">
+    
+    <node pkg="uav_detect" name="backproject_location" type="backproject_display_node" output="screen" >
+
+      <remap from="~image_rect" to="/$(arg uav_name)/realsense/camera/color/image_raw" />
+      <remap from="~camera_info" to="/$(arg uav_name)/realsense/camera/color/camera_info" />
+      <remap from="~localized_uav" to="/$(arg uav_name)/uav_localization/localized_uav" />
+      <remap from="~detections" to="/$(arg uav_name)/uav_detection/detections" />
+
+    </node>
+
+  </group>
+
+</launch>
