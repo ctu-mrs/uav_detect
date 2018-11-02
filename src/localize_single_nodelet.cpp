@@ -487,7 +487,7 @@ namespace uav_detect
   private:
 
     // --------------------------------------------------------------
-    // |                   genera member variables                  |
+    // |                  general member variables                  |
     // --------------------------------------------------------------
     
     /* camera model member variable //{ */

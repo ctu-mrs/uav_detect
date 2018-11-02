@@ -34,6 +34,7 @@ double median(cv::Mat image, cv::Mat mask)
 double cur_depth;
 #endif //}
 
+/* Params constructor //{ */
 Params::Params(uav_detect::DetectionParamsConfig cfg)
 {
   // Filter by color
@@ -67,6 +68,7 @@ Params::Params(uav_detect::DetectionParamsConfig cfg)
   min_dist_between = cfg.min_dist_between;
   min_repeatability = cfg.min_repeatability;
 }
+//}
 
 /* method void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Blob>& blobs) const //{ */
 /* inspired by https://github.com/opencv/opencv/blob/3.4/modules/features2d/src/blobdetector.cpp */
