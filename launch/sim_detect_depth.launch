@@ -7,7 +7,7 @@
     <node pkg="uav_detect" name="uav_detection" type="depth_detect_node" output="screen" >
       
       <rosparam file="$(find uav_detect)/config/sim_detection_params_F550.yaml" />
-      <param name="unknown_pixel_value" value="12000" />
+      <!-- <param name="unknown_pixel_value" value="12000" /> -->
     
       <remap from="~depthmap" to="/$(arg uav_name)/realsense/camera/depth/image_raw" />
 
