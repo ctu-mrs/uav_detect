@@ -159,7 +159,7 @@ namespace uav_detect
             // the LKF must have received at least min_corrs_to_consider corrections
             // in order to be considered for the search of the most certain LKF
             int max_corrections = m_drmgr_ptr->config.min_corrs_to_consider;
-            double picked_uncertainty;
+            double picked_uncertainty = std::numeric_limits<double>::max();
 
             std::lock_guard<std::mutex> lck(m_lkfs_mtx);
             starting_lkfs = m_lkfs.size();
@@ -203,10 +203,10 @@ namespace uav_detect
                   // If it has the same number of corrections as a previously found maximum then uncertainties are
                   // compared to decide which is going to be picked.
                   if (
-                      // current LKF has higher or equal number of corrections as is the current max. found
-                      lkf.getNCorrections() >= max_corrections
-                      // no LKF has been picker yet OR cur LKF has higher number of corrections OR cur LKF has same number of corrections but lower uncertainty
-                   && (most_certain_lkf == nullptr  || lkf.getNCorrections() > max_corrections  || uncertainty < picked_uncertainty)
+                      // current LKF has higher number of corrections as is the current max. found
+                      lkf.getNCorrections() > max_corrections
+                      // OR cur LKF has same number of corrections but lower uncertainty
+                   || (lkf.getNCorrections() == max_corrections && uncertainty < picked_uncertainty)
                       )
                   {
                     most_certain_lkf = &lkf;
@@ -260,10 +260,12 @@ namespace uav_detect
         //}
 
         cout << "LKFs: " << starting_lkfs << " - " << kicked_out_lkfs << " + " << new_lkfs << " = " << ending_lkfs << endl;
+        ros::Duration del = ros::Time::now() - last_detections_msg.header.stamp;
         ros::Time end_t = ros::Time::now();
         static double dt = (end_t - start_t).toSec();
         dt = 0.9 * dt + 0.1 * (end_t - start_t).toSec();
         cout << "processing FPS: " << 1 / dt << "Hz" << std::endl;
+        cout << "processing delay: " << del.toSec()*1000 << "ms" << std::endl;
         ROS_INFO_STREAM("[LocalizeSingle]: " << "Detections processed");
       }
     }

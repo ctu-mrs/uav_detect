@@ -234,10 +234,12 @@ int main(int argc, char** argv)
       }
 
       cout << "Image processed" << std::endl;
+      ros::Duration del = ros::Time::now() - source_msg.header.stamp;
       ros::Time end_t = ros::Time::now();
       static double dt = (end_t - start_t).toSec();
       dt = 0.9*dt + 0.1*(end_t - start_t).toSec();
       cout << "processing FPS: " << 1/dt << "Hz" << std::endl;
+      cout << "processing delay: " << del.toSec()*1000 << "ms" << std::endl;
     } else
     {
       r.sleep();
