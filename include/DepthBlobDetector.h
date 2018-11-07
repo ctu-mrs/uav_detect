@@ -62,10 +62,10 @@ class DepthBlobDetector
 {
   public:
     DepthBlobDetector(const Params& parameters);
-    void detect(cv::Mat image, std::vector<Blob>& ret_blobs);
+    void detect(cv::Mat image, cv::Mat mask_image, std::vector<Blob>& ret_blobs);
 
   private:
-    void findBlobs(cv::Mat binary_image, cv::Mat orig_image, std::vector<Blob>& ret_blobs) const;
+    void findBlobs(cv::Mat binary_image, cv::Mat orig_image, cv::Mat mask_image, std::vector<Blob>& ret_blobs) const;
 
   private:
     Params params;

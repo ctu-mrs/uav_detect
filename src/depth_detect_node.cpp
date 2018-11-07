@@ -26,8 +26,18 @@ int main(int argc, char** argv)
   // LOAD STATIC PARAMETERS
   ROS_INFO("Loading static parameters:");
   int unknown_pixel_value = pl.load_param2<int>("unknown_pixel_value", 0);
+  std::string path_to_mask = pl.load_param2<std::string>("path_to_mask", std::string());
+
   // LOAD DYNAMIC PARAMETERS
   drmgr_t drmgr;
+
+  // CHECK LOADING STATUS
+  if (!pl.loaded_successfully())
+  {
+    ROS_ERROR("Some compulsory parameters were not loaded successfully, ending the node");
+    ros::shutdown();
+  }
+
   if (!drmgr.loaded_successfully())
   {
     ROS_ERROR("Some dynamic parameter default values were not loaded successfully, ending the node");
@@ -39,12 +49,6 @@ int main(int argc, char** argv)
   int& erode_ignore_empty_iterations = drmgr.config.erode_ignore_empty_iterations;
   int& gaussianblur_size = drmgr.config.gaussianblur_size;
   int& medianblur_size = drmgr.config.medianblur_size;
-
-  if (!pl.loaded_successfully())
-  {
-    ROS_ERROR("Some compulsory parameters were not loaded successfully, ending the node");
-    ros::shutdown();
-  }
   //}
 
   /* Create publishers and subscribers //{ */
@@ -58,9 +62,26 @@ int main(int argc, char** argv)
   ros::Publisher processed_deptmap_pub = nh.advertise<sensor_msgs::Image&>("processed_depthmap", 1);
   //}
 
+  cv::Mat mask_im;
+  if (path_to_mask.empty())
+  {
+    ROS_INFO("[%s]: Not using image mask", ros::this_node::getName().c_str());
+  } else
+  {
+    mask_im = cv::imread(path_to_mask, cv::IMREAD_GRAYSCALE);
+    if (mask_im.empty())
+    {
+      ROS_ERROR("[%s]: Error loading image mask from file '%s'! Ending node.", ros::this_node::getName().c_str(), path_to_mask.c_str());
+      ros::shutdown();
+    } else if (mask_im.type() != CV_8UC1)
+    {
+      ROS_ERROR("[%s]: Loaded image mask has unexpected type: '%u' (expected %u)! Ending node.", ros::this_node::getName().c_str(), mask_im.type(), CV_8UC1);
+      ros::shutdown();
+    }
+  }
+
   cout << "----------------------------------------------------------" << std::endl;
 
-  cv_bridge::CvImage source_msg;
   ros::Rate r(50);
   while (ros::ok())
   {
@@ -72,7 +93,7 @@ int main(int argc, char** argv)
     {
       cout << "Processsing image" << std::endl;
 
-      source_msg = *cv_bridge::toCvCopy(depthmap_sh->get_data(), string("16UC1"));
+      cv_bridge::CvImage source_msg = *cv_bridge::toCvCopy(depthmap_sh->get_data(), string("16UC1"));
 
       /* Prepare the image for detection //{ */
       // create the detection image
@@ -124,7 +145,7 @@ int main(int argc, char** argv)
       vector<dbd::Blob> blobs;
       dbd::DepthBlobDetector detector(dbd::Params(drmgr.config));
       ROS_INFO("[%s]: Starting Blob detector", ros::this_node::getName().c_str());
-      detector.detect(detect_im, blobs);
+      detector.detect(detect_im, mask_im, blobs);
       ROS_INFO("[%s]: Blob detector finished", ros::this_node::getName().c_str());
 
       cout << "Number of blobs: " << blobs.size() << std::endl;

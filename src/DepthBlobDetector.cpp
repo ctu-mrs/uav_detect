@@ -72,7 +72,7 @@ Params::Params(uav_detect::DetectionParamsConfig cfg)
 
 /* method void DepthBlobDetector::findBlobs(cv::Mat image, cv::Mat binaryImage, std::vector<Blob>& blobs) const //{ */
 /* inspired by https://github.com/opencv/opencv/blob/3.4/modules/features2d/src/blobdetector.cpp */
-void DepthBlobDetector::findBlobs(cv::Mat binary_image, cv::Mat orig_image, std::vector<Blob>& ret_blobs) const
+void DepthBlobDetector::findBlobs(cv::Mat binary_image, cv::Mat orig_image, cv::Mat mask_image, std::vector<Blob>& ret_blobs) const
 {
   ret_blobs.clear();
 
@@ -94,6 +94,10 @@ void DepthBlobDetector::findBlobs(cv::Mat binary_image, cv::Mat orig_image, std:
     Moments moms = moments(Mat(contours[contourIdx]));
     blob.area = moms.m00;
     if (moms.m00 == 0.0)
+      continue;
+
+    blob.location = Point2d(moms.m10 / moms.m00, moms.m01 / moms.m00);
+    if (!mask_image.empty() && !mask_image.at<uint8_t>(blob.location))
       continue;
 
     /* Filter by area //{ */
@@ -186,8 +190,6 @@ void DepthBlobDetector::findBlobs(cv::Mat binary_image, cv::Mat orig_image, std:
     }
     //}
 
-    blob.location = Point2d(moms.m10 / moms.m00, moms.m01 / moms.m00);
-
     /* Calculate blob radius //{ */
     {
       std::vector<double> dists;
@@ -223,7 +225,7 @@ void DepthBlobDetector::findBlobs(cv::Mat binary_image, cv::Mat orig_image, std:
 
 /* method void DepthBlobDetector::detect(cv::Mat image, std::vector<cv::KeyPoint>& keypoints, cv::Mat mask) //{ */
 /* inspired by https://github.com/opencv/opencv/blob/3.4/modules/features2d/src/blobdetector.cpp */
-void DepthBlobDetector::detect(cv::Mat image, std::vector<Blob>& ret_blobs)
+void DepthBlobDetector::detect(cv::Mat image, cv::Mat mask_image, std::vector<Blob>& ret_blobs)
 {
   ret_blobs.clear();
   assert(params.min_repeatability != 0);
@@ -250,7 +252,7 @@ void DepthBlobDetector::detect(cv::Mat image, std::vector<Blob>& ret_blobs)
 #endif //}
 
     std::vector<Blob> curBlobs;
-    findBlobs(binary_image, image, curBlobs);
+    findBlobs(binary_image, image, mask_image, curBlobs);
     std::vector<std::vector<Blob>> newBlobs;
     for (size_t i = 0; i < curBlobs.size(); i++)
     {

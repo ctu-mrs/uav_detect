@@ -29,6 +29,25 @@ int main(int argc, char** argv)
   ros::NodeHandle nh = ros::NodeHandle("~");
 
   mrs_lib::ParamLoader pl(nh);
+  std::string path_to_mask = pl.load_param2<std::string>("path_to_mask", std::string());
+
+  cv::Mat mask_im;
+  if (path_to_mask.empty())
+  {
+    ROS_INFO("[%s]: Not using image mask", ros::this_node::getName().c_str());
+  } else
+  {
+    mask_im = cv::imread(path_to_mask, cv::IMREAD_GRAYSCALE);
+    if (mask_im.empty())
+    {
+      ROS_ERROR("[%s]: Error loading image mask from file '%s'! Ending node.", ros::this_node::getName().c_str(), path_to_mask.c_str());
+      ros::shutdown();
+    } else if (mask_im.type() != CV_8UC1)
+    {
+      ROS_ERROR("[%s]: Loaded image mask has unexpected type: '%u' (expected %u)! Ending node.", ros::this_node::getName().c_str(), mask_im.type(), CV_8UC1);
+      ros::shutdown();
+    }
+  }
 
   /** Create publishers and subscribers //{**/
   // Initialize other subs and pubs
@@ -90,7 +109,6 @@ int main(int argc, char** argv)
 
     if (has_data)
     {
-      ROS_INFO("[%s]: Drawing, paused: %d, filling blobs: %d", ros::this_node::getName().c_str(), paused, fill_blobs);
       if (!paused || !cur_detections_initialized)
       {
         cur_detections = sh_blobs->get_data();
@@ -185,6 +203,16 @@ int main(int argc, char** argv)
         }
       }
       cv::putText(processed_im_copy, string("found: ") + to_string(sure), Point(0, 30), FONT_HERSHEY_SIMPLEX, 1.1, Scalar(0, 0, 65535), 2);
+
+      // highlight masked-out areas
+      if (!mask_im.empty())
+      {
+        cv::Mat red(processed_im_copy.size(), processed_im_copy.type());
+        red.setTo(cv::Scalar(0, 0, 65535), mask_im);
+        cv::Mat tmp;
+        cv::addWeighted(processed_im_copy, 0.7, red, 0.3, 0.0, tmp);
+        tmp.copyTo(processed_im_copy, mask_im);
+      }
 
 #ifdef OPENCV_VISUALISE //{
       if (!rgb_im.empty())

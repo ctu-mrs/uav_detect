@@ -2,6 +2,9 @@
 # Parameters are listed in the order in which the corresponding
 # operations are executed (except for deprecated parameters).
 
+# masking parameters
+path_to_mask: "/home/matous/Pictures/eagleone_mask.bmp"
+
 # image preprocessing
 dilate_iterations: 0
 erode_iterations: 0
