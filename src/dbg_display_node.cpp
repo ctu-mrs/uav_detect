@@ -31,20 +31,20 @@ int main(int argc, char** argv)
   mrs_lib::ParamLoader pl(nh);
   std::string path_to_mask = pl.load_param2<std::string>("path_to_mask", std::string());
 
-  cv::Mat mask_im;
+  cv::Mat mask_im_inv;
   if (path_to_mask.empty())
   {
     ROS_INFO("[%s]: Not using image mask", ros::this_node::getName().c_str());
   } else
   {
-    mask_im = cv::imread(path_to_mask, cv::IMREAD_GRAYSCALE);
-    if (mask_im.empty())
+    mask_im_inv = ~cv::imread(path_to_mask, cv::IMREAD_GRAYSCALE);
+    if (mask_im_inv.empty())
     {
       ROS_ERROR("[%s]: Error loading image mask from file '%s'! Ending node.", ros::this_node::getName().c_str(), path_to_mask.c_str());
       ros::shutdown();
-    } else if (mask_im.type() != CV_8UC1)
+    } else if (mask_im_inv.type() != CV_8UC1)
     {
-      ROS_ERROR("[%s]: Loaded image mask has unexpected type: '%u' (expected %u)! Ending node.", ros::this_node::getName().c_str(), mask_im.type(), CV_8UC1);
+      ROS_ERROR("[%s]: Loaded image mask has unexpected type: '%u' (expected %u)! Ending node.", ros::this_node::getName().c_str(), mask_im_inv.type(), CV_8UC1);
       ros::shutdown();
     }
   }
@@ -205,13 +205,13 @@ int main(int argc, char** argv)
       cv::putText(processed_im_copy, string("found: ") + to_string(sure), Point(0, 30), FONT_HERSHEY_SIMPLEX, 1.1, Scalar(0, 0, 65535), 2);
 
       // highlight masked-out areas
-      if (!mask_im.empty())
+      if (!mask_im_inv.empty())
       {
         cv::Mat red(processed_im_copy.size(), processed_im_copy.type());
-        red.setTo(cv::Scalar(0, 0, 65535), mask_im);
+        red.setTo(cv::Scalar(0, 0, 65535), mask_im_inv);
         cv::Mat tmp;
         cv::addWeighted(processed_im_copy, 0.7, red, 0.3, 0.0, tmp);
-        tmp.copyTo(processed_im_copy, mask_im);
+        tmp.copyTo(processed_im_copy, mask_im_inv);
       }
 
 #ifdef OPENCV_VISUALISE //{
