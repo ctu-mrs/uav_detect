@@ -2,18 +2,24 @@
 
   <arg name="uav_name" default="$(optenv UAV_NAME uav)"/>
 
+  <arg name="debug" default="false" />
+  <arg unless="$(arg debug)" name="launch_prefix" value=""/>
+  <arg     if="$(arg debug)" name="launch_prefix" value="gdb -ex run --args"/>
+
+  <arg name="simulation" default="$(optenv SIMULATION false)" />
+  <arg unless="$(arg simulation)" name="config_file" value="$(find uav_detect)/config/detection_params_F550.yaml"/>
+  <arg     if="$(arg simulation)" name="config_file" value="$(find uav_detect)/config/sim_detection_params_F550.yaml"/>
+  <arg unless="$(arg simulation)" name="depthmap_topic" value="/$(arg uav_name)/rs_d435/aligned_depth_to_color/image_raw"/>
+  <arg     if="$(arg simulation)" name="depthmap_topic" value="/$(arg uav_name)/realsense/camera/depth/image_raw"/>
+
   <group ns="$(arg uav_name)">
     
-    <node pkg="uav_detect" name="uav_detection" type="depth_detect_node" output="screen" >
+    <node pkg="uav_detect" name="uav_detection" type="depth_detect_node" output="screen" launch-prefix="$(arg launch_prefix)" >
       
-      <!-- <rosparam file="$(find uav_detect)/config/filter_single.yaml" /> -->
-      <rosparam file="$(find uav_detect)/config/detection_params_F550.yaml" />
       <param name="uav_name" value="$(arg uav_name)" />
+      <rosparam file="$(arg config_file)" />
     
-      <!-- <remap from="~thermal_image" to="/thermal/image_raw" /> -->
-      <!-- <remap from="~rgb_image" to="/$(arg uav_name)/rs_d435/color/image_rect_color" /> -->
-      <remap from="~depthmap" to="/$(arg uav_name)/rs_d435/aligned_depth_to_color/image_raw" />
-      <!-- <remap from="~camera_info" to="/$(arg uav_name)/rs_d435/aligned_depth_to_color/camera_info" /> -->
+      <remap from="~depthmap" to="$(arg depthmap_topic)" />
 
     </node>
   

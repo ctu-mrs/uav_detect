@@ -140,14 +140,9 @@ int main(int argc, char** argv)
         double max;
         cv::Mat unknown_pixels;
         cv::compare(source_img, 0, unknown_pixels, cv::CMP_EQ);
-#ifndef SIMULATION
         cv::minMaxIdx(source_img, &min, &max, nullptr, nullptr, ~unknown_pixels);
-#else
-        min = 0.0;
-        max = 12000.0;
-#endif
         cv::Mat im_8UC1;
-        source_img.convertTo(im_8UC1, CV_8UC1, 255 / (max-min), -min); 
+        source_img.convertTo(im_8UC1, CV_8UC1, 255.0 / (max-min), -min * 255.0 / (max-min)); 
         applyColorMap(im_8UC1, dm_im_colormapped, cv::COLORMAP_JET);
         cv::Mat blackness = cv::Mat::zeros(dm_im_colormapped.size(), dm_im_colormapped.type());
         blackness.copyTo(dm_im_colormapped, unknown_pixels);

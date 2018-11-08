@@ -3,16 +3,16 @@ name: detection_and_visualization
 
 startup_window: main
 # startup_pane: 1
-pre_window: export UAV_NAME=uav1
+pre_window: export UAV_NAME=uav1; export SIMULATION=true
 
 windows:
   - main:
       layout: tiled
       panes:
-        - roslaunch uav_detect sim_detect_depth.launch
-        - roslaunch uav_detect sim_localize_single.launch
-        - roslaunch uav_detect sim_display_detections.launch
-        - roslaunch uav_detect sim_backproject_location.launch
+        - roslaunch uav_detect detect_depth.launch
+        - roslaunch uav_detect localize_single.launch
+        - roslaunch uav_detect display_detections.launch
+        - roslaunch uav_detect backproject_location.launch
   - rqt_reconfigure:
       layout: even-vertical
       panes:
