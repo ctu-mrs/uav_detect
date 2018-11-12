@@ -12,11 +12,16 @@
   <arg unless="$(arg simulation)" name="depthmap_topic" value="/$(arg uav_name)/rs_d435/aligned_depth_to_color/image_raw"/>
   <arg     if="$(arg simulation)" name="depthmap_topic" value="/$(arg uav_name)/realsense/camera/depth/image_raw"/>
 
+  <arg name="ignore_mask" default="false" />
+  <arg unless="$(arg ignore_mask)" name="mask_filename" value="$(find uav_detect)/masks/eagleone_mask.bmp"/>
+  <arg     if="$(arg ignore_mask)" name="mask_filename" value=""/>
+
   <group ns="$(arg uav_name)">
     
     <node pkg="uav_detect" name="uav_detection" type="depth_detect_node" output="screen" launch-prefix="$(arg launch_prefix)" >
       
       <param name="uav_name" value="$(arg uav_name)" />
+      <param name="path_to_mask" value="$(arg ignore_mask)" />
       <rosparam file="$(arg config_file)" />
     
       <remap from="~depthmap" to="$(arg depthmap_topic)" />
