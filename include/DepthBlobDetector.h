@@ -12,21 +12,18 @@ struct Blob
   double confidence;
   cv::Point2d location;
   double radius;
-  double avg_depth;
+  uint32_t area;
   double circularity;
   double convexity;
+  double avg_depth;
+  uint32_t known_pixels;
   double angle;
-  uint32_t area;
   double inertia;
   std::vector<std::vector<cv::Point> > contours;
 };
 
 struct Params
 {
-  // Filter by color
-  bool filter_by_color;
-  int min_depth;
-  int max_depth;
   // Filter by area
   bool filter_by_area;
   int min_area;
@@ -39,6 +36,13 @@ struct Params
   bool filter_by_convexity;
   double min_convexity;
   double max_convexity;
+  // Filter by color
+  bool filter_by_color;
+  int min_depth;
+  int max_depth;
+  // Filter by known pixels
+  bool filter_by_known_pixels;
+  int min_known_pixels;
   // Filter by orientation
   bool filter_by_orientation;
   double min_angle;

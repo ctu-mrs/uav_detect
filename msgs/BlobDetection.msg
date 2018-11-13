@@ -3,12 +3,13 @@
 
 uint32  x
 uint32  y
-float32 avg_depth
-float32 confidence
-float32 convexity
-float32 angle
 uint32  area
 float32 circularity
-float32 radius
+float32 convexity
+float32 avg_depth
+uint32  known_pixels
+float32 angle
 float32 inertia
+float32 confidence
+float32 radius
 Contour[] contours

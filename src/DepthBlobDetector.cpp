@@ -9,7 +9,7 @@ DepthBlobDetector::DepthBlobDetector(const Params& parameters)
   : params(parameters)
 {}
 
-double median(cv::Mat image, cv::Mat mask)
+double median(cv::Mat image, cv::Mat mask, uint32_t& n_known_pixels)
 {
   vector<uint16_t> vals;
   vals.reserve(image.rows*image.cols);
@@ -24,7 +24,8 @@ double median(cv::Mat image, cv::Mat mask)
     }
   }
 
-  if (vals.empty())
+  n_known_pixels = vals.size();
+  if (n_known_pixels == 0)
     return std::numeric_limits<double>::quiet_NaN();
   nth_element(vals.begin(), vals.begin()+vals.size()/2, vals.end());
   return vals.at(vals.size()/2);
@@ -37,10 +38,6 @@ double cur_depth;
 /* Params constructor //{ */
 Params::Params(uav_detect::DetectionParamsConfig cfg)
 {
-  // Filter by color
-  filter_by_color = cfg.filter_by_color;
-  min_depth = cfg.min_depth;
-  max_depth = cfg.max_depth;
   use_threshold_width = cfg.use_threshold_width;
   threshold_step = cfg.threshold_step;
   threshold_width = cfg.threshold_width;
@@ -52,14 +49,21 @@ Params::Params(uav_detect::DetectionParamsConfig cfg)
   filter_by_circularity = cfg.filter_by_circularity;
   min_circularity = cfg.min_circularity;
   max_circularity = cfg.max_circularity;
-  // Filter by orientation
-  filter_by_orientation = cfg.filter_by_orientation;
-  min_angle = cfg.min_angle;
-  max_angle = cfg.max_angle;
   // Filter by convexity
   filter_by_convexity = cfg.filter_by_convexity;
   min_convexity = cfg.min_convexity;
   max_convexity = cfg.max_convexity;
+  // Filter by color
+  filter_by_color = cfg.filter_by_color;
+  min_depth = cfg.min_depth;
+  max_depth = cfg.max_depth;
+  // Filter by known points
+  filter_by_known_pixels = cfg.filter_by_known_pixels;
+  min_known_pixels = cfg.min_known_pixels;
+  // Filter by orientation
+  filter_by_orientation = cfg.filter_by_orientation;
+  min_angle = cfg.min_angle;
+  max_angle = cfg.max_angle;
   // Filter by inertia
   filter_by_inertia = cfg.filter_by_inertia;
   min_inertia_ratio = cfg.min_inertia_ratio;
@@ -103,7 +107,7 @@ void DepthBlobDetector::findBlobs(cv::Mat binary_image, cv::Mat orig_image, cv::
     /* Filter by area //{ */
     if (params.filter_by_area)
     {
-      double area = moms.m00;
+      const double area = moms.m00;
       if (area < params.min_area || area >= params.max_area)
         continue;
     }
@@ -111,9 +115,9 @@ void DepthBlobDetector::findBlobs(cv::Mat binary_image, cv::Mat orig_image, cv::
 
     /* Filter by circularity //{ */
     {
-      double area = moms.m00;
-      double perimeter = arcLength(Mat(contours[contourIdx]), true);
-      double ratio = 4 * CV_PI * area / (perimeter * perimeter);
+      const double area = moms.m00;
+      const double perimeter = arcLength(Mat(contours[contourIdx]), true);
+      const double ratio = 4 * CV_PI * area / (perimeter * perimeter);
       blob.circularity = ratio;
       if (params.filter_by_circularity && (ratio < params.min_circularity || ratio >= params.max_circularity))
         continue;
@@ -134,18 +138,18 @@ void DepthBlobDetector::findBlobs(cv::Mat binary_image, cv::Mat orig_image, cv::
     
     /* Filter by intertia //{ */
     {
-      double denominator = std::sqrt(std::pow(2 * moms.mu11, 2) + std::pow(moms.mu20 - moms.mu02, 2));
+      const double denominator = std::sqrt(std::pow(2 * moms.mu11, 2) + std::pow(moms.mu20 - moms.mu02, 2));
       constexpr double eps = 1e-2;
       double ratio;
       if (denominator > eps)
       {
-        double cosmin = (moms.mu20 - moms.mu02) / denominator;
-        double sinmin = 2 * moms.mu11 / denominator;
-        double cosmax = -cosmin;
-        double sinmax = -sinmin;
+        const double cosmin = (moms.mu20 - moms.mu02) / denominator;
+        const double sinmin = 2 * moms.mu11 / denominator;
+        const double cosmax = -cosmin;
+        const double sinmax = -sinmin;
 
-        double imin = 0.5 * (moms.mu20 + moms.mu02) - 0.5 * (moms.mu20 - moms.mu02) * cosmin - moms.mu11 * sinmin;
-        double imax = 0.5 * (moms.mu20 + moms.mu02) - 0.5 * (moms.mu20 - moms.mu02) * cosmax - moms.mu11 * sinmax;
+        const double imin = 0.5 * (moms.mu20 + moms.mu02) - 0.5 * (moms.mu20 - moms.mu02) * cosmin - moms.mu11 * sinmin;
+        const double imax = 0.5 * (moms.mu20 + moms.mu02) - 0.5 * (moms.mu20 - moms.mu02) * cosmax - moms.mu11 * sinmax;
         ratio = imin / imax;
       } else
       {
@@ -164,28 +168,36 @@ void DepthBlobDetector::findBlobs(cv::Mat binary_image, cv::Mat orig_image, cv::
     {
       std::vector<Point> hull;
       convexHull(Mat(contours[contourIdx]), hull);
-      double area = contourArea(Mat(contours[contourIdx]));
-      double hullArea = contourArea(Mat(hull));
+      const double area = contourArea(Mat(contours[contourIdx]));
+      const double hullArea = contourArea(Mat(hull));
       if (fabs(hullArea) < DBL_EPSILON)
         continue;
-      double ratio = area / hullArea;
+      const double ratio = area / hullArea;
       blob.convexity = ratio;
       if (params.filter_by_convexity && (ratio < params.min_convexity || ratio >= params.max_convexity))
         continue;
     }
     //}
 
+    uint32_t n_known_pixels; // filled out in the median function when calculating blob color (depth)
     /* Filter by color (depth) //{ */
     {
-      Rect roi = boundingRect(contours[contourIdx]);
-      Mat mask(roi.size(), CV_8UC1);
+      const Rect roi = boundingRect(contours[contourIdx]);
+      const Mat mask(roi.size(), CV_8UC1);
       drawContours(mask, contours, contourIdx, Scalar(1), CV_FILLED, LINE_8, noArray(), INT_MAX, -roi.tl());
-      /* cv::bitwise_and(mask, known_pixels(roi), mask); */
-      double avg_color = median(orig_image(roi), mask);
+      const double avg_color = median(orig_image(roi), mask, n_known_pixels);
 
       blob.avg_depth = avg_color / 1000.0;
 
       if (params.filter_by_color && (std::isnan(avg_color) || avg_color < params.min_depth || avg_color > params.max_depth))
+        continue;
+    }
+    //}
+
+    /* Filter by number of known pixels //{ */
+    {
+      blob.known_pixels = n_known_pixels;
+      if (params.filter_by_known_pixels && n_known_pixels < (uint32_t)params.min_known_pixels)
         continue;
     }
     //}
