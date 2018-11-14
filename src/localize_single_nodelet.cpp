@@ -89,7 +89,7 @@ namespace uav_detect
       //}
 
       m_lkf_update_timer = nh.createTimer(ros::Duration(m_lkf_dt), &LocalizeSingle::lkf_update, this);
-      m_main_loop_timer = nh.createTimer(ros::Duration(m_lkf_dt), &LocalizeSingle::main_loop, this);
+      m_main_loop_timer = nh.createTimer(ros::Rate(1000), &LocalizeSingle::main_loop, this);
 
       m_last_lkf_id = 0;
 
@@ -100,10 +100,9 @@ namespace uav_detect
     /* main_loop() method //{ */
     void main_loop([[maybe_unused]] const ros::TimerEvent& evt)
     {
-      ros::Time start_t = ros::Time::now();
-
       if (m_sh_detections_ptr->new_data() && m_sh_cinfo_ptr->has_data())
       {
+        ros::Time start_t = ros::Time::now();
         if (!m_sh_cinfo_ptr->used_data())
           m_camera_model.fromCameraInfo(m_sh_cinfo_ptr->get_data());
 

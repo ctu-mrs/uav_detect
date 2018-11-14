@@ -1,0 +1,6 @@
+<library path="lib/libDepthDetector">
+  <class name="uav_detect/DepthDetector" type="uav_detect::DepthDetector" base_class_type="nodelet::Nodelet">
+    <description>Nodelet for detecting an object in a depthmap</description>
+  </class>
+</library>
+

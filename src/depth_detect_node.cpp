@@ -1,5 +1,7 @@
 #include "main.h"
 
+#include <nodelet/nodelet.h>
+
 #include <uav_detect/BlobDetection.h>
 #include <uav_detect/BlobDetections.h>
 #include <uav_detect/Contour.h>
@@ -14,236 +16,269 @@ using namespace uav_detect;
 // shortcut type to the dynamic reconfigure manager template instance
 typedef mrs_lib::DynamicReconfigureMgr<uav_detect::DetectionParamsConfig> drmgr_t;
 
-int main(int argc, char** argv)
+namespace uav_detect
 {
-  ros::init(argc, argv, "uav_detect_localize");
-  ROS_INFO("Node initialized.");
 
-  ros::NodeHandle nh = ros::NodeHandle("~");
-
-  /** Load parameters from ROS * //{*/
-  mrs_lib::ParamLoader pl(nh);
-  // LOAD STATIC PARAMETERS
-  ROS_INFO("Loading static parameters:");
-  int unknown_pixel_value = pl.load_param2<int>("unknown_pixel_value", 0);
-  std::string path_to_mask = pl.load_param2<std::string>("path_to_mask", std::string());
-
-  // LOAD DYNAMIC PARAMETERS
-  drmgr_t drmgr;
-
-  // CHECK LOADING STATUS
-  if (!pl.loaded_successfully())
+  class DepthDetector : public nodelet::Nodelet
   {
-    ROS_ERROR("Some compulsory parameters were not loaded successfully, ending the node");
-    ros::shutdown();
-  }
+  public:
 
-  if (!drmgr.loaded_successfully())
-  {
-    ROS_ERROR("Some dynamic parameter default values were not loaded successfully, ending the node");
-    ros::shutdown();
-  }
-  // Load the image preprocessing parameters
-  int& dilate_iterations = drmgr.config.dilate_iterations;
-  int& erode_iterations = drmgr.config.erode_iterations;
-  int& erode_ignore_empty_iterations = drmgr.config.erode_ignore_empty_iterations;
-  int& gaussianblur_size = drmgr.config.gaussianblur_size;
-  int& medianblur_size = drmgr.config.medianblur_size;
-  //}
-
-  /* Create publishers and subscribers //{ */
-  // Initialize subscribers
-  mrs_lib::SubscribeMgr smgr(nh);
-  
-  mrs_lib::SubscribeHandlerPtr<sensor_msgs::Image> depthmap_sh = smgr.create_handler<sensor_msgs::Image>("depthmap", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
-  // Initialize publishers
-  ros::Publisher detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); 
-  ros::Publisher detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1);
-  ros::Publisher processed_deptmap_pub = nh.advertise<sensor_msgs::Image&>("processed_depthmap", 1);
-  //}
-
-  cv::Mat mask_im;
-  if (path_to_mask.empty())
-  {
-    ROS_INFO("[%s]: Not using image mask", ros::this_node::getName().c_str());
-  } else
-  {
-    mask_im = cv::imread(path_to_mask, cv::IMREAD_GRAYSCALE);
-    if (mask_im.empty())
+    /* onInit() method //{ */
+    void onInit()
     {
-      ROS_ERROR("[%s]: Error loading image mask from file '%s'! Ending node.", ros::this_node::getName().c_str(), path_to_mask.c_str());
-      ros::shutdown();
-    } else if (mask_im.type() != CV_8UC1)
-    {
-      ROS_ERROR("[%s]: Loaded image mask has unexpected type: '%u' (expected %u)! Ending node.", ros::this_node::getName().c_str(), mask_im.type(), CV_8UC1);
-      ros::shutdown();
-    }
-  }
+      ros::NodeHandle nh = nodelet::Nodelet::getMTPrivateNodeHandle();
 
-  cout << "----------------------------------------------------------" << std::endl;
+      m_node_name = "DepthDetector";
 
-  ros::Rate r(50);
-  while (ros::ok())
-  {
-    ros::spinOnce();
+      /* Load parameters from ROS //{*/
+      mrs_lib::ParamLoader pl(nh, m_node_name);
+      // LOAD STATIC PARAMETERS
+      ROS_INFO("Loading static parameters:");
+      pl.load_param("unknown_pixel_value", m_unknown_pixel_value, 0);
+      std::string path_to_mask = pl.load_param2<std::string>("path_to_mask", std::string());
 
-    ros::Time start_t = ros::Time::now();
-
-    if (depthmap_sh->new_data())
-    {
-      cout << "Processsing image" << std::endl;
-
-      cv_bridge::CvImage source_msg = *cv_bridge::toCvCopy(depthmap_sh->get_data(), string("16UC1"));
-
-      /* Prepare the image for detection //{ */
-      // create the detection image
-      cv::Mat detect_im = source_msg.image.clone();
-      cv::Mat raw_im = source_msg.image;
-      cv::Mat known_pixels;
-      cv::compare(raw_im, unknown_pixel_value, known_pixels, cv::CMP_NE);
-
-      if (drmgr.config.blur_empty_areas)
+      // LOAD DYNAMIC PARAMETERS
+      // CHECK LOADING STATUS
+      if (!pl.loaded_successfully())
       {
-        cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(20, 5), Point(-1, -1));
-        cv::Mat mask, tmp;
-        mask = ~known_pixels;
-        cv::dilate(detect_im, tmp, element, Point(-1, -1), 3);
-        /* cv::GaussianBlur(tmp, tmp, Size(19, 75), 40); */
-        cv::blur(detect_im, tmp, Size(115, 215));
-        tmp.copyTo(detect_im, mask);
+        ROS_ERROR("Some compulsory parameters were not loaded successfully, ending the node");
+        ros::shutdown();
       }
 
-      // dilate and erode the image if requested
+      m_drmgr_ptr = make_unique<drmgr_t>(nh, m_node_name);
+      if (!m_drmgr_ptr->loaded_successfully())
       {
-        cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(9, 9), Point(-1, -1));
-        cv::dilate(detect_im, detect_im, element, Point(-1, -1), dilate_iterations);
-        cv::erode(detect_im, detect_im, element, Point(-1, -1), erode_iterations);
+        ROS_ERROR("Some dynamic parameter default values were not loaded successfully, ending the node");
+        ros::shutdown();
+      }
+      //}
 
-        // erode without using zero (unknown) pixels
-        if (erode_ignore_empty_iterations > 0)
+      /* Create publishers and subscribers //{ */
+      // Initialize subscribers
+      mrs_lib::SubscribeMgr smgr(nh);
+      
+      m_depthmap_sh = smgr.create_handler<sensor_msgs::Image>("depthmap", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+      // Initialize publishers
+      m_detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); 
+      m_detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1);
+      m_processed_deptmap_pub = nh.advertise<sensor_msgs::Image>("processed_depthmap", 1);
+      //}
+
+      /* Initialize other varibles //{ */
+      if (path_to_mask.empty())
+      {
+        ROS_INFO("[%s]: Not using image mask", ros::this_node::getName().c_str());
+      } else
+      {
+        m_mask_im = cv::imread(path_to_mask, cv::IMREAD_GRAYSCALE);
+        if (m_mask_im.empty())
         {
-          cv::Mat unknown_as_max = cv::Mat(raw_im.size(), CV_16UC1, std::numeric_limits<uint16_t>::max());
-          raw_im.copyTo(unknown_as_max, known_pixels);
-          cv::erode(unknown_as_max, detect_im, element, Point(-1, -1), erode_ignore_empty_iterations);
+          ROS_ERROR("[%s]: Error loading image mask from file '%s'! Ending node.", ros::this_node::getName().c_str(), path_to_mask.c_str());
+          ros::shutdown();
+        } else if (m_mask_im.type() != CV_8UC1)
+        {
+          ROS_ERROR("[%s]: Loaded image mask has unexpected type: '%u' (expected %u)! Ending node.", ros::this_node::getName().c_str(), m_mask_im.type(), CV_8UC1);
+          ros::shutdown();
         }
       }
-
-      // blur it if requested
-      if (gaussianblur_size % 2 == 1)
-      {
-        cv::GaussianBlur(detect_im, detect_im, cv::Size(gaussianblur_size, gaussianblur_size), 0);
-      }
-      // blur it if requested
-      if (medianblur_size % 2 == 1)
-      {
-        cv::medianBlur(detect_im, detect_im, medianblur_size);
-      }
-
       //}
 
-      /* Use OpenCV SimpleBlobDetector to find blobs //{ */
-      vector<dbd::Blob> blobs;
-      dbd::DepthBlobDetector detector(dbd::Params(drmgr.config));
-      ROS_INFO("[%s]: Starting Blob detector", ros::this_node::getName().c_str());
-      detector.detect(detect_im, mask_im, blobs);
-      ROS_INFO("[%s]: Blob detector finished", ros::this_node::getName().c_str());
+      m_main_loop_timer = nh.createTimer(ros::Rate(1000), &DepthDetector::main_loop, this);
 
-      cout << "Number of blobs: " << blobs.size() << std::endl;
+      cout << "----------------------------------------------------------" << std::endl;
 
-      //}
-      
-      /* Create and publish the message with detections //{ */
-      uav_detect::Detections dets;
-      dets.header.frame_id = source_msg.header.frame_id;
-      dets.header.stamp = source_msg.header.stamp;
-      dets.detections.reserve(blobs.size());
-      for (const dbd::Blob& blob : blobs)
+    }
+    //}
+
+    /* main_loop() method //{ */
+    void main_loop([[maybe_unused]] const ros::TimerEvent& evt)
+    {
+      if (m_depthmap_sh->new_data())
       {
-        uav_detect::Detection det;
-        det.class_ID = -1;
+        ros::Time start_t = ros::Time::now();
 
-        det.roi.x_offset = 0;
-        det.roi.y_offset = 0;
-        det.roi.width = detect_im.cols;
-        det.roi.height = detect_im.rows;
+        ROS_INFO_STREAM("[" << m_node_name << "]: " << "Processsing new depthmap");
 
-        cv::Rect brect = cv::boundingRect(blob.contours.at(blob.contours.size()/2));
-        det.x = (brect.x + brect.width/2.0)/double(detect_im.cols);
-        det.y = (brect.y + brect.height/2.0)/double(detect_im.rows);
-        det.depth = blob.avg_depth;
-        det.width = brect.width/double(detect_im.cols);
-        det.height = brect.height/double(detect_im.rows);
+        cv_bridge::CvImage source_msg = *cv_bridge::toCvCopy(m_depthmap_sh->get_data(), string("16UC1"));
 
-        det.confidence = -1;
+        /* Prepare the image for detection //{ */
+        // create the detection image
+        cv::Mat detect_im = source_msg.image.clone();
+        cv::Mat raw_im = source_msg.image;
+        cv::Mat known_pixels;
+        cv::compare(raw_im, m_unknown_pixel_value, known_pixels, cv::CMP_NE);
 
-        dets.detections.push_back(det);
-      }
-      detections_pub.publish(dets);
-      //}
+        if (m_drmgr_ptr->config.blur_empty_areas)
+        {
+          cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(20, 5), Point(-1, -1));
+          cv::Mat mask, tmp;
+          mask = ~known_pixels;
+          cv::dilate(detect_im, tmp, element, Point(-1, -1), 3);
+          /* cv::GaussianBlur(tmp, tmp, Size(19, 75), 40); */
+          cv::blur(detect_im, tmp, Size(115, 215));
+          tmp.copyTo(detect_im, mask);
+        }
 
-      if (processed_deptmap_pub.getNumSubscribers() > 0)
-      {
-        /* Create and publish the debug image //{ */
-        cv_bridge::CvImage processed_depthmap_cvb = source_msg;
-        processed_depthmap_cvb.image = detect_im;
-        sensor_msgs::ImagePtr out_msg = processed_depthmap_cvb.toImageMsg();
-        processed_deptmap_pub.publish(out_msg);
+        // dilate and erode the image if requested
+        {
+          cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(9, 9), Point(-1, -1));
+          cv::dilate(detect_im, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.dilate_iterations);
+          cv::erode(detect_im, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.erode_iterations);
+
+          // erode without using zero (unknown) pixels
+          if (m_drmgr_ptr->config.erode_ignore_empty_iterations > 0)
+          {
+            cv::Mat unknown_as_max = cv::Mat(raw_im.size(), CV_16UC1, std::numeric_limits<uint16_t>::max());
+            raw_im.copyTo(unknown_as_max, known_pixels);
+            cv::erode(unknown_as_max, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.erode_ignore_empty_iterations);
+          }
+        }
+
+        // blur it if requested
+        if (m_drmgr_ptr->config.gaussianblur_size % 2 == 1)
+        {
+          cv::GaussianBlur(detect_im, detect_im, cv::Size(m_drmgr_ptr->config.gaussianblur_size, m_drmgr_ptr->config.gaussianblur_size), 0);
+        }
+        // blur it if requested
+        if (m_drmgr_ptr->config.medianblur_size % 2 == 1)
+        {
+          cv::medianBlur(detect_im, detect_im, m_drmgr_ptr->config.medianblur_size);
+        }
+
         //}
-      }
 
-      if (detected_blobs_pub.getNumSubscribers() > 0)
-      {
-        /* Create and publish the message with raw blob data //{ */
-        uav_detect::BlobDetections dets;
+        /* Use DepthBlobDetector to find blobs //{ */
+        vector<dbd::Blob> blobs;
+        dbd::DepthBlobDetector detector(dbd::Params(m_drmgr_ptr->config));
+        detector.detect(detect_im, m_mask_im, blobs);
+
+        cout << "Number of blobs: " << blobs.size() << std::endl;
+
+        //}
+        
+        /* Create and publish the message with detections //{ */
+        uav_detect::Detections dets;
         dets.header.frame_id = source_msg.header.frame_id;
         dets.header.stamp = source_msg.header.stamp;
-        dets.blobs.reserve(blobs.size());
+        dets.detections.reserve(blobs.size());
         for (const dbd::Blob& blob : blobs)
         {
-          uav_detect::BlobDetection det;
+          uav_detect::Detection det;
+          det.class_ID = -1;
 
-          det.x = blob.location.x;
-          det.y = blob.location.y;
-          det.area = blob.area;
-          det.circularity = blob.circularity;
-          det.convexity = blob.convexity;
-          det.avg_depth = blob.avg_depth;
-          det.known_pixels = blob.known_pixels;
-          det.angle = blob.angle;
-          det.inertia = blob.inertia;
-          det.confidence = blob.confidence;
-          det.radius = blob.radius;
-          det.contours.reserve(blob.contours.size());
-          for (const auto& cont : blob.contours)
-          {
-            Contour cnt;
-            cnt.pixels.reserve(cont.size());
-            for (const auto& pt : cont)
-            {
-              uav_detect::ImagePixel px;
-              px.x = pt.x;
-              px.y = pt.y;
-              cnt.pixels.push_back(px);
-            }
-            det.contours.push_back(cnt);
-          }
+          det.roi.x_offset = 0;
+          det.roi.y_offset = 0;
+          det.roi.width = detect_im.cols;
+          det.roi.height = detect_im.rows;
 
-          dets.blobs.push_back(det);
+          cv::Rect brect = cv::boundingRect(blob.contours.at(blob.contours.size()/2));
+          det.x = (brect.x + brect.width/2.0)/double(detect_im.cols);
+          det.y = (brect.y + brect.height/2.0)/double(detect_im.rows);
+          det.depth = blob.avg_depth;
+          det.width = brect.width/double(detect_im.cols);
+          det.height = brect.height/double(detect_im.rows);
+
+          det.confidence = -1;
+
+          dets.detections.push_back(det);
         }
-        detected_blobs_pub.publish(dets);
+        m_detections_pub.publish(dets);
         //}
-      }
 
-      cout << "Image processed" << std::endl;
-      ros::Duration del = ros::Time::now() - source_msg.header.stamp;
-      ros::Time end_t = ros::Time::now();
-      static double dt = (end_t - start_t).toSec();
-      dt = 0.9*dt + 0.1*(end_t - start_t).toSec();
-      cout << "processing FPS: " << 1/dt << "Hz" << std::endl;
-      cout << "processing delay: " << del.toSec()*1000 << "ms" << std::endl;
-    } else
-    {
-      r.sleep();
+        if (m_processed_deptmap_pub.getNumSubscribers() > 0)
+        {
+          /* Create and publish the debug image //{ */
+          cv_bridge::CvImage processed_depthmap_cvb = source_msg;
+          processed_depthmap_cvb.image = detect_im;
+          sensor_msgs::ImagePtr out_msg = processed_depthmap_cvb.toImageMsg();
+          m_processed_deptmap_pub.publish(out_msg);
+          //}
+        }
+
+        if (m_detected_blobs_pub.getNumSubscribers() > 0)
+        {
+          /* Create and publish the message with raw blob data //{ */
+          uav_detect::BlobDetections dets;
+          dets.header.frame_id = source_msg.header.frame_id;
+          dets.header.stamp = source_msg.header.stamp;
+          dets.blobs.reserve(blobs.size());
+          for (const dbd::Blob& blob : blobs)
+          {
+            uav_detect::BlobDetection det;
+
+            det.x = blob.location.x;
+            det.y = blob.location.y;
+            det.area = blob.area;
+            det.circularity = blob.circularity;
+            det.convexity = blob.convexity;
+            det.avg_depth = blob.avg_depth;
+            det.known_pixels = blob.known_pixels;
+            det.angle = blob.angle;
+            det.inertia = blob.inertia;
+            det.confidence = blob.confidence;
+            det.radius = blob.radius;
+            det.contours.reserve(blob.contours.size());
+            for (const auto& cont : blob.contours)
+            {
+              Contour cnt;
+              cnt.pixels.reserve(cont.size());
+              for (const auto& pt : cont)
+              {
+                uav_detect::ImagePixel px;
+                px.x = pt.x;
+                px.y = pt.y;
+                cnt.pixels.push_back(px);
+              }
+              det.contours.push_back(cnt);
+            }
+
+            dets.blobs.push_back(det);
+          }
+          m_detected_blobs_pub.publish(dets);
+          //}
+        }
+
+        ROS_INFO_STREAM("[" << m_node_name << "]: " << " Image processed");
+        ros::Duration del = ros::Time::now() - source_msg.header.stamp;
+        ros::Time end_t = ros::Time::now();
+        static double dt = (end_t - start_t).toSec();
+        dt = 0.9*dt + 0.1*(end_t - start_t).toSec();
+        cout << "processing FPS: " << 1/dt << "Hz" << std::endl;
+        cout << "processing delay: " << del.toSec()*1000 << "ms" << std::endl;
+      }
     }
-  }
-}
+    //}
+
+  private:
+
+    // --------------------------------------------------------------
+    // |                ROS-related member variables                |
+    // --------------------------------------------------------------
+
+    /* Parameters, loaded from ROS //{ */
+    int m_unknown_pixel_value;
+    //}
+
+    /* ROS related variables (subscribers, timers etc.) //{ */
+    std::unique_ptr<drmgr_t> m_drmgr_ptr;
+    mrs_lib::SubscribeHandlerPtr<sensor_msgs::Image> m_depthmap_sh;
+    ros::Publisher m_detections_pub;
+    ros::Publisher m_detected_blobs_pub;
+    ros::Publisher m_processed_deptmap_pub;
+    ros::Timer m_main_loop_timer;
+    std::string m_node_name;
+    //}
+
+  private:
+
+    // --------------------------------------------------------------
+    // |                   Other member variables                   |
+    // --------------------------------------------------------------
+
+    cv::Mat m_mask_im;
+
+  }; // class DepthDetector
+}; // namespace uav_detect
+
+#include <pluginlib/class_list_macros.h>
+PLUGINLIB_EXPORT_CLASS(uav_detect::DepthDetector, nodelet::Nodelet)

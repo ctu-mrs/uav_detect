@@ -18,7 +18,7 @@
 
   <group ns="$(arg uav_name)">
     
-    <node pkg="uav_detect" name="uav_detection" type="depth_detect_node" output="screen" launch-prefix="$(arg launch_prefix)" >
+    <node pkg="nodelet" type="nodelet" name="uav_detection" args="standalone uav_detect/DepthDetector" output="screen" launch-prefix="$(arg launch_prefix)" >
       
       <param name="uav_name" value="$(arg uav_name)" />
       <param name="path_to_mask" value="$(arg ignore_mask)" />

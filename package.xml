@@ -75,6 +75,7 @@
     <!-- <metapackage/> -->
 
     <!-- Other tools can request additional information be placed here -->
+    <nodelet plugin="${prefix}/depth_detector_nodelet.xml" />
     <nodelet plugin="${prefix}/localize_single_nodelet.xml" />
 
     generate_messages_cpp
