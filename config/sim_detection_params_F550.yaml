@@ -35,6 +35,9 @@ filter_by_color: true
 min_depth: 1000
 max_depth: 13000
 
+filter_by_known_pixels: true
+min_known_pixels: 150
+
 # further filtration
 min_dist_between: 10.0
 min_repeatability: 4

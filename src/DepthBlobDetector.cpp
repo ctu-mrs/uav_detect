@@ -9,27 +9,53 @@ DepthBlobDetector::DepthBlobDetector(const Params& parameters)
   : params(parameters)
 {}
 
+/* median function //{ */
 double median(cv::Mat image, cv::Mat mask, uint32_t& n_known_pixels)
 {
   vector<uint16_t> vals;
   vals.reserve(image.rows*image.cols);
+  n_known_pixels = 0;
+
   for (int row_it = 0; row_it < image.rows; row_it++)
   {
     for (int col_it = 0; col_it < image.cols; col_it++)
     {
       if (mask.at<uint8_t>(row_it, col_it))
       {
-        vals.push_back(image.at<uint16_t>(row_it, col_it));
+        uint16_t cur_val = image.at<uint16_t>(row_it, col_it);
+        if (cur_val != 0)
+          n_known_pixels++;
+        vals.push_back(cur_val);
       }
     }
   }
 
-  n_known_pixels = vals.size();
-  if (n_known_pixels == 0)
+  if (vals.empty())
     return std::numeric_limits<double>::quiet_NaN();
   nth_element(vals.begin(), vals.begin()+vals.size()/2, vals.end());
   return vals.at(vals.size()/2);
 }
+
+double median(cv::Mat image, std::vector<cv::Point> points, uint32_t& n_known_pixels)
+{
+  vector<uint16_t> vals;
+  vals.reserve(points.size());
+  n_known_pixels = 0;
+
+  for (const auto& pt : points)
+  {
+    uint16_t cur_val = image.at<uint16_t>(pt);
+    if (cur_val != 0)
+      n_known_pixels++;
+    vals.push_back(cur_val);
+  }
+
+  if (vals.empty())
+    return std::numeric_limits<double>::quiet_NaN();
+  nth_element(vals.begin(), vals.begin()+vals.size()/2, vals.end());
+  return vals.at(vals.size()/2);
+}
+//}
 
 #ifdef DEBUG_BLOB_DETECTOR //{
 double cur_depth;
@@ -49,6 +75,14 @@ Params::Params(uav_detect::DetectionParamsConfig cfg)
   filter_by_circularity = cfg.filter_by_circularity;
   min_circularity = cfg.min_circularity;
   max_circularity = cfg.max_circularity;
+  // Filter by orientation
+  filter_by_orientation = cfg.filter_by_orientation;
+  min_angle = cfg.min_angle;
+  max_angle = cfg.max_angle;
+  // Filter by inertia
+  filter_by_inertia = cfg.filter_by_inertia;
+  min_inertia_ratio = cfg.min_inertia_ratio;
+  max_inertia_ratio = cfg.max_inertia_ratio;
   // Filter by convexity
   filter_by_convexity = cfg.filter_by_convexity;
   min_convexity = cfg.min_convexity;
@@ -60,14 +94,6 @@ Params::Params(uav_detect::DetectionParamsConfig cfg)
   // Filter by known points
   filter_by_known_pixels = cfg.filter_by_known_pixels;
   min_known_pixels = cfg.min_known_pixels;
-  // Filter by orientation
-  filter_by_orientation = cfg.filter_by_orientation;
-  min_angle = cfg.min_angle;
-  max_angle = cfg.max_angle;
-  // Filter by inertia
-  filter_by_inertia = cfg.filter_by_inertia;
-  min_inertia_ratio = cfg.min_inertia_ratio;
-  max_inertia_ratio = cfg.max_inertia_ratio;
   // Other filtering criterions
   min_dist_between = cfg.min_dist_between;
   min_repeatability = cfg.min_repeatability;
@@ -182,10 +208,11 @@ void DepthBlobDetector::findBlobs(cv::Mat binary_image, cv::Mat orig_image, cv::
     uint32_t n_known_pixels; // filled out in the median function when calculating blob color (depth)
     /* Filter by color (depth) //{ */
     {
-      const Rect roi = boundingRect(contours[contourIdx]);
-      const Mat mask(roi.size(), CV_8UC1);
-      drawContours(mask, contours, contourIdx, Scalar(1), CV_FILLED, LINE_8, noArray(), INT_MAX, -roi.tl());
-      const double avg_color = median(orig_image(roi), mask, n_known_pixels);
+      /* const Rect roi = boundingRect(contours[contourIdx]); */
+      /* const Mat mask(roi.size(), CV_8UC1); */
+      /* drawContours(mask, contours, contourIdx, Scalar(1), CV_FILLED, LINE_8, noArray(), INT_MAX, -roi.tl()); */
+      /* const double avg_color = median(orig_image(roi), mask, n_known_pixels); */
+      const double avg_color = median(orig_image, contours[contourIdx], n_known_pixels);
 
       blob.avg_depth = avg_color / 1000.0;
 
@@ -314,11 +341,12 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat mask_image, std::vector<Bl
     result_blob.confidence = normalizer / cur_blobs.size();
     result_blob.location = sumPoint;
     result_blob.radius = cur_blobs[cur_blobs.size() / 2].radius;
-    result_blob.avg_depth = cur_blobs[cur_blobs.size() / 2].avg_depth;
-    result_blob.convexity = cur_blobs[cur_blobs.size() / 2].convexity;
-    result_blob.angle = cur_blobs[cur_blobs.size() / 2].angle;
     result_blob.area = cur_blobs[cur_blobs.size() / 2].area;
     result_blob.circularity = cur_blobs[cur_blobs.size() / 2].circularity;
+    result_blob.convexity = cur_blobs[cur_blobs.size() / 2].convexity;
+    result_blob.avg_depth = cur_blobs[cur_blobs.size() / 2].avg_depth;
+    result_blob.known_pixels = cur_blobs[cur_blobs.size() / 2].known_pixels;
+    result_blob.angle = cur_blobs[cur_blobs.size() / 2].angle;
     result_blob.inertia = cur_blobs[cur_blobs.size() / 2].inertia;
     result_blob.contours = contours;
     ret_blobs.push_back(result_blob);

@@ -204,14 +204,15 @@ int main(int argc, char** argv)
 
           det.x = blob.location.x;
           det.y = blob.location.y;
-          det.avg_depth = blob.avg_depth;
-          det.confidence = blob.confidence;
-          det.convexity = blob.convexity;
-          det.angle = blob.angle;
           det.area = blob.area;
           det.circularity = blob.circularity;
-          det.radius = blob.radius;
+          det.convexity = blob.convexity;
+          det.avg_depth = blob.avg_depth;
+          det.known_pixels = blob.known_pixels;
+          det.angle = blob.angle;
           det.inertia = blob.inertia;
+          det.confidence = blob.confidence;
+          det.radius = blob.radius;
           det.contours.reserve(blob.contours.size());
           for (const auto& cont : blob.contours)
           {

@@ -14,11 +14,11 @@ struct Blob
   double radius;
   uint32_t area;
   double circularity;
+  double angle;
+  double inertia;
   double convexity;
   double avg_depth;
   uint32_t known_pixels;
-  double angle;
-  double inertia;
   std::vector<std::vector<cv::Point> > contours;
 };
 
@@ -32,6 +32,14 @@ struct Params
   bool filter_by_circularity;
   double min_circularity;
   double max_circularity;
+  // Filter by orientation
+  bool filter_by_orientation;
+  double min_angle;
+  double max_angle;
+  // Filter by inertia
+  bool filter_by_inertia;
+  double min_inertia_ratio;
+  double max_inertia_ratio;
   // Filter by convexity
   bool filter_by_convexity;
   double min_convexity;
@@ -43,14 +51,6 @@ struct Params
   // Filter by known pixels
   bool filter_by_known_pixels;
   int min_known_pixels;
-  // Filter by orientation
-  bool filter_by_orientation;
-  double min_angle;
-  double max_angle;
-  // Filter by inertia
-  bool filter_by_inertia;
-  double min_inertia_ratio;
-  double max_inertia_ratio;
   // thresholding
   int threshold_step;
   bool use_threshold_width;

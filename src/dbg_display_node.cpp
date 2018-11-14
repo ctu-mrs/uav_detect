@@ -184,7 +184,7 @@ int main(int argc, char** argv)
                 cv::putText(processed_im_copy, string("circularity: ") + to_string(blob.circularity), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                 cv::putText(processed_im_copy, string("convexity: ") + to_string(blob.convexity), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                 cv::putText(processed_im_copy, string("avg_depth: ") + to_string(blob.avg_depth), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-                cv::putText(processed_im_copy, string("known pixels:") + to_string(blob.known_pixels), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                cv::putText(processed_im_copy, string("known pixels: ") + to_string(blob.known_pixels), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                 cv::putText(processed_im_copy, string("angle: ") + to_string(blob.angle), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                 cv::putText(processed_im_copy, string("inertia: ") + to_string(blob.inertia), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                 cv::putText(processed_im_copy, string("repeatability: ") + to_string(blob.contours.size()), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
