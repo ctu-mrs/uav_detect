@@ -1,6 +1,8 @@
 ############### Localization parameters ############### 
 
 ## Measurement parameters
+# Minimal height of the measurement to be considered valid
+min_detection_height: 1.0  # meters above zero altitude
 # Covariance of the detection measurement in the XY direction (in camera CS)
 xy_covariance_coeff: 0.1
 # Covariance coefficient of the detection measurement in the Z direction (in camera CS)

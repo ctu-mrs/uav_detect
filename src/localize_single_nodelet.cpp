@@ -52,6 +52,7 @@ namespace uav_detect
       ROS_INFO("Loading static parameters:");
       pl.load_param("world_frame", m_world_frame, std::string("local_origin"));
       pl.load_param("lkf_dt", m_lkf_dt);
+      pl.load_param("min_detection_height", m_min_detection_height);
 
       if (!pl.loaded_successfully())
       {
@@ -138,12 +139,21 @@ namespace uav_detect
           {
             const Eigen::Vector3d det_pos_sf = detection_to_3dpoint(det);
             const Eigen::Vector3d det_pos = s2w_tf*det_pos_sf;
+
+            if (!position_valid(det_pos))
+            {
+              ROS_WARN("Global position of detection [%.2f, %.2f, %.2f] is invalid!", det.x, det.y, det.depth);
+              ROS_WARN("detection 3d position: [%.2f, %.2f, %.2f]", det_pos(0), det_pos(1), det_pos(2));
+              continue;
+            }
+
             const Eigen::Matrix3d det_cov_sf = calc_position_covariance(det_pos_sf);
             const Eigen::Matrix3d det_cov = rotate_covariance(det_cov_sf, s2w_tf.rotation());
             if (det_cov.array().isNaN().any())
             {
               ROS_ERROR("Constructed covariance of detection [%.2f, %.2f, %.2f] contains NaNs!", det.x, det.y, det.depth);
               ROS_ERROR("detection 3d position: [%.2f, %.2f, %.2f]", det_pos(0), det_pos(1), det_pos(2));
+              continue;
             }
 
             pos_cov_t pos_cov;
@@ -151,6 +161,7 @@ namespace uav_detect
             pos_cov.covariance = det_cov;
             pos_covs.push_back(pos_cov);
           }
+          n_meas = pos_covs.size();  // update the number of measurements (excluding the invalid ones)
           //}
 
           /* Process the LKFs - assign measurements and kick out too uncertain ones, find the most certain one //{ */
@@ -278,6 +289,7 @@ namespace uav_detect
 
     /* Parameters, loaded from ROS //{ */
     double m_lkf_dt;
+    double m_min_detection_height;
     string m_world_frame;
     /* double m_xy_covariance_coeff; */
     /* double m_z_covariance_coeff; */
@@ -342,6 +354,13 @@ namespace uav_detect
     }
     //}
 
+    /* position_valid() method //{ */
+    bool position_valid(const Eigen::Vector3d& pos)
+    {
+      return pos(2) > m_min_detection_height;
+    }
+    //}
+    
     /* calc_position_covariance() method //{ */
     /* position_sf is position of the detection in 3D in the frame of the sensor (camera) */
     Eigen::Matrix3d calc_position_covariance(const Eigen::Vector3d& position_sf)
