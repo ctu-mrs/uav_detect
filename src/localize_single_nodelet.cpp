@@ -44,10 +44,10 @@ namespace uav_detect
     {
       ros::NodeHandle nh = nodelet::Nodelet::getMTPrivateNodeHandle();
 
-      std::string node_name = "LocalizeSingle";
+      m_node_name = "LocalizeSingle";
 
       /* Load parameters from ROS //{*/
-      mrs_lib::ParamLoader pl(nh, node_name);
+      mrs_lib::ParamLoader pl(nh, m_node_name);
       // LOAD STATIC PARAMETERS
       ROS_INFO("Loading static parameters:");
       pl.load_param("world_frame", m_world_frame, std::string("local_origin"));
@@ -61,7 +61,7 @@ namespace uav_detect
       }
       
       // LOAD DYNAMIC PARAMETERS
-      m_drmgr_ptr = make_unique<drmgr_t>(nh, node_name);
+      m_drmgr_ptr = make_unique<drmgr_t>(nh, m_node_name);
       /* drmgr.map_param("xy_covariance_coeff", m_xy_covariance_coeff); */
       /* drmgr.map_param("z_covariance_coeff", m_z_covariance_coeff); */
       /* drmgr.map_param("max_update_divergence", m_max_update_divergence); */
@@ -81,7 +81,7 @@ namespace uav_detect
       // Initialize transform listener
       m_tf_listener_ptr = std::make_unique<tf2_ros::TransformListener>(m_tf_buffer);
       // Subscribers
-      mrs_lib::SubscribeMgr smgr(nh, node_name);
+      mrs_lib::SubscribeMgr smgr(nh, m_node_name);
       m_sh_detections_ptr = smgr.create_handler_threadsafe<uav_detect::Detections>("detections", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
       m_sh_cinfo_ptr = smgr.create_handler_threadsafe<sensor_msgs::CameraInfo>("camera_info", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
       // Publishers
@@ -109,7 +109,7 @@ namespace uav_detect
 
         uav_detect::Detections last_detections_msg = m_sh_detections_ptr->get_data();
 
-        ROS_INFO_STREAM("[LocalizeSingle]: " << "Processsing " << last_detections_msg.detections.size() << " new detections");
+        /* ROS_INFO_STREAM("[LocalizeSingle]: " << "Processsing " << last_detections_msg.detections.size() << " new detections"); */
 
         string sensor_frame = last_detections_msg.header.frame_id;
         // Construct a new world to camera transform
@@ -120,10 +120,10 @@ namespace uav_detect
           return;
 
         // keep track of how many LKFs are created and kicked out in this iteration
-        int starting_lkfs = 0;
-        int new_lkfs = 0;
-        int kicked_out_lkfs = 0;
-        int ending_lkfs = 0;
+        /* int starting_lkfs = 0; */
+        /* int new_lkfs = 0; */
+        /* int kicked_out_lkfs = 0; */
+        /* int ending_lkfs = 0; */
         // observer pointer, which will contain the most likely LKF (if any)
         Lkf const * most_certain_lkf = nullptr;
         /* Process the detections and update the LKFs, find the most certain LKF after the update, kick out uncertain LKFs //{ */
@@ -142,8 +142,8 @@ namespace uav_detect
 
             if (!position_valid(det_pos))
             {
-              ROS_WARN("Global position of detection [%.2f, %.2f, %.2f] is invalid!", det.x, det.y, det.depth);
-              ROS_WARN("detection 3d position: [%.2f, %.2f, %.2f]", det_pos(0), det_pos(1), det_pos(2));
+              ROS_WARN_THROTTLE(1.0, "[%s]: Global position of detection [%.2f, %.2f, %.2f] is invalid!", m_node_name.c_str(), det.x, det.y, det.depth);
+              ROS_WARN_THROTTLE(1.0, "[%s]: detection 3d position: [%.2f, %.2f, %.2f]", m_node_name.c_str(), det_pos(0), det_pos(1), det_pos(2));
               continue;
             }
 
@@ -151,8 +151,8 @@ namespace uav_detect
             const Eigen::Matrix3d det_cov = rotate_covariance(det_cov_sf, s2w_tf.rotation());
             if (det_cov.array().isNaN().any())
             {
-              ROS_ERROR("Constructed covariance of detection [%.2f, %.2f, %.2f] contains NaNs!", det.x, det.y, det.depth);
-              ROS_ERROR("detection 3d position: [%.2f, %.2f, %.2f]", det_pos(0), det_pos(1), det_pos(2));
+              ROS_ERROR_THROTTLE(1.0, "[%s]: Constructed covariance of detection [%.2f, %.2f, %.2f] contains NaNs!", m_node_name.c_str(), det.x, det.y, det.depth);
+              ROS_ERROR_THROTTLE(1.0, "[%s]: detection 3d position: [%.2f, %.2f, %.2f]", m_node_name.c_str(), det_pos(0), det_pos(1), det_pos(2));
               continue;
             }
 
@@ -172,7 +172,7 @@ namespace uav_detect
             double picked_uncertainty = std::numeric_limits<double>::max();
 
             std::lock_guard<std::mutex> lck(m_lkfs_mtx);
-            starting_lkfs = m_lkfs.size();
+            /* starting_lkfs = m_lkfs.size(); */
             if (!m_lkfs.empty())
             {
               for (list<Lkf>::iterator it = std::begin(m_lkfs); it != std::end(m_lkfs); it++)
@@ -206,7 +206,7 @@ namespace uav_detect
                   {
                     it = m_lkfs.erase(it);
                     it--;
-                    kicked_out_lkfs++;
+                    /* kicked_out_lkfs++; */
                   } else
                   // If LKF survived,  consider it as candidate to be picked.
                   // The LKF is picked if it has higher number of corrections than the found maximum.
@@ -228,8 +228,8 @@ namespace uav_detect
 
               }
             }
-            if (most_certain_lkf != nullptr)
-              cout << "Most certain LKF found with " << picked_uncertainty << " uncertainty " << " and " << most_certain_lkf->getNCorrections() << " correction iterations" << endl;
+            /* if (most_certain_lkf != nullptr) */
+            /*   cout << "Most certain LKF found with " << picked_uncertainty << " uncertainty " << " and " << most_certain_lkf->getNCorrections() << " correction iterations" << endl; */
           }
           //}
 
@@ -241,10 +241,10 @@ namespace uav_detect
               if (meas_used.at(it) < 1)
               {
                 create_new_lkf(m_lkfs, pos_covs.at(it));
-                new_lkfs++;
+                /* new_lkfs++; */
               }
             }
-            ending_lkfs = m_lkfs.size();
+            /* ending_lkfs = m_lkfs.size(); */
           }
           //}
 
@@ -254,7 +254,7 @@ namespace uav_detect
         /* Publish message of the most likely LKF (if found) //{ */
         if (most_certain_lkf != nullptr)
         {
-          cout << "Publishing most certain LKF result from LKF#" << most_certain_lkf->id << endl;
+          /* cout << "Publishing most certain LKF result from LKF#" << most_certain_lkf->id << endl; */
           geometry_msgs::PoseWithCovarianceStamped msg = create_message(*most_certain_lkf, last_detections_msg.header.stamp);
           m_pub_localized_uav.publish(msg);
 
@@ -265,18 +265,22 @@ namespace uav_detect
           }
         } else
         {
-          cout << "No LKF is certain yet, publishing nothing" << endl;
+          /* cout << "No LKF is certain yet, publishing nothing" << endl; */
         }
         //}
 
-        cout << "LKFs: " << starting_lkfs << " - " << kicked_out_lkfs << " + " << new_lkfs << " = " << ending_lkfs << endl;
+        /* cout << "LKFs: " << starting_lkfs << " - " << kicked_out_lkfs << " + " << new_lkfs << " = " << ending_lkfs << endl; */
         ros::Duration del = ros::Time::now() - last_detections_msg.header.stamp;
         ros::Time end_t = ros::Time::now();
         static double dt = (end_t - start_t).toSec();
         dt = 0.9 * dt + 0.1 * (end_t - start_t).toSec();
-        cout << "processing FPS: " << 1 / dt << "Hz" << std::endl;
-        cout << "processing delay: " << del.toSec()*1000 << "ms" << std::endl;
-        ROS_INFO_STREAM("[LocalizeSingle]: " << "Detections processed");
+        /* cout << "processing FPS: " << 1 / dt << "Hz" << std::endl; */
+        /* cout << "processing delay: " << del.toSec()*1000 << "ms" << std::endl; */
+        /* ROS_INFO_STREAM("[LocalizeSingle]: " << "Detections processed"); */
+        std::string most_certain_lkf_name = "none";
+        if (most_certain_lkf != nullptr)
+          most_certain_lkf_name = "#" + std::to_string(most_certain_lkf->id);
+        ROS_INFO_STREAM_THROTTLE(1.0, "[" << m_node_name << "]: #LKFs: " << m_lkfs.size() << " | pub. LKF: " << most_certain_lkf_name << " | proc. FPS: " << 1/dt << "Hz | delay: " << del.toSec()*1000 << "ms");
       }
     }
     //}
@@ -290,7 +294,8 @@ namespace uav_detect
     /* Parameters, loaded from ROS //{ */
     double m_lkf_dt;
     double m_min_detection_height;
-    string m_world_frame;
+    std::string m_world_frame;
+    std::string m_node_name;
     /* double m_xy_covariance_coeff; */
     /* double m_z_covariance_coeff; */
     /* double m_max_update_divergence; */
@@ -347,7 +352,7 @@ namespace uav_detect
         tf_out = tf2_to_eigen(transform.transform);
       } catch (tf2::TransformException& ex)
       {
-        ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", frame_name.c_str(), m_world_frame.c_str(), ex.what());
+        ROS_WARN_THROTTLE(1.0, "[%s]: Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", m_node_name.c_str(), frame_name.c_str(), m_world_frame.c_str(), ex.what());
         return false;
       }
       return true;

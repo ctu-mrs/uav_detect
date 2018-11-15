@@ -97,7 +97,7 @@ namespace uav_detect
       {
         ros::Time start_t = ros::Time::now();
 
-        ROS_INFO_STREAM("[" << m_node_name << "]: " << "Processsing new depthmap");
+        /* ROS_INFO_STREAM("[" << m_node_name << "]: " << "Processsing new depthmap"); */
 
         cv_bridge::CvImage source_msg = *cv_bridge::toCvCopy(m_depthmap_sh->get_data(), string("16UC1"));
 
@@ -152,7 +152,7 @@ namespace uav_detect
         dbd::DepthBlobDetector detector(dbd::Params(m_drmgr_ptr->config));
         detector.detect(detect_im, m_mask_im, blobs);
 
-        cout << "Number of blobs: " << blobs.size() << std::endl;
+        /* cout << "Number of blobs: " << blobs.size() << std::endl; */
 
         //}
         
@@ -238,13 +238,14 @@ namespace uav_detect
           //}
         }
 
-        ROS_INFO_STREAM("[" << m_node_name << "]: " << " Image processed");
+        /* ROS_INFO_STREAM("[" << m_node_name << "]: " << " Image processed"); */
         ros::Duration del = ros::Time::now() - source_msg.header.stamp;
         ros::Time end_t = ros::Time::now();
         static double dt = (end_t - start_t).toSec();
         dt = 0.9*dt + 0.1*(end_t - start_t).toSec();
-        cout << "processing FPS: " << 1/dt << "Hz" << std::endl;
-        cout << "processing delay: " << del.toSec()*1000 << "ms" << std::endl;
+        ROS_INFO_STREAM_THROTTLE(1.0, "[" << m_node_name << "]: det. blobs: " << blobs.size() << " | proc. FPS: " << 1/dt << "Hz | delay: " << del.toSec()*1000 << "ms");
+        /* cout << "processing FPS: " << 1/dt << "Hz" << std::endl; */
+        /* cout << "processing delay: " << del.toSec()*1000 << "ms" << std::endl; */
       }
     }
     //}
