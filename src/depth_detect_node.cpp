@@ -55,7 +55,7 @@ namespace uav_detect
 
       /* Create publishers and subscribers //{ */
       // Initialize subscribers
-      mrs_lib::SubscribeMgr smgr(nh);
+      mrs_lib::SubscribeMgr smgr(nh, m_node_name);
       
       m_depthmap_sh = smgr.create_handler<sensor_msgs::Image>("depthmap", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
       // Initialize publishers

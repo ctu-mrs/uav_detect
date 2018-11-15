@@ -1,0 +1,46 @@
+<launch>
+
+  <arg name="uav_name" default="$(optenv UAV_NAME uav)"/>
+
+  <arg name="debug" default="false" />
+  <arg unless="$(arg debug)" name="launch_prefix" value=""/>
+  <arg     if="$(arg debug)" name="launch_prefix" value="gdb -ex run --args"/>
+
+  <arg name="simulation" default="$(optenv SIMULATION false)" />
+
+  <arg name="manager" default="detection_nodelet_manager" />
+
+  <arg name="realsense_tf_prefix" default="$(arg uav_name)_rs_d435" />
+
+  <group ns="$(arg uav_name)">
+
+    <node pkg="nodelet" type="nodelet" name="$(arg manager)" args="manager" output="screen"/>
+
+    <node name="realsense_color_tf_publisher" pkg="tf2_ros" type="static_transform_publisher" args="0.3 0 -0.05 1.57 3.14 1.57 fcu_$(arg uav_name) $(arg realsense_tf_prefix)_link" />
+
+  </group>
+    
+  <!-- Realsense high accuracy -->
+  <include file="$(find realsense_d435)/launch/high_acc.launch">
+    <arg name="manager" value="$(arg manager)" />
+    <arg name="respawn" value="true" />
+    <arg name="tf_prefix" value="$(arg realsense_tf_prefix)" />
+  </include>
+
+  <!-- UAV detection from depthmap -->
+  <include file="$(find uav_detect)/launch/detect_depth.launch">
+    <arg name="standalone" value="false" />
+    <arg name="manager"    value="$(arg manager)" />
+    <arg name="debug"      value="$(arg debug)" />
+    <arg name="simulation" value="$(arg simulation)" />
+  </include>
+
+  <!-- single UAV localization -->
+  <include file="$(find uav_detect)/launch/localize_single.launch">
+    <arg name="standalone" value="false" />
+    <arg name="manager"    value="$(arg manager)" />
+    <arg name="debug"      value="$(arg debug)" />
+    <arg name="simulation" value="$(arg simulation)" />
+  </include>
+  
+</launch>

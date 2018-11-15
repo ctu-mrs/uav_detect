@@ -12,10 +12,16 @@
   <arg unless="$(arg simulation)" name="cinfo_topic" value="/$(arg uav_name)/rs_d435/aligned_depth_to_color/camera_info/"/>
   <arg     if="$(arg simulation)" name="cinfo_topic" value="/$(arg uav_name)/realsense/camera/depth/camera_info/"/>
 
+  <arg name="standalone" default="true" />
+  <arg name="manager" default="detection_nodelet_manager" />
+  <arg name="nodelet" value="uav_detect/LocalizeSingle" />
+  <arg unless="$(arg standalone)" name="nodelet_load" value="load $(arg nodelet) $(arg manager)"/>
+  <arg     if="$(arg standalone)" name="nodelet_load" value="standalone $(arg nodelet)"/>
+
 
   <group ns="$(arg uav_name)">
     
-    <node pkg="nodelet" type="nodelet" name="uav_localization" args="standalone uav_detect/LocalizeSingle" output="screen" launch-prefix="$(arg launch_prefix)" >
+    <node pkg="nodelet" type="nodelet" name="uav_localization" args="$(arg nodelet_load)" output="screen" launch-prefix="$(arg launch_prefix)" >>
       
       <rosparam file="$(arg config_file)" />
       <param name="uav_name" value="$(arg uav_name)" />

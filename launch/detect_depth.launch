@@ -16,9 +16,15 @@
   <arg unless="$(arg ignore_mask)" name="mask_filename" value="$(find uav_detect)/masks/eagleone_mask.bmp"/>
   <arg     if="$(arg ignore_mask)" name="mask_filename" value=""/>
 
+  <arg name="standalone" default="true" />
+  <arg name="manager" default="detection_nodelet_manager" />
+  <arg name="nodelet" value="uav_detect/DepthDetector" />
+  <arg unless="$(arg standalone)" name="nodelet_load" value="load $(arg nodelet) $(arg manager)"/>
+  <arg     if="$(arg standalone)" name="nodelet_load" value="standalone $(arg nodelet)"/>
+
   <group ns="$(arg uav_name)">
     
-    <node pkg="nodelet" type="nodelet" name="uav_detection" args="standalone uav_detect/DepthDetector" output="screen" launch-prefix="$(arg launch_prefix)" >
+    <node pkg="nodelet" type="nodelet" name="uav_detection" args="$(arg nodelet_load)" output="screen" launch-prefix="$(arg launch_prefix)">
       
       <param name="uav_name" value="$(arg uav_name)" />
       <param name="path_to_mask" value="$(arg ignore_mask)" />
