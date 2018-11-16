@@ -86,6 +86,7 @@ int main(int argc, char** argv)
   ros::Rate r(30);
   bool paused = false;
   bool fill_blobs = true;
+  bool draw_mask = true;
   cv::Mat source_img, processed_img;
   uav_detect::BlobDetections cur_detections;
   bool cur_detections_initialized;
@@ -205,13 +206,24 @@ int main(int argc, char** argv)
       cv::putText(processed_im_copy, string("found: ") + to_string(sure), Point(0, 30), FONT_HERSHEY_SIMPLEX, 1.1, Scalar(0, 0, 65535), 2);
 
       // highlight masked-out areas
-      if (!mask_im_inv.empty())
+      if (draw_mask && !mask_im_inv.empty())
       {
+        cv::Mat tmp;
         cv::Mat red(processed_im_copy.size(), processed_im_copy.type());
         red.setTo(cv::Scalar(0, 0, 65535), mask_im_inv);
-        cv::Mat tmp;
         cv::addWeighted(processed_im_copy, 0.7, red, 0.3, 0.0, tmp);
         tmp.copyTo(processed_im_copy, mask_im_inv);
+
+        red = cv::Mat (dm_im_colormapped.size(), dm_im_colormapped.type());
+        red.setTo(cv::Scalar(0, 0, 255), mask_im_inv);
+        cv::addWeighted(dm_im_colormapped, 0.7, red, 0.3, 0.0, tmp);
+        tmp.copyTo(dm_im_colormapped, mask_im_inv);
+
+        if (!rgb_im.empty())
+        {
+          cv::addWeighted(rgb_im, 0.7, red, 0.3, 0.0, tmp);
+          tmp.copyTo(rgb_im, mask_im_inv);
+        }
       }
 
 #ifdef OPENCV_VISUALISE //{
@@ -223,10 +235,16 @@ int main(int argc, char** argv)
       switch (key)
       {
         case ' ':
+          ROS_INFO("[%s]: %spausing", ros::this_node::getName().c_str(), paused?"un":"");
           paused = !paused;
           break;
         case 'f':
+          ROS_INFO("[%s]: %sfilling blobs", ros::this_node::getName().c_str(), fill_blobs?"not ":"");
           fill_blobs = !fill_blobs;
+          break;
+        case 'm':
+          ROS_INFO("[%s]: %sdrawing mask", ros::this_node::getName().c_str(), draw_mask?"not ":"");
+          draw_mask = !draw_mask;
           break;
       }
 #endif //}

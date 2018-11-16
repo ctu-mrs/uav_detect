@@ -12,9 +12,15 @@
   <arg unless="$(arg simulation)" name="rgb_topic" value="/$(arg uav_name)/rs_d435/color/image_rect_color"/>
   <arg     if="$(arg simulation)" name="rgb_topic" value="/$(arg uav_name)/realsense/camera/color/image_raw"/>
 
+  <arg name="ignore_mask" default="false" />
+  <arg unless="$(arg ignore_mask)" name="mask_filename" value="$(find uav_detect)/masks/eagleone_mask_registered.bmp"/>
+  <arg     if="$(arg ignore_mask)" name="mask_filename" value=""/>
+
   <group ns="$(arg uav_name)">
     
     <node pkg="uav_detect" name="uav_display" type="dbg_display_node" output="screen" launch-prefix="$(arg launch_prefix)" >
+
+      <param name="path_to_mask" value="$(arg mask_filename)" />
 
       <remap from="~depthmap" to="$(arg depthmap_topic)" />
       <remap from="~rgb_img" to="$(arg rgb_topic)" />
