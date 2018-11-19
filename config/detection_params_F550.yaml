@@ -17,7 +17,7 @@ max_area: 10000
 
 filter_by_circularity: true
 min_circularity: 0.3
-max_circularity: 0.8
+max_circularity: 0.9
 
 filter_by_orientation: true
 min_angle: 0.0
@@ -36,7 +36,7 @@ min_depth: 1000
 max_depth: 13000
 
 filter_by_known_pixels: true
-min_known_pixels: 150
+min_known_pixels: 100
 
 # further filtration
 min_dist_between: 10.0
