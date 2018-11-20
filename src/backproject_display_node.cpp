@@ -99,7 +99,7 @@ int main(int argc, char** argv)
       } else
       {
         sensor_msgs::ImageConstPtr img_ros = img_buffer.back();
-        if (abs((img_ros->header.stamp - last_pose_stamp).toSec()) > 1.0)
+        if (abs((img_ros->header.stamp - last_pose_stamp).toSec()) > 0.2)
         {
           cv_bridge::CvImagePtr img_ros2 = cv_bridge::toCvCopy(img_ros, "bgr8");
           cv::Mat img = img_ros2->image;
