@@ -42,6 +42,7 @@ int main(int argc, char** argv)
 
   std::list<sensor_msgs::ImageConstPtr> img_buffer;
   /* std::list<uav_detect::DetectionsConstPtr> det_buffer; */
+  ros::Time last_pose_stamp = ros::Time::now();
 
   while (ros::ok())
   {
@@ -58,53 +59,55 @@ int main(int argc, char** argv)
     /* if (sh_det->new_data()) */
     /*   add_to_buffer(sh_det->get_data(), det_buffer); */
 
-    bool has_data = sh_pose->has_data() && sh_img->has_data();
-
-    if (has_data && sh_cinfo->used_data() /* && sh_det->used_data() */)
+    if (sh_img->has_data() && sh_cinfo->used_data() /* && sh_det->used_data() */)
     {
-      uav_detect::LocalizedUAV loc_uav = sh_pose->get_data();
-      sensor_msgs::ImageConstPtr img_ros = find_closest(loc_uav.header.stamp, img_buffer);
-      /* uav_detect::DetectionsConstPtr dets = find_closest(loc_uav.header.stamp, det_buffer); */
-
-      geometry_msgs::Point point_transformed;
-      try
+      if (sh_pose->new_data())
       {
-        geometry_msgs::TransformStamped transform = tf_buffer.lookupTransform(img_ros->header.frame_id, loc_uav.header.frame_id, loc_uav.header.stamp, ros::Duration(1.0));
-        tf2::doTransform(loc_uav.position, point_transformed, transform);
-      } catch (tf2::TransformException& ex)
-      {
-        ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", loc_uav.header.frame_id.c_str(), img_ros->header.frame_id.c_str(), ex.what());
-      }
+        uav_detect::LocalizedUAV loc_uav = sh_pose->get_data();
+        last_pose_stamp = loc_uav.header.stamp;
+        sensor_msgs::ImageConstPtr img_ros = find_closest(last_pose_stamp, img_buffer);
 
-      cv::Point3d pt3d;
-      pt3d.x = point_transformed.x;
-      pt3d.y = point_transformed.y;
-      pt3d.z = point_transformed.z;
-      double dist = sqrt(pt3d.x*pt3d.x + pt3d.y*pt3d.y + pt3d.z*pt3d.z);
+        geometry_msgs::Point point_transformed;
+        try
+        {
+          geometry_msgs::TransformStamped transform = tf_buffer.lookupTransform(img_ros->header.frame_id, loc_uav.header.frame_id, loc_uav.header.stamp, ros::Duration(1.0));
+          tf2::doTransform(loc_uav.position, point_transformed, transform);
+        } catch (tf2::TransformException& ex)
+        {
+          ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", loc_uav.header.frame_id.c_str(), img_ros->header.frame_id.c_str(), ex.what());
+        }
+
+        cv::Point3d pt3d;
+        pt3d.x = point_transformed.x;
+        pt3d.y = point_transformed.y;
+        pt3d.z = point_transformed.z;
+        double dist = sqrt(pt3d.x*pt3d.x + pt3d.y*pt3d.y + pt3d.z*pt3d.z);
+        
+        cv::Point pt2d = camera_model.project3dToPixel(pt3d);
       
-      cv::Point pt2d = camera_model.project3dToPixel(pt3d);
-    
-      cv::Mat img;
-      cv_bridge::CvImagePtr img_ros2 = cv_bridge::toCvCopy(img_ros, "bgr8");
-      img = img_ros2->image;
+        cv_bridge::CvImagePtr img_ros2 = cv_bridge::toCvCopy(img_ros, "bgr8");
+        cv::Mat img = img_ros2->image;
 
-      cv::circle(img, pt2d, 40, Scalar(0, 0, 255), 2);
-      cv::line(img, cv::Point(pt2d.x - 15, pt2d.y), cv::Point(pt2d.x + 15, pt2d.y), Scalar(0, 0, 220));
-      cv::line(img, cv::Point(pt2d.x, pt2d.y - 15), cv::Point(pt2d.x, pt2d.y + 15), Scalar(0, 0, 220));
-      cv::putText(img, "distance: " + std::to_string(dist), cv::Point(pt2d.x + 35, pt2d.y + 30), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 255), 2);
-      cv::putText(img, "ID: " + std::to_string(loc_uav.lkf_id), cv::Point(pt2d.x + 35, pt2d.y - 30), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 255), 2);
-      /* cout << "Backprojected: " << pt2d << endl; */
-      /* for (const uav_detect::Detection& det : dets->detections) */
-      /* { */
-      /*   cv::Point det_pt; */
-      /*   det_pt.x = det.x * det.roi.width + det.roi.x_offset; */
-      /*   det_pt.y = det.y * det.roi.height + det.roi.y_offset; */
-      /*   cv::circle(img, det_pt, 5, Scalar(0, 255, 0), 2); */
-      /*   cout << "Detection: " << det_pt << endl; */
-      /* } */
+        cv::circle(img, pt2d, 40, Scalar(0, 0, 255), 2);
+        cv::line(img, cv::Point(pt2d.x - 15, pt2d.y), cv::Point(pt2d.x + 15, pt2d.y), Scalar(0, 0, 220));
+        cv::line(img, cv::Point(pt2d.x, pt2d.y - 15), cv::Point(pt2d.x, pt2d.y + 15), Scalar(0, 0, 220));
+        cv::putText(img, "distance: " + std::to_string(dist), cv::Point(pt2d.x + 35, pt2d.y + 30), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 255), 2);
+        cv::putText(img, "ID: " + std::to_string(loc_uav.lkf_id), cv::Point(pt2d.x + 35, pt2d.y - 30), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 255), 2);
 
-      cv::imshow(window_name, img);
-      cv::waitKey(1);
+        cv::imshow(window_name, img);
+        cv::waitKey(1);
+      } else
+      {
+        sensor_msgs::ImageConstPtr img_ros = img_buffer.back();
+        if (abs((img_ros->header.stamp - last_pose_stamp).toSec()) > 1.0)
+        {
+          cv_bridge::CvImagePtr img_ros2 = cv_bridge::toCvCopy(img_ros, "bgr8");
+          cv::Mat img = img_ros2->image;
+          cv::putText(img, "no detection", cv::Point(35, 50), FONT_HERSHEY_SIMPLEX, 2.5, Scalar(0, 0, 255), 2);
+          cv::imshow(window_name, img);
+          cv::waitKey(1);
+        }
+      }
     }
 
     r.sleep();
