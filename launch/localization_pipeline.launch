@@ -16,7 +16,7 @@
 
     <node pkg="nodelet" type="nodelet" name="$(arg manager)" args="manager" output="screen"/>
 
-    <node name="realsense_color_tf_publisher" pkg="tf2_ros" type="static_transform_publisher" args="0.3 0 -0.05 1.57 3.14 1.57 fcu_$(arg uav_name) $(arg realsense_tf_prefix)_link" />
+    <node name="realsense_color_tf_publisher" pkg="tf2_ros" type="static_transform_publisher" args="0.3 0 -0.05 0 0 0 fcu_$(arg uav_name) $(arg realsense_tf_prefix)_link" />
 
   </group>
     
