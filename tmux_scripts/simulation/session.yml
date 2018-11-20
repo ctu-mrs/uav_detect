@@ -13,7 +13,7 @@ windows:
   - spawn:
       layout: even-vertical
       panes:
-        - waitForSimulation; spawn 1 --run --delete --enable-rangefinder --enable-ground-truth --enable-realsense-front
+        - waitForSimulation; spawn 1 --run --delete --enable-rangefinder --enable-ground-truth --enable-realsense-front --enable-realistic-realsense
         - waitForSimulation; spawn 2 --run --delete --enable-rangefinder --enable-ground-truth
   - odometry:
       layout: even-vertical
