@@ -59,7 +59,6 @@ add_message_files(DIRECTORY msgs FILES
   ImagePixel.msg
   BlobDetection.msg
   BlobDetections.msg
-  LocalizedUAV.msg
 )
 
 generate_messages(DEPENDENCIES
@@ -69,7 +68,6 @@ generate_messages(DEPENDENCIES
 
 generate_dynamic_reconfigure_options(
   config/DetectionParams.cfg
-  config/LocalizationParams.cfg
   )
 
 catkin_package(
@@ -99,32 +97,12 @@ target_link_libraries(DepthDetector
   ${OpenCV_LIBRARIES}
 )
 
-add_library(LocalizeSingle src/localize_single_nodelet.cpp src/utils.cpp)
-add_dependencies(LocalizeSingle
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
-)
-target_link_libraries(LocalizeSingle
-  ${catkin_LIBRARIES}
-  ${OpenCV_LIBRARIES}
-)
-
 add_executable(dbg_display_node src/dbg_display_node.cpp)
 add_dependencies(dbg_display_node
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS}
 )
 target_link_libraries(dbg_display_node
-  ${catkin_LIBRARIES}
-  ${OpenCV_LIBRARIES}
-)
-
-add_executable(backproject_display_node src/backproject_display_node.cpp)
-add_dependencies(backproject_display_node
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
-)
-target_link_libraries(backproject_display_node
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
 )

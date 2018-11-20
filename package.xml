@@ -2,7 +2,7 @@
 <package>
   <name>uav_detect</name>
   <version>1.0.0</version>
-  <description>Package for detection of MRS UAVs from camera image</description>
+  <description>Package for detection of UAVs from camera image</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag --> 
   <!-- Example:  -->
@@ -76,7 +76,6 @@
 
     <!-- Other tools can request additional information be placed here -->
     <nodelet plugin="${prefix}/depth_detector_nodelet.xml" />
-    <nodelet plugin="${prefix}/localize_single_nodelet.xml" />
 
     generate_messages_cpp
   </export>
