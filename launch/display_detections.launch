@@ -12,7 +12,7 @@
   <arg unless="$(arg simulation)" name="rgb_topic" value="/$(arg uav_name)/rs_d435/color/image_rect_color"/>
   <arg     if="$(arg simulation)" name="rgb_topic" value="/$(arg uav_name)/realsense/camera/color/image_raw"/>
 
-  <arg name="ignore_mask" default="false" />
+  <arg name="ignore_mask" default="$(optenv IGNORE_MASK false)" />
   <arg unless="$(arg ignore_mask)" name="mask_filename" value="$(find uav_detect)/masks/eagleone_mask_registered.bmp"/>
   <arg     if="$(arg ignore_mask)" name="mask_filename" value=""/>
 
