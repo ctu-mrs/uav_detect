@@ -81,9 +81,15 @@ namespace uav_detect
           ros::shutdown();
         }
       }
+
+      m_det_blobs = 0;
+      m_images_processed = 0;
+      m_avg_fps = 0.0f;
+      m_avg_delay = 0.0f;
       //}
 
       m_main_loop_timer = nh.createTimer(ros::Rate(1000), &DepthDetector::main_loop, this);
+      m_info_loop_timer = nh.createTimer(ros::Rate(1), &DepthDetector::info_loop, this);
 
       cout << "----------------------------------------------------------" << std::endl;
 
@@ -96,8 +102,6 @@ namespace uav_detect
       if (m_depthmap_sh->new_data())
       {
         ros::Time start_t = ros::Time::now();
-
-        /* ROS_INFO_STREAM("[" << m_node_name << "]: " << "Processsing new depthmap"); */
 
         cv_bridge::CvImage source_msg = *cv_bridge::toCvCopy(m_depthmap_sh->get_data(), string("16UC1"));
 
@@ -238,15 +242,32 @@ namespace uav_detect
           //}
         }
 
-        /* ROS_INFO_STREAM("[" << m_node_name << "]: " << " Image processed"); */
-        ros::Duration del = ros::Time::now() - source_msg.header.stamp;
-        ros::Time end_t = ros::Time::now();
-        static double dt = (end_t - start_t).toSec();
-        dt = 0.9*dt + 0.1*(end_t - start_t).toSec();
-        ROS_INFO_STREAM_THROTTLE(1.0, "[" << m_node_name << "]: det. blobs: " << blobs.size() << " | proc. FPS: " << 1/dt << "Hz | delay: " << del.toSec()*1000 << "ms");
-        /* cout << "processing FPS: " << 1/dt << "Hz" << std::endl; */
-        /* cout << "processing delay: " << del.toSec()*1000 << "ms" << std::endl; */
+        /* Update statistics for info_loop //{ */
+        {
+          std::lock_guard<std::mutex> lck(m_stat_mtx);
+          const ros::Time end_t = ros::Time::now();
+          const float delay = (end_t - source_msg.header.stamp).toSec();
+          m_avg_delay = 0.9*m_avg_delay + 0.1*delay;
+          const float fps = 1/(end_t - start_t).toSec();
+          m_avg_fps = 0.9*m_avg_fps + 0.1*fps;
+          m_images_processed++;
+          m_det_blobs += blobs.size();
+        }
+        //}
       }
+    }
+    //}
+
+    /* info_loop() method //{ */
+    void info_loop([[maybe_unused]] const ros::TimerEvent& evt)
+    {
+      const float period = (evt.current_real - evt.last_real).toSec();
+      std::lock_guard<std::mutex> lck(m_stat_mtx);
+      const float blobs_per_image = m_det_blobs/float(m_images_processed);
+      const float input_fps = m_images_processed/period;
+      ROS_INFO_STREAM("[" << m_node_name << "]: det. blobs/image: " << blobs_per_image << " | inp. FPS: " << round(input_fps) << " | proc. FPS: " << round(m_avg_fps) << " | delay: " << round(1000.0f*m_avg_delay) << "ms");
+      m_det_blobs = 0;
+      m_images_processed = 0;
     }
     //}
 
@@ -267,6 +288,7 @@ namespace uav_detect
     ros::Publisher m_detected_blobs_pub;
     ros::Publisher m_processed_deptmap_pub;
     ros::Timer m_main_loop_timer;
+    ros::Timer m_info_loop_timer;
     std::string m_node_name;
     //}
 
@@ -276,7 +298,17 @@ namespace uav_detect
     // |                   Other member variables                   |
     // --------------------------------------------------------------
 
+    /* Image mask //{ */
     cv::Mat m_mask_im;
+    //}
+    
+    /* Statistics variables //{ */
+    std::mutex m_stat_mtx;
+    unsigned   m_det_blobs;
+    unsigned   m_images_processed;
+    float      m_avg_fps;
+    float      m_avg_delay;
+    //}
 
   }; // class DepthDetector
 }; // namespace uav_detect
