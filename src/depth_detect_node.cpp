@@ -261,10 +261,10 @@ namespace uav_detect
     /* info_loop() method //{ */
     void info_loop([[maybe_unused]] const ros::TimerEvent& evt)
     {
-      const float period = (evt.current_real - evt.last_real).toSec();
+      const float dt = (evt.current_real - evt.last_real).toSec();
       std::lock_guard<std::mutex> lck(m_stat_mtx);
       const float blobs_per_image = m_det_blobs/float(m_images_processed);
-      const float input_fps = m_images_processed/period;
+      const float input_fps = m_images_processed/dt;
       ROS_INFO_STREAM("[" << m_node_name << "]: det. blobs/image: " << blobs_per_image << " | inp. FPS: " << round(input_fps) << " | proc. FPS: " << round(m_avg_fps) << " | delay: " << round(1000.0f*m_avg_delay) << "ms");
       m_det_blobs = 0;
       m_images_processed = 0;
