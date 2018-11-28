@@ -87,7 +87,7 @@ include_directories(include
   # ~/git/darknet_ocl/src
 )
 
-add_library(DepthDetector src/depth_detect_node.cpp src/DepthBlobDetector.cpp)
+add_library(DepthDetector src/depth_detect_nodelet.cpp src/DepthBlobDetector.cpp)
 add_dependencies(DepthDetector
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS}
