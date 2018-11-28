@@ -81,7 +81,7 @@ int main(int argc, char** argv)
   bool proc_window_exists = false;
   bool paused = false;
   bool fill_blobs = true;
-  bool draw_mask = true;
+  bool draw_mask = false;
   cv::Mat source_img, processed_img;
   uav_detect::BlobDetections cur_detections;
   bool cur_detections_initialized;
@@ -299,7 +299,7 @@ int main(int argc, char** argv)
       if (show_rgb && !rgb_im.empty())
         imshow(rgb_winname, rgb_im);
 
-      int key = waitKey(3);
+      int key = waitKey(1);
       switch (key)
       {
         case ' ':
