@@ -82,6 +82,8 @@ namespace uav_detect
         }
       }
 
+      m_last_detection_id = 0;
+
       m_det_blobs = 0;
       m_images_processed = 0;
       m_avg_fps = 0.0f;
@@ -168,7 +170,8 @@ namespace uav_detect
         for (const dbd::Blob& blob : blobs)
         {
           uav_detect::Detection det;
-          det.class_ID = -1;
+          det.id = m_last_detection_id++;
+          det.class_id = -1;
 
           det.roi.x_offset = 0;
           det.roi.y_offset = 0;
@@ -301,6 +304,8 @@ namespace uav_detect
     /* Image mask //{ */
     cv::Mat m_mask_im;
     //}
+
+    uint32_t m_last_detection_id;
     
     /* Statistics variables //{ */
     std::mutex m_stat_mtx;
