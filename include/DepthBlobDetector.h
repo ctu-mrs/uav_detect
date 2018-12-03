@@ -7,8 +7,10 @@
 namespace dbd
 {
 
+/* struct Blob //{*/
 struct Blob
 {
+  int32_t id;
   double confidence;
   cv::Point2d location;
   double radius;
@@ -21,7 +23,9 @@ struct Blob
   uint32_t known_pixels;
   std::vector<std::vector<cv::Point> > contours;
 };
+/*//}*/
 
+/* struct Params //{*/
 struct Params
 {
   // Filter by area
@@ -59,14 +63,19 @@ struct Params
   // Other filtering criterions
   double min_dist_between;
 
-  Params(uav_detect::DetectionParamsConfig cfg);
+  Params(){};
+  Params(const uav_detect::DetectionParamsConfig& cfg);
+  void set_from_cfg(const uav_detect::DetectionParamsConfig& cfg);
 };
+/*//}*/
 
 class DepthBlobDetector
 {
   public:
-    DepthBlobDetector(const Params& parameters);
+    DepthBlobDetector(){};
+    DepthBlobDetector(const uav_detect::DetectionParamsConfig& cfg);
     void detect(cv::Mat image, cv::Mat mask_image, std::vector<Blob>& ret_blobs);
+    void update_params(const uav_detect::DetectionParamsConfig& cfg);
 
   private:
     void findBlobs(cv::Mat binary_image, cv::Mat orig_image, cv::Mat mask_image, std::vector<Blob>& ret_blobs) const;

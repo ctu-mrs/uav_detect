@@ -88,6 +88,9 @@ namespace uav_detect
       m_images_processed = 0;
       m_avg_fps = 0.0f;
       m_avg_delay = 0.0f;
+
+      m_detector = dbd::DepthBlobDetector(m_drmgr_ptr->config);
+
       //}
 
       m_main_loop_timer = nh.createTimer(ros::Rate(1000), &DepthDetector::main_loop, this);
@@ -155,8 +158,8 @@ namespace uav_detect
 
         /* Use DepthBlobDetector to find blobs //{ */
         vector<dbd::Blob> blobs;
-        dbd::DepthBlobDetector detector(dbd::Params(m_drmgr_ptr->config));
-        detector.detect(detect_im, m_mask_im, blobs);
+        m_detector.update_params(m_drmgr_ptr->config);
+        m_detector.detect(detect_im, m_mask_im, blobs);
 
         /* cout << "Number of blobs: " << blobs.size() << std::endl; */
 
@@ -167,10 +170,11 @@ namespace uav_detect
         dets.header.frame_id = source_msg.header.frame_id;
         dets.header.stamp = source_msg.header.stamp;
         dets.detections.reserve(blobs.size());
-        for (const dbd::Blob& blob : blobs)
+        for (dbd::Blob& blob : blobs)
         {
           uav_detect::Detection det;
           det.id = m_last_detection_id++;
+          blob.id = det.id;
           det.class_id = -1;
 
           det.roi.x_offset = 0;
@@ -213,6 +217,7 @@ namespace uav_detect
           {
             uav_detect::BlobDetection det;
 
+            det.id = blob.id;
             det.x = blob.location.x;
             det.y = blob.location.y;
             det.area = blob.area;
@@ -304,6 +309,8 @@ namespace uav_detect
     /* Image mask //{ */
     cv::Mat m_mask_im;
     //}
+
+    dbd::DepthBlobDetector m_detector;
 
     uint32_t m_last_detection_id;
     

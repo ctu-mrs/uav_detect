@@ -5,9 +5,14 @@ using namespace cv;
 using namespace std;
 using namespace dbd;
 
-DepthBlobDetector::DepthBlobDetector(const Params& parameters)
-  : params(parameters)
+DepthBlobDetector::DepthBlobDetector(const uav_detect::DetectionParamsConfig& cfg)
+  : params(cfg)
 {}
+
+void DepthBlobDetector::update_params(const uav_detect::DetectionParamsConfig& cfg)
+{
+  params.set_from_cfg(cfg);
+}
 
 /* median function //{ */
 double median(cv::Mat image, cv::Mat mask, uint32_t& n_known_pixels)
@@ -61,8 +66,12 @@ double median(cv::Mat image, std::vector<cv::Point> points, uint32_t& n_known_pi
 double cur_depth;
 #endif //}
 
-/* Params constructor //{ */
-Params::Params(uav_detect::DetectionParamsConfig cfg)
+/* Params methods //{ */
+Params::Params(const uav_detect::DetectionParamsConfig& cfg)
+{
+  set_from_cfg(cfg);
+}
+void Params::set_from_cfg(const uav_detect::DetectionParamsConfig& cfg)
 {
   use_threshold_width = cfg.use_threshold_width;
   threshold_step = cfg.threshold_step;

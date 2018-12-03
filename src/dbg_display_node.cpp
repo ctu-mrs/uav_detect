@@ -193,6 +193,7 @@ int main(int argc, char** argv)
         if (!blob.contours.empty())
         {
           sure++;
+          const std::string id_txt = "id: " + to_string(blob.id);
 
           /* Draw blobs to the processed depthmap //{ */
           if (show_proc && !processed_img.empty())
@@ -235,17 +236,24 @@ int main(int argc, char** argv)
             {
               cv::circle(processed_im_copy, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 65535), 2);
             }
+            cv::putText(processed_im_copy, id_txt, Point(blob.x + blob.radius + 5, blob.y), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 0, 65535), 2);
           }
           //}
 
           /* Draw detections to the rgb image //{ */
           if (show_rgb && !rgb_im.empty())
+          {
             cv::circle(rgb_im, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 255), 2);
+            cv::putText(rgb_im, id_txt, Point(blob.x + blob.radius + 5, blob.y), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 0, 255), 2);
+          }
           //}
 
           /* Draw detections to the raw depthmap //{ */
           if (show_raw && !dm_im_colormapped.empty())
+          {
             cv::circle(dm_im_colormapped, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 255), 2);
+            cv::putText(dm_im_colormapped, id_txt, Point(blob.x + blob.radius + 5, blob.y), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 0, 255), 2);
+          }
           //}
 
         }

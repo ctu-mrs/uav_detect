@@ -1,6 +1,7 @@
 # This message is intended primarily for debugging and visualisation purposes.
 # It contains raw data from detected blobs.
 
+int32   id
 uint32  x
 uint32  y
 uint32  area

@@ -1,5 +1,5 @@
-uint32 id                          # unique ID of the detection (cannot be used for association - each detection a has unique ID!)
-int32  class_id                    # class of the detected object (-1 means unused)
+int32   id                        # unique ID of the detection (cannot be used for association - each detection a has unique ID!)
+int32   class_id                  # class of the detected object (-1 means unused)
 sensor_msgs/RegionOfInterest roi  # ROI of the image which was used for this detection
 float32 x                         # x coordinate of center of the detection relative to ROI width
 float32 y                         # y coordinate of center of the detection relative to ROI height
