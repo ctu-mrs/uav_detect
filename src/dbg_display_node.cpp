@@ -201,7 +201,6 @@ int main(int argc, char** argv)
             if (fill_blobs)
             {
               for (size_t it = blob.contours.size()-1; it; it--)
-              /* size_t it = blob.contours.size()/2; */
               {
                 const auto& pxs = blob.contours.at(it);
                 vector<cv::Point> cnt;
@@ -243,7 +242,24 @@ int main(int argc, char** argv)
           /* Draw detections to the rgb image //{ */
           if (show_rgb && !rgb_im.empty())
           {
-            cv::circle(rgb_im, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 255), 2);
+            if (fill_blobs)
+            {
+              for (size_t it = blob.contours.size()-1; it; it--)
+              {
+                const auto& pxs = blob.contours.at(it);
+                vector<cv::Point> cnt;
+                cnt.reserve(pxs.pixels.size());
+                for (const uav_detect::ImagePixel px : pxs.pixels)
+                  cnt.push_back(cv::Point(px.x, px.y));
+          
+                vector<vector<cv::Point>> cnts;
+                cnts.push_back(cnt);
+                cv::drawContours(rgb_im, cnts, 0, Scalar(0, 255, 255/max*it), CV_FILLED);
+              }
+            } else
+            {
+              cv::circle(rgb_im, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 255), 2);
+            }
             cv::putText(rgb_im, id_txt, Point(blob.x + blob.radius + 5, blob.y), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 0, 255), 2);
           }
           //}
@@ -251,7 +267,24 @@ int main(int argc, char** argv)
           /* Draw detections to the raw depthmap //{ */
           if (show_raw && !dm_im_colormapped.empty())
           {
-            cv::circle(dm_im_colormapped, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 255), 2);
+            if (fill_blobs)
+            {
+              for (size_t it = blob.contours.size()-1; it; it--)
+              {
+                const auto& pxs = blob.contours.at(it);
+                vector<cv::Point> cnt;
+                cnt.reserve(pxs.pixels.size());
+                for (const uav_detect::ImagePixel px : pxs.pixels)
+                  cnt.push_back(cv::Point(px.x, px.y));
+          
+                vector<vector<cv::Point>> cnts;
+                cnts.push_back(cnt);
+                cv::drawContours(dm_im_colormapped, cnts, 0, Scalar(0, 255, 255/max*it), CV_FILLED);
+              }
+            } else
+            {
+              cv::circle(dm_im_colormapped, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 255), 2);
+            }
             cv::putText(dm_im_colormapped, id_txt, Point(blob.x + blob.radius + 5, blob.y), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 0, 255), 2);
           }
           //}

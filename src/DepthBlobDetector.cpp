@@ -19,7 +19,6 @@ double median(cv::Mat image, cv::Mat mask, uint32_t& n_known_pixels)
 {
   vector<uint16_t> vals;
   vals.reserve(image.rows*image.cols);
-  n_known_pixels = 0;
 
   for (int row_it = 0; row_it < image.rows; row_it++)
   {
@@ -29,12 +28,12 @@ double median(cv::Mat image, cv::Mat mask, uint32_t& n_known_pixels)
       {
         uint16_t cur_val = image.at<uint16_t>(row_it, col_it);
         if (cur_val != 0)
-          n_known_pixels++;
-        vals.push_back(cur_val);
+          vals.push_back(cur_val);
       }
     }
   }
 
+  n_known_pixels = vals.size();
   if (vals.empty())
     return std::numeric_limits<double>::quiet_NaN();
   nth_element(vals.begin(), vals.begin()+vals.size()/2, vals.end());
@@ -45,16 +44,15 @@ double median(cv::Mat image, std::vector<cv::Point> points, uint32_t& n_known_pi
 {
   vector<uint16_t> vals;
   vals.reserve(points.size());
-  n_known_pixels = 0;
 
   for (const auto& pt : points)
   {
     uint16_t cur_val = image.at<uint16_t>(pt);
     if (cur_val != 0)
-      n_known_pixels++;
-    vals.push_back(cur_val);
+      vals.push_back(cur_val);
   }
 
+  n_known_pixels = vals.size();
   if (vals.empty())
     return std::numeric_limits<double>::quiet_NaN();
   nth_element(vals.begin(), vals.begin()+vals.size()/2, vals.end());
@@ -217,11 +215,12 @@ void DepthBlobDetector::findBlobs(cv::Mat binary_image, cv::Mat orig_image, cv::
     uint32_t n_known_pixels; // filled out in the median function when calculating blob color (depth)
     /* Filter by color (depth) //{ */
     {
-      /* const Rect roi = boundingRect(contours[contourIdx]); */
-      /* const Mat mask(roi.size(), CV_8UC1); */
-      /* drawContours(mask, contours, contourIdx, Scalar(1), CV_FILLED, LINE_8, noArray(), INT_MAX, -roi.tl()); */
-      /* const double avg_color = median(orig_image(roi), mask, n_known_pixels); */
-      const double avg_color = median(orig_image, contours[contourIdx], n_known_pixels);
+      const Rect roi = boundingRect(contours[contourIdx]);
+      const Mat mask(roi.size(), CV_8UC1);
+      drawContours(mask, contours, contourIdx, Scalar(1), CV_FILLED, LINE_8, noArray(), INT_MAX, -roi.tl());
+      erode(mask, mask, Mat()); // remove the contour itself from the mask (leave only inner area)
+      const double avg_color = median(orig_image(roi), mask, n_known_pixels);
+      /* const double avg_color = median(orig_image, contours[contourIdx], n_known_pixels); */
 
       blob.avg_depth = avg_color / 1000.0;
 
@@ -279,17 +278,11 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat mask_image, std::vector<Bl
   assert(params.min_repeatability != 0);
 
   std::vector<std::vector<Blob>> blobs;
-  int thresh_start = params.min_depth;
-  if (params.use_threshold_width)
-    thresh_start = params.min_depth + params.threshold_width;
-  for (int thresh = thresh_start; thresh < params.max_depth; thresh += params.threshold_step)
+  for (int thresh = params.min_depth; thresh < params.max_depth; thresh += params.threshold_step)
   {
     Mat binary_image;
 
-    if (params.use_threshold_width)
-      inRange(image, thresh - params.threshold_width, thresh, binary_image);
-    else
-      inRange(image, params.min_depth, thresh, binary_image);
+    inRange(image, 0, thresh, binary_image);
 
 #ifdef DEBUG_BLOB_DETECTOR //{
     ROS_INFO("[%s]: using threshold %u", ros::this_node::getName().c_str(), thresh);

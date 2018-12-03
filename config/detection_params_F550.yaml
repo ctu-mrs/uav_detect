@@ -12,7 +12,7 @@ medianblur_size: 0
 
 # filtration of detected blobs
 filter_by_area: true
-min_area: 20
+min_area: 100
 max_area: 10000
 
 filter_by_circularity: true
