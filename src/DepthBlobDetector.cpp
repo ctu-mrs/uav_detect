@@ -282,7 +282,7 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat mask_image, std::vector<Bl
   {
     Mat binary_image;
 
-    inRange(image, 0, thresh, binary_image);
+    inRange(image, thresh, std::numeric_limits<uint16_t>::max(), binary_image);
 
 #ifdef DEBUG_BLOB_DETECTOR //{
     ROS_INFO("[%s]: using threshold %u", ros::this_node::getName().c_str(), thresh);
