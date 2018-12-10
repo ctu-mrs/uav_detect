@@ -57,11 +57,11 @@ namespace uav_detect
       // Initialize subscribers
       mrs_lib::SubscribeMgr smgr(nh, m_node_name);
       
-      m_depthmap_sh = smgr.create_handler<sensor_msgs::Image>("depthmap", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+      m_depthmap_sh = smgr.create_handler<sensor_msgs::ImageConstPtr>("depthmap", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
       // Initialize publishers
       m_detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); 
       m_detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1);
-      m_processed_deptmap_pub = nh.advertise<sensor_msgs::Image>("processed_depthmap", 1);
+      m_processed_depthmap_pub = nh.advertise<sensor_msgs::Image>("processed_depthmap", 1);
       //}
 
       /* Initialize other varibles //{ */
@@ -166,43 +166,46 @@ namespace uav_detect
         //}
         
         /* Create and publish the message with detections //{ */
-        uav_detect::Detections dets;
-        dets.header.frame_id = source_msg.header.frame_id;
-        dets.header.stamp = source_msg.header.stamp;
-        dets.detections.reserve(blobs.size());
-        for (dbd::Blob& blob : blobs)
         {
-          uav_detect::Detection det;
-          det.id = m_last_detection_id++;
-          blob.id = det.id;
-          det.class_id = -1;
-
-          det.roi.x_offset = 0;
-          det.roi.y_offset = 0;
-          det.roi.width = detect_im.cols;
-          det.roi.height = detect_im.rows;
-
-          cv::Rect brect = cv::boundingRect(blob.contours.at(blob.contours.size()/2));
-          det.x = (brect.x + brect.width/2.0)/double(detect_im.cols);
-          det.y = (brect.y + brect.height/2.0)/double(detect_im.rows);
-          det.depth = blob.avg_depth;
-          det.width = brect.width/double(detect_im.cols);
-          det.height = brect.height/double(detect_im.rows);
-
-          det.confidence = -1;
-
-          dets.detections.push_back(det);
+          uav_detect::Detections dets;
+          dets.header.frame_id = source_msg.header.frame_id;
+          dets.header.stamp = source_msg.header.stamp;
+          dets.detections.reserve(blobs.size());
+          for (dbd::Blob& blob : blobs)
+          {
+            uav_detect::Detection det;
+            det.id = m_last_detection_id++;
+            blob.id = det.id;
+            det.class_id = -1;
+          
+            det.roi.x_offset = 0;
+            det.roi.y_offset = 0;
+            det.roi.width = detect_im.cols;
+            det.roi.height = detect_im.rows;
+          
+            cv::Rect brect = cv::boundingRect(blob.contours.at(blob.contours.size()/2));
+            det.x = (brect.x + brect.width/2.0)/double(detect_im.cols);
+            det.y = (brect.y + brect.height/2.0)/double(detect_im.rows);
+            det.depth = blob.avg_depth;
+            det.width = brect.width/double(detect_im.cols);
+            det.height = brect.height/double(detect_im.rows);
+          
+            det.confidence = -1;
+          
+            dets.detections.push_back(det);
+          }
+          uav_detect::DetectionsConstPtr dets_msg = boost::make_shared<uav_detect::Detections>(dets);
+          m_detections_pub.publish(dets_msg);
         }
-        m_detections_pub.publish(dets);
         //}
 
-        if (m_processed_deptmap_pub.getNumSubscribers() > 0)
+        if (m_processed_depthmap_pub.getNumSubscribers() > 0)
         {
           /* Create and publish the debug image //{ */
           cv_bridge::CvImage processed_depthmap_cvb = source_msg;
           processed_depthmap_cvb.image = detect_im;
-          sensor_msgs::ImagePtr out_msg = processed_depthmap_cvb.toImageMsg();
-          m_processed_deptmap_pub.publish(out_msg);
+          sensor_msgs::ImageConstPtr out_msg = processed_depthmap_cvb.toImageMsg();
+          m_processed_depthmap_pub.publish(out_msg);
           //}
         }
 
@@ -246,7 +249,8 @@ namespace uav_detect
 
             dets.blobs.push_back(det);
           }
-          m_detected_blobs_pub.publish(dets);
+          uav_detect::BlobDetectionsConstPtr dets_msg = boost::make_shared<uav_detect::BlobDetections>(dets);
+          m_detected_blobs_pub.publish(dets_msg);
           //}
         }
 
@@ -291,10 +295,10 @@ namespace uav_detect
 
     /* ROS related variables (subscribers, timers etc.) //{ */
     std::unique_ptr<drmgr_t> m_drmgr_ptr;
-    mrs_lib::SubscribeHandlerPtr<sensor_msgs::Image> m_depthmap_sh;
+    mrs_lib::SubscribeHandlerPtr<sensor_msgs::ImageConstPtr> m_depthmap_sh;
     ros::Publisher m_detections_pub;
     ros::Publisher m_detected_blobs_pub;
-    ros::Publisher m_processed_deptmap_pub;
+    ros::Publisher m_processed_depthmap_pub;
     ros::Timer m_main_loop_timer;
     ros::Timer m_info_loop_timer;
     std::string m_node_name;
