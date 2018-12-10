@@ -167,10 +167,10 @@ namespace uav_detect
         
         /* Create and publish the message with detections //{ */
         {
-          uav_detect::Detections dets;
-          dets.header.frame_id = source_msg.header.frame_id;
-          dets.header.stamp = source_msg.header.stamp;
-          dets.detections.reserve(blobs.size());
+          uav_detect::DetectionsPtr dets;
+          dets->header.frame_id = source_msg.header.frame_id;
+          dets->header.stamp = source_msg.header.stamp;
+          dets->detections.reserve(blobs.size());
           for (dbd::Blob& blob : blobs)
           {
             uav_detect::Detection det;
@@ -192,9 +192,9 @@ namespace uav_detect
           
             det.confidence = -1;
           
-            dets.detections.push_back(det);
+            dets->detections.push_back(det);
           }
-          uav_detect::DetectionsConstPtr dets_msg = boost::make_shared<uav_detect::Detections>(dets);
+          uav_detect::DetectionsConstPtr dets_msg = dets;
           m_detections_pub.publish(dets_msg);
         }
         //}
@@ -212,10 +212,10 @@ namespace uav_detect
         if (m_detected_blobs_pub.getNumSubscribers() > 0)
         {
           /* Create and publish the message with raw blob data //{ */
-          uav_detect::BlobDetections dets;
-          dets.header.frame_id = source_msg.header.frame_id;
-          dets.header.stamp = source_msg.header.stamp;
-          dets.blobs.reserve(blobs.size());
+          uav_detect::BlobDetectionsPtr dets;
+          dets->header.frame_id = source_msg.header.frame_id;
+          dets->header.stamp = source_msg.header.stamp;
+          dets->blobs.reserve(blobs.size());
           for (const dbd::Blob& blob : blobs)
           {
             uav_detect::BlobDetection det;
@@ -247,9 +247,9 @@ namespace uav_detect
               det.contours.push_back(cnt);
             }
 
-            dets.blobs.push_back(det);
+            dets->blobs.push_back(det);
           }
-          uav_detect::BlobDetectionsConstPtr dets_msg = boost::make_shared<uav_detect::BlobDetections>(dets);
+          uav_detect::BlobDetectionsConstPtr dets_msg = dets;
           m_detected_blobs_pub.publish(dets_msg);
           //}
         }
