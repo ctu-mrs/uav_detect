@@ -167,7 +167,7 @@ namespace uav_detect
         
         /* Create and publish the message with detections //{ */
         {
-          uav_detect::DetectionsPtr dets;
+          uav_detect::DetectionsPtr dets = boost::make_shared<uav_detect::Detections>();
           dets->header.frame_id = source_msg.header.frame_id;
           dets->header.stamp = source_msg.header.stamp;
           dets->detections.reserve(blobs.size());
@@ -194,8 +194,8 @@ namespace uav_detect
           
             dets->detections.push_back(det);
           }
-          uav_detect::DetectionsConstPtr dets_msg = dets;
-          m_detections_pub.publish(dets_msg);
+          uav_detect::DetectionsConstPtr out_msg = dets;
+          m_detections_pub.publish(out_msg);
         }
         //}
 
@@ -212,7 +212,7 @@ namespace uav_detect
         if (m_detected_blobs_pub.getNumSubscribers() > 0)
         {
           /* Create and publish the message with raw blob data //{ */
-          uav_detect::BlobDetectionsPtr dets;
+          uav_detect::BlobDetectionsPtr dets = boost::make_shared<uav_detect::BlobDetections>();
           dets->header.frame_id = source_msg.header.frame_id;
           dets->header.stamp = source_msg.header.stamp;
           dets->blobs.reserve(blobs.size());
@@ -249,8 +249,8 @@ namespace uav_detect
 
             dets->blobs.push_back(det);
           }
-          uav_detect::BlobDetectionsConstPtr dets_msg = dets;
-          m_detected_blobs_pub.publish(dets_msg);
+          uav_detect::BlobDetectionsConstPtr out_msg = dets;
+          m_detected_blobs_pub.publish(out_msg);
           //}
         }
 
