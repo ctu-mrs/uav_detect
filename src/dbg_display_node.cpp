@@ -52,10 +52,11 @@ int main(int argc, char** argv)
   mrs_lib::SubscribeHandlerPtr<uav_detect::BlobDetections> sh_blobs;
 
   mrs_lib::SubscribeMgr smgr(nh);
-  sh_dm = smgr.create_handler_threadsafe<sensor_msgs::ImageConstPtr>("depthmap", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
-  sh_dmp = smgr.create_handler_threadsafe<sensor_msgs::ImageConstPtr>("processed_depthmap", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
-  sh_img = smgr.create_handler_threadsafe<sensor_msgs::ImageConstPtr>("rgb_img", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
-  sh_blobs = smgr.create_handler_threadsafe<uav_detect::BlobDetections>("blob_detections", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+  const bool subs_time_consistent = true;
+  sh_dm = smgr.create_handler<sensor_msgs::ImageConstPtr, subs_time_consistent>("depthmap", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+  sh_dmp = smgr.create_handler<sensor_msgs::ImageConstPtr, subs_time_consistent>("processed_depthmap", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+  sh_img = smgr.create_handler<sensor_msgs::ImageConstPtr, subs_time_consistent>("rgb_img", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+  sh_blobs = smgr.create_handler<uav_detect::BlobDetections, subs_time_consistent>("blob_detections", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
 
   if (!smgr.loaded_successfully())
   {
