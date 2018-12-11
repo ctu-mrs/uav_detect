@@ -46,11 +46,6 @@ namespace uav_detect
       }
 
       m_drmgr_ptr = make_unique<drmgr_t>(nh, m_node_name);
-      if (!m_drmgr_ptr->loaded_successfully())
-      {
-        ROS_ERROR("Some dynamic parameter default values were not loaded successfully, ending the node");
-        ros::shutdown();
-      }
       //}
 
       /* Create publishers and subscribers //{ */
