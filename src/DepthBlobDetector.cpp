@@ -5,8 +5,8 @@ using namespace cv;
 using namespace std;
 using namespace dbd;
 
-DepthBlobDetector::DepthBlobDetector(const uav_detect::DetectionParamsConfig& cfg)
-  : params(cfg)
+DepthBlobDetector::DepthBlobDetector(const uav_detect::DetectionParamsConfig& cfg, uint16_t unknown_pixel_value)
+  : params(cfg), m_unknown_pixel_value(unknown_pixel_value)
 {}
 
 void DepthBlobDetector::update_params(const uav_detect::DetectionParamsConfig& cfg)
@@ -14,8 +14,8 @@ void DepthBlobDetector::update_params(const uav_detect::DetectionParamsConfig& c
   params.set_from_cfg(cfg);
 }
 
-/* median function //{ */
-double median(cv::Mat image, cv::Mat mask, uint32_t& n_known_pixels)
+/* median() method //{ */
+double DepthBlobDetector::median(cv::Mat image, cv::Mat mask, uint32_t& n_known_pixels) const
 {
   vector<uint16_t> vals;
   vals.reserve(image.rows*image.cols);
@@ -27,7 +27,7 @@ double median(cv::Mat image, cv::Mat mask, uint32_t& n_known_pixels)
       if (mask.at<uint8_t>(row_it, col_it))
       {
         uint16_t cur_val = image.at<uint16_t>(row_it, col_it);
-        if (cur_val != 0)
+        if (cur_val != m_unknown_pixel_value)
           vals.push_back(cur_val);
       }
     }
@@ -40,7 +40,7 @@ double median(cv::Mat image, cv::Mat mask, uint32_t& n_known_pixels)
   return vals.at(vals.size()/2);
 }
 
-double median(cv::Mat image, std::vector<cv::Point> points, uint32_t& n_known_pixels)
+double DepthBlobDetector::median(cv::Mat image, std::vector<cv::Point> points, uint32_t& n_known_pixels) const
 {
   vector<uint16_t> vals;
   vals.reserve(points.size());
@@ -48,7 +48,7 @@ double median(cv::Mat image, std::vector<cv::Point> points, uint32_t& n_known_pi
   for (const auto& pt : points)
   {
     uint16_t cur_val = image.at<uint16_t>(pt);
-    if (cur_val != 0)
+    if (cur_val != m_unknown_pixel_value)
       vals.push_back(cur_val);
   }
 

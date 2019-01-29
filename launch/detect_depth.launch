@@ -30,7 +30,8 @@
       <param name="path_to_mask" value="$(arg mask_filename)" />
       <rosparam file="$(arg config_file)" />
     
-      <remap from="~depthmap" to="$(arg depthmap_topic)" />
+      <remap from="~depthmap" to="/disp2depth/depth_map" />
+      <!-- <remap from="~depthmap" to="/nerian_stereo/disparity_map" /> -->
 
     </node>
   

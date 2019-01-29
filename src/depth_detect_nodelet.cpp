@@ -51,7 +51,7 @@ namespace uav_detect
       /* Create publishers and subscribers //{ */
       // Initialize subscribers
       mrs_lib::SubscribeMgr smgr(nh, m_node_name);
-      const bool subs_time_consistent = true;
+      const bool subs_time_consistent = false;
       m_depthmap_sh = smgr.create_handler_threadsafe<sensor_msgs::ImageConstPtr, subs_time_consistent>("depthmap", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
       // Initialize publishers
       m_detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); 
@@ -84,7 +84,7 @@ namespace uav_detect
       m_avg_fps = 0.0f;
       m_avg_delay = 0.0f;
 
-      m_detector = dbd::DepthBlobDetector(m_drmgr_ptr->config);
+      m_detector = dbd::DepthBlobDetector(m_drmgr_ptr->config, m_unknown_pixel_value);
 
       //}
 
@@ -114,7 +114,7 @@ namespace uav_detect
 
         if (m_drmgr_ptr->config.blur_empty_areas)
         {
-          cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(20, 5), Point(-1, -1));
+          cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(5, 3), Point(-1, -1));
           cv::Mat mask, tmp;
           mask = ~known_pixels;
           cv::dilate(detect_im, tmp, element, Point(-1, -1), 3);
@@ -125,15 +125,20 @@ namespace uav_detect
 
         // dilate and erode the image if requested
         {
-          cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(9, 9), Point(-1, -1));
+          const int elem_s = m_drmgr_ptr->config.structuring_element_size;
+          cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(elem_s, elem_s), Point(-1, -1));
           cv::dilate(detect_im, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.dilate_iterations);
           cv::erode(detect_im, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.erode_iterations);
 
           // erode without using zero (unknown) pixels
           if (m_drmgr_ptr->config.erode_ignore_empty_iterations > 0)
           {
-            cv::Mat unknown_as_max = cv::Mat(raw_im.size(), CV_16UC1, std::numeric_limits<uint16_t>::max());
-            raw_im.copyTo(unknown_as_max, known_pixels);
+            cv::Mat unknown_as_max = detect_im;
+            if (m_unknown_pixel_value != std::numeric_limits<uint16_t>::max())
+            {
+              unknown_as_max = cv::Mat(raw_im.size(), CV_16UC1, std::numeric_limits<uint16_t>::max());
+              detect_im.copyTo(unknown_as_max, known_pixels);
+            }
             cv::erode(unknown_as_max, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.erode_ignore_empty_iterations);
           }
         }

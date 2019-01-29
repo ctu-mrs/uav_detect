@@ -3,6 +3,8 @@
 # operations are executed (except for deprecated parameters).
 
 # image preprocessing
+unknown_pixel_value: 65535
+structuring_element_size: 3
 dilate_iterations: 0
 erode_iterations: 0
 erode_ignore_empty_iterations: 5
@@ -33,7 +35,7 @@ max_convexity: 1.0
 
 filter_by_color: true
 min_depth: 1000
-max_depth: 13000
+max_depth: 40000
 
 filter_by_known_pixels: true
 min_known_pixels: 100
@@ -42,8 +44,9 @@ min_known_pixels: 100
 min_dist_between: 10.0
 min_repeatability: 4
 
+threshold_step: 500
+
 # deprecated parameters (do not work very well/replaced by better methods)
 use_threshold_width: false
-threshold_step: 500
 threshold_width: 100
 blur_empty_areas: false

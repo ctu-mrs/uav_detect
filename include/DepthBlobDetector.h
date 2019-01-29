@@ -73,15 +73,18 @@ class DepthBlobDetector
 {
   public:
     DepthBlobDetector(){};
-    DepthBlobDetector(const uav_detect::DetectionParamsConfig& cfg);
+    DepthBlobDetector(const uav_detect::DetectionParamsConfig& cfg, uint16_t unknown_pixel_value);
     void detect(cv::Mat image, cv::Mat mask_image, std::vector<Blob>& ret_blobs);
     void update_params(const uav_detect::DetectionParamsConfig& cfg);
 
   private:
+    double median(cv::Mat image, cv::Mat mask, uint32_t& n_known_pixels) const;
+    double median(cv::Mat image, std::vector<cv::Point> points, uint32_t& n_known_pixels) const;
     void findBlobs(cv::Mat binary_image, cv::Mat orig_image, cv::Mat mask_image, std::vector<Blob>& ret_blobs) const;
 
   private:
     Params params;
+    uint16_t m_unknown_pixel_value;
 };
 
 }

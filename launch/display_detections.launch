@@ -25,8 +25,9 @@
 
       <param name="path_to_mask" value="$(arg mask_filename)" />
 
-      <remap from="~depthmap" to="$(arg depthmap_topic)" />
-      <remap from="~rgb_img" to="$(arg rgb_topic)" />
+      <remap from="~depthmap" to="/disp2depth/depth_map" />
+      <!-- <remap from="~depthmap" to="/nerian_stereo/disparity_map" /> -->
+      <remap from="~rgb_img" to="/nerian_stereo/left_image" />
       <remap from="~blob_detections" to="/$(arg uav_name)/uav_detection/blob_detections" />
       <remap from="~processed_depthmap" to="/$(arg uav_name)/uav_detection/processed_depthmap" />
 

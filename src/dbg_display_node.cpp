@@ -52,7 +52,7 @@ int main(int argc, char** argv)
   mrs_lib::SubscribeHandlerPtr<uav_detect::BlobDetections> sh_blobs;
 
   mrs_lib::SubscribeMgr smgr(nh);
-  const bool subs_time_consistent = true;
+  const bool subs_time_consistent = false;
   sh_dm = smgr.create_handler<sensor_msgs::ImageConstPtr, subs_time_consistent>("depthmap", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
   sh_dmp = smgr.create_handler<sensor_msgs::ImageConstPtr, subs_time_consistent>("processed_depthmap", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
   sh_img = smgr.create_handler<sensor_msgs::ImageConstPtr, subs_time_consistent>("rgb_img", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
