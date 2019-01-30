@@ -25,20 +25,6 @@ find_package(catkin REQUIRED COMPONENTS
   nodelet
 )
 
-find_file(DISTCC_FULL_PATH distcc)
-find_file(DISTCPP_FULL_PATH distg++)
-IF (EXISTS ${DISTCC_FULL_PATH})
-  IF (EXISTS ${DISTCPP_FULL_PATH})
-    message(STATUS "Found distcc and distg++, using distributed compilation")
-    SET(CMAKE_C_COMPILER ${DISTCC_FULL_PATH})
-    SET(CMAKE_CXX_COMPILER ${DISTCPP_FULL_PATH})
-  ELSE()
-    message(WARNING "Found only distcc, but not distg++, not using distributed compilation")
-  ENDIF()
-ELSE()
-  message(STATUS "Not found distcc, not using distributed compilation")
-ENDIF()
-
 set(CMAKE_CXX_FLAGS "-g -O0 -DEIGEN_INITIALIZE_MATRICES_BY_NAN")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -DEIGEN_INITIALIZE_MATRICES_BY_NAN")
 set(CMAKE_CXX_FLAGS_RELEASE "-Werror -O3")
