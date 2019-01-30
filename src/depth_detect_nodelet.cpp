@@ -125,8 +125,9 @@ namespace uav_detect
 
         // dilate and erode the image if requested
         {
-          const int elem_s = m_drmgr_ptr->config.structuring_element_size;
-          cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(elem_s, elem_s), Point(-1, -1));
+          const int elem_a = m_drmgr_ptr->config.structuring_element_a;
+          const int elem_b = m_drmgr_ptr->config.structuring_element_b;
+          cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(elem_a, elem_b), Point(-1, -1));
           cv::dilate(detect_im, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.dilate_iterations);
           cv::erode(detect_im, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.erode_iterations);
 

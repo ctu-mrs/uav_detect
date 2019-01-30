@@ -1,9 +1,9 @@
 !!python/object/new:dynamic_reconfigure.encoding.Config
 dictitems:
   blur_empty_areas: false
-  dilate_iterations: 3
-  erode_ignore_empty_iterations: 5
-  erode_iterations: 5
+  dilate_iterations: 2
+  erode_ignore_empty_iterations: 0
+  erode_iterations: 10
   filter_by_area: true
   filter_by_circularity: true
   filter_by_color: true
@@ -36,15 +36,15 @@ dictitems:
                       max_area: 10000
                       max_circularity: 0.9
                       max_convexity: 1.0
-                      max_depth: 60000
-                      max_inertia_ratio: 0.9
+                      max_depth: 50000
+                      max_inertia_ratio: 0.8
                       min_angle: 0.0
-                      min_area: 200
+                      min_area: 100
                       min_circularity: 0.3
                       min_convexity: 0.75
                       min_depth: 1000
                       min_dist_between: 10.0
-                      min_inertia_ratio: 0.01
+                      min_inertia_ratio: 0.2
                       min_known_pixels: 100
                       min_repeatability: 8
                       name: Blob_filtering
@@ -72,9 +72,9 @@ dictitems:
                     state: []
                   Image_preprocessing: !!python/object/new:dynamic_reconfigure.encoding.Config
                     dictitems:
-                      dilate_iterations: 3
-                      erode_ignore_empty_iterations: 5
-                      erode_iterations: 5
+                      dilate_iterations: 2
+                      erode_ignore_empty_iterations: 0
+                      erode_iterations: 10
                       gaussianblur_size: 0
                       groups: !!python/object/new:dynamic_reconfigure.encoding.Config
                         state: []
@@ -85,7 +85,8 @@ dictitems:
                         state: []
                       parent: 1
                       state: true
-                      structuring_element_size: 3
+                      structuring_element_a: 5
+                      structuring_element_b: 3
                       type: ''
                     state: []
                 state: []
@@ -110,19 +111,20 @@ dictitems:
   max_area: 10000
   max_circularity: 0.9
   max_convexity: 1.0
-  max_depth: 60000
-  max_inertia_ratio: 0.9
+  max_depth: 50000
+  max_inertia_ratio: 0.8
   medianblur_size: 0
   min_angle: 0.0
-  min_area: 200
+  min_area: 100
   min_circularity: 0.3
   min_convexity: 0.75
   min_depth: 1000
   min_dist_between: 10.0
-  min_inertia_ratio: 0.01
+  min_inertia_ratio: 0.2
   min_known_pixels: 100
   min_repeatability: 8
-  structuring_element_size: 3
+  structuring_element_a: 5
+  structuring_element_b: 3
   threshold_step: 1000
   threshold_width: 100
   use_threshold_width: false

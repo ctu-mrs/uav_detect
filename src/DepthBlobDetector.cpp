@@ -276,6 +276,7 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat mask_image, std::vector<Bl
 {
   assert(params.min_repeatability != 0);
 
+  // detect blobs in thresholded images
   size_t n_steps = floor((params.max_depth - params.min_depth)/params.threshold_step);
   // no need for mutex since each iteration only writes to its own preallocated mem
   std::vector<std::vector<Blob>> thresh_blobs(n_steps);
@@ -301,6 +302,7 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat mask_image, std::vector<Bl
     thresh_blobs.at(thresh_it) = cur_blobs;
   }
 
+  // group blobs to groups
   // this has to be done sequentially (add only new blobs to the vector, associate
   // similar blobs to existing ones)
   std::vector<std::vector<Blob>> blob_groups;
@@ -336,6 +338,7 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat mask_image, std::vector<Bl
     std::copy(new_blobs.begin(), new_blobs.end(), std::back_inserter(blob_groups));
   }
 
+  // calculate common blob group characteristics
   ret_blobs.resize(blob_groups.size());
 #pragma omp parallel for
   for (size_t i = 0; i < blob_groups.size(); i++)
@@ -369,6 +372,7 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat mask_image, std::vector<Bl
     ret_blobs[i] = result_blob;
   }
 
+  // erase empty blob groups
   for (auto it = ret_blobs.begin(); it != ret_blobs.end(); it++)
   {
     if (it->contours.size() == 0)
