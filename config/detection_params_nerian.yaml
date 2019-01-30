@@ -46,7 +46,7 @@ dictitems:
                       min_dist_between: 10.0
                       min_inertia_ratio: 0.01
                       min_known_pixels: 100
-                      min_repeatability: 15
+                      min_repeatability: 8
                       name: Blob_filtering
                       parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
                         state: []
@@ -65,7 +65,7 @@ dictitems:
                         state: []
                       parent: 1
                       state: true
-                      threshold_step: 500
+                      threshold_step: 1000
                       threshold_width: 100
                       type: ''
                       use_threshold_width: false
@@ -121,9 +121,9 @@ dictitems:
   min_dist_between: 10.0
   min_inertia_ratio: 0.01
   min_known_pixels: 100
-  min_repeatability: 15
+  min_repeatability: 8
   structuring_element_size: 3
-  threshold_step: 500
+  threshold_step: 1000
   threshold_width: 100
   use_threshold_width: false
 state: []

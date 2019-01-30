@@ -274,58 +274,73 @@ void DepthBlobDetector::findBlobs(cv::Mat binary_image, cv::Mat orig_image, cv::
 /* inspired by https://github.com/opencv/opencv/blob/3.4/modules/features2d/src/blobdetector.cpp */
 void DepthBlobDetector::detect(cv::Mat image, cv::Mat mask_image, std::vector<Blob>& ret_blobs)
 {
-  ret_blobs.clear();
   assert(params.min_repeatability != 0);
 
-  std::vector<std::vector<Blob>> blobs;
-  for (int thresh = params.min_depth; thresh < params.max_depth; thresh += params.threshold_step)
+  size_t n_steps = floor((params.max_depth - params.min_depth)/params.threshold_step);
+  // no need for mutex since each iteration only writes to its own preallocated mem
+  std::vector<std::vector<Blob>> thresh_blobs(n_steps);
+#pragma omp parallel for
+  for (size_t thresh_it = 0; thresh_it < n_steps; thresh_it++)
   {
-    Mat binary_image;
+    int thresh = params.min_depth + thresh_it*params.threshold_step;
+    cv::Mat binary_image;
 
     inRange(image, thresh, std::numeric_limits<uint16_t>::max(), binary_image);
 
-#ifdef DEBUG_BLOB_DETECTOR //{
-    ROS_INFO("[%s]: using threshold %u", ros::this_node::getName().c_str(), thresh);
-    if (params.use_threshold_width)
-      cur_depth = (thresh + params.threshold_width) / 1000.0;
-    else
-      cur_depth = thresh / 1000.0;
-#endif //}
+/* #ifdef DEBUG_BLOB_DETECTOR //{ */
+/*     ROS_INFO("[%s]: using threshold %u", ros::this_node::getName().c_str(), thresh); */
+/*     if (params.use_threshold_width) */
+/*       cur_depth = (thresh + params.threshold_width) / 1000.0; */
+/*     else */
+/*       cur_depth = thresh / 1000.0; */
+/* #endif //} */
 
-    std::vector<Blob> curBlobs;
-    findBlobs(binary_image, image, mask_image, curBlobs);
-    std::vector<std::vector<Blob>> newBlobs;
-    for (size_t i = 0; i < curBlobs.size(); i++)
+    std::vector<Blob> cur_blobs;
+    findBlobs(binary_image, image, mask_image, cur_blobs);
+
+    thresh_blobs.at(thresh_it) = cur_blobs;
+  }
+
+  // this has to be done sequentially (add only new blobs to the vector, associate
+  // similar blobs to existing ones)
+  std::vector<std::vector<Blob>> blob_groups;
+  for (const auto& cur_blobs : thresh_blobs)
+  {
+    std::vector<std::vector<Blob>> new_blobs;
+    new_blobs.reserve(cur_blobs.size());
+    for (size_t i = 0; i < cur_blobs.size(); i++)
     {
       bool isNew = true;
-      for (size_t j = 0; j < blobs.size(); j++)
+      for (size_t j = 0; j < blob_groups.size(); j++)
       {
-        double dist = norm(blobs[j][blobs[j].size() / 2].location - curBlobs[i].location);
-        isNew = dist >= params.min_dist_between && dist >= blobs[j][blobs[j].size() / 2].radius && dist >= curBlobs[i].radius;
+        double dist = norm(blob_groups[j][blob_groups[j].size() / 2].location - cur_blobs[i].location);
+        isNew = dist >= params.min_dist_between && dist >= blob_groups[j][blob_groups[j].size() / 2].radius && dist >= cur_blobs[i].radius;
         if (!isNew)
         {
-          blobs[j].push_back(curBlobs[i]);
+          blob_groups[j].push_back(cur_blobs[i]);
 
-          size_t k = blobs[j].size() - 1;
-          while (k > 0 && blobs[j][k].radius < blobs[j][k - 1].radius)
+          size_t k = blob_groups[j].size() - 1;
+          while (k > 0 && blob_groups[j][k].radius < blob_groups[j][k - 1].radius)
           {
-            blobs[j][k] = blobs[j][k - 1];
+            blob_groups[j][k] = blob_groups[j][k - 1];
             k--;
           }
-          blobs[j][k] = curBlobs[i];
+          blob_groups[j][k] = cur_blobs[i];
 
           break;
         }
       }
       if (isNew)
-        newBlobs.push_back(std::vector<Blob>(1, curBlobs[i]));
+        new_blobs.push_back(std::vector<Blob>(1, cur_blobs[i]));
     }
-    std::copy(newBlobs.begin(), newBlobs.end(), std::back_inserter(blobs));
+    std::copy(new_blobs.begin(), new_blobs.end(), std::back_inserter(blob_groups));
   }
 
-  for (size_t i = 0; i < blobs.size(); i++)
+  ret_blobs.resize(blob_groups.size());
+#pragma omp parallel for
+  for (size_t i = 0; i < blob_groups.size(); i++)
   {
-    vector<Blob> cur_blobs = blobs[i];
+    vector<Blob> cur_blobs = blob_groups[i];
     if (cur_blobs.size() < (size_t)params.min_repeatability)
       continue;
     Point2d sumPoint(0, 0);
@@ -351,7 +366,16 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat mask_image, std::vector<Bl
     result_blob.angle = cur_blobs[cur_blobs.size() / 2].angle;
     result_blob.inertia = cur_blobs[cur_blobs.size() / 2].inertia;
     result_blob.contours = contours;
-    ret_blobs.push_back(result_blob);
+    ret_blobs[i] = result_blob;
+  }
+
+  for (auto it = ret_blobs.begin(); it != ret_blobs.end(); it++)
+  {
+    if (it->contours.size() == 0)
+    {
+      it = ret_blobs.erase(it);
+      it--;
+    }
   }
 
 }
