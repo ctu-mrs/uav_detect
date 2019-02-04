@@ -5,6 +5,7 @@ int32   id
 uint32  x
 uint32  y
 uint32  area
+float32 max_area_diff_ratio
 float32 circularity
 float32 convexity
 float32 avg_depth

@@ -78,6 +78,7 @@ void Params::set_from_cfg(const uav_detect::DetectionParamsConfig& cfg)
   filter_by_area = cfg.filter_by_area;
   min_area = cfg.min_area;
   max_area = cfg.max_area;
+  max_area_diff_ratio = cfg.max_area_diff_ratio;;
   // Filter by circularity
   filter_by_circularity = cfg.filter_by_circularity;
   min_circularity = cfg.min_circularity;
@@ -350,17 +351,26 @@ void DepthBlobDetector::detect(cv::Mat image, cv::Mat mask_image, std::vector<Bl
     double normalizer = 0;
     vector<vector<Point> > contours;
     contours.reserve(cur_blobs.size());
-    for (size_t j = 0; j < cur_blobs.size(); j++)
+    uint32_t first_area = cur_blobs.at(0).area;
+    double max_area_diff_ratio = 0;
+    for (const auto& cur_blob : cur_blobs)
     {
-      sumPoint += cur_blobs[j].confidence * cur_blobs[j].location;
-      normalizer += cur_blobs[j].confidence;
-      contours.push_back(cur_blobs[j].contours[0]);
+      double cur_area_diff_ratio = abs(double(cur_blob.area) - first_area);
+      if (cur_area_diff_ratio > params.max_area_diff_ratio)
+        continue;
+
+      if (cur_area_diff_ratio > max_area_diff_ratio)
+        max_area_diff_ratio = cur_area_diff_ratio;
+      sumPoint += cur_blob.confidence * cur_blob.location;
+      normalizer += cur_blob.confidence;
+      contours.push_back(cur_blob.contours[0]);
     }
     sumPoint *= (1. / normalizer);
     Blob result_blob;
     result_blob.confidence = normalizer / cur_blobs.size();
     result_blob.location = sumPoint;
     result_blob.radius = cur_blobs[cur_blobs.size() / 2].radius;
+    result_blob.max_area_diff_ratio = max_area_diff_ratio;
     result_blob.area = cur_blobs[cur_blobs.size() / 2].area;
     result_blob.circularity = cur_blobs[cur_blobs.size() / 2].circularity;
     result_blob.convexity = cur_blobs[cur_blobs.size() / 2].convexity;

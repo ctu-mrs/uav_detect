@@ -17,7 +17,7 @@
   <arg     if="$(arg simulation)" name="rgb_topic" value="/$(arg uav_name)/realsense/camera/color/image_raw"/>
 
   <arg name="ignore_mask" default="$(optenv IGNORE_MASK false)" />
-  <arg unless="$(arg ignore_mask)" name="mask_filename" value="$(find uav_detect)/masks/eagleone_mask_registered.bmp"/>
+  <arg unless="$(arg ignore_mask)" name="mask_filename" value="$(find uav_detect)/masks/nerian_eagleone_mask.bmp"/>
   <arg     if="$(arg ignore_mask)" name="mask_filename" value=""/>
 
   <group ns="$(arg uav_name)">
@@ -25,9 +25,9 @@
 
       <param name="path_to_mask" value="$(arg mask_filename)" />
 
-      <remap from="~depthmap" to="/disp2depth/depth_map" />
+      <remap from="~depthmap" to="/nerian_driver/depth_map" />
       <!-- <remap from="~depthmap" to="/nerian_stereo/disparity_map" /> -->
-      <remap from="~rgb_img" to="/nerian_stereo/left_image" />
+      <remap from="~rgb_img" to="/nerian_driver/left_image" />
       <remap from="~blob_detections" to="/$(arg uav_name)/uav_detection/blob_detections" />
       <remap from="~processed_depthmap" to="/$(arg uav_name)/uav_detection/processed_depthmap" />
 

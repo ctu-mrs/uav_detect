@@ -13,7 +13,7 @@
   <arg     if="$(arg simulation)" name="depthmap_topic" value="/$(arg uav_name)/realsense/camera/depth/image_raw"/>
 
   <arg name="ignore_mask" default="$(optenv IGNORE_MASK false)" />
-  <arg unless="$(arg ignore_mask)" name="mask_filename" value="$(find uav_detect)/masks/eagleone_mask_registered.bmp"/>
+  <arg unless="$(arg ignore_mask)" name="mask_filename" value="$(find uav_detect)/masks/nerian_eagleone_mask.bmp"/>
   <arg     if="$(arg ignore_mask)" name="mask_filename" value=""/>
 
   <arg name="standalone" default="true" />
@@ -30,7 +30,7 @@
       <param name="path_to_mask" value="$(arg mask_filename)" />
       <rosparam file="$(arg config_file)" />
     
-      <remap from="~depthmap" to="/disp2depth/depth_map" />
+      <remap from="~depthmap" to="/nerian_driver/depth_map" />
       <!-- <remap from="~depthmap" to="/nerian_stereo/disparity_map" /> -->
 
     </node>

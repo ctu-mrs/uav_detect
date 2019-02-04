@@ -15,6 +15,7 @@ struct Blob
   cv::Point2d location;
   double radius;
   uint32_t area;
+  double max_area_diff_ratio;
   double circularity;
   double angle;
   double inertia;
@@ -32,6 +33,7 @@ struct Params
   bool filter_by_area;
   int min_area;
   int max_area;
+  double max_area_diff_ratio;
   // Filter by circularity
   bool filter_by_circularity;
   double min_circularity;
