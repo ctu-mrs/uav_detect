@@ -10,18 +10,18 @@ namespace dbd
 /* struct Blob //{*/
 struct Blob
 {
-  int32_t id;
-  double confidence;
+  int32_t id = 0;
+  double confidence = 0;
   cv::Point2d location;
-  double radius;
-  uint32_t area;
-  double max_area_diff_ratio;
-  double circularity;
-  double angle;
-  double inertia;
-  double convexity;
-  double avg_depth;
-  uint32_t known_pixels;
+  double radius = 0;
+  uint32_t area = 0;
+  uint32_t max_area_diff = 0;
+  double circularity = 0;
+  double angle = 0;
+  double inertia = 0;
+  double convexity = 0;
+  double avg_depth = 0;
+  double known_pixels_ratio = 0;
   std::vector<std::vector<cv::Point> > contours;
 };
 /*//}*/
@@ -33,7 +33,7 @@ struct Params
   bool filter_by_area;
   int min_area;
   int max_area;
-  double max_area_diff_ratio;
+  int max_area_diff;
   // Filter by circularity
   bool filter_by_circularity;
   double min_circularity;
@@ -56,7 +56,7 @@ struct Params
   int max_depth;
   // Filter by known pixels
   bool filter_by_known_pixels;
-  int min_known_pixels;
+  double min_known_pixels_ratio;
   // thresholding
   int threshold_step;
   bool use_threshold_width;

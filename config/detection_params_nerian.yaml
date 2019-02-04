@@ -1,131 +1,54 @@
-!!python/object/new:dynamic_reconfigure.encoding.Config
-dictitems:
-  blur_empty_areas: false
-  dilate_iterations: 2
-  erode_ignore_empty_iterations: 0
-  erode_iterations: 10
-  filter_by_area: true
-  filter_by_circularity: true
-  filter_by_color: true
-  filter_by_convexity: true
-  filter_by_inertia: true
-  filter_by_known_pixels: true
-  filter_by_orientation: true
-  gaussianblur_size: 0
-  groups: !!python/object/new:dynamic_reconfigure.encoding.Config
-    dictitems:
-      groups: !!python/object/new:dynamic_reconfigure.encoding.Config
-        dictitems:
-          Depth_blob_detection_parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
-            dictitems:
-              groups: !!python/object/new:dynamic_reconfigure.encoding.Config
-                dictitems:
-                  Blob_filtering: !!python/object/new:dynamic_reconfigure.encoding.Config
-                    dictitems:
-                      filter_by_area: true
-                      filter_by_circularity: true
-                      filter_by_color: true
-                      filter_by_convexity: true
-                      filter_by_inertia: true
-                      filter_by_known_pixels: true
-                      filter_by_orientation: true
-                      groups: !!python/object/new:dynamic_reconfigure.encoding.Config
-                        state: []
-                      id: 3
-                      max_angle: 0.4
-                      max_area: 10000
-                      max_circularity: 0.9
-                      max_convexity: 1.0
-                      max_depth: 50000
-                      max_inertia_ratio: 0.8
-                      min_angle: 0.0
-                      min_area: 100
-                      min_circularity: 0.3
-                      min_convexity: 0.75
-                      min_depth: 1000
-                      min_dist_between: 10.0
-                      min_inertia_ratio: 0.2
-                      min_known_pixels: 100
-                      min_repeatability: 8
-                      name: Blob_filtering
-                      parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
-                        state: []
-                      parent: 1
-                      state: true
-                      type: ''
-                    state: []
-                  Deprecated: !!python/object/new:dynamic_reconfigure.encoding.Config
-                    dictitems:
-                      blur_empty_areas: false
-                      groups: !!python/object/new:dynamic_reconfigure.encoding.Config
-                        state: []
-                      id: 4
-                      name: Deprecated
-                      parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
-                        state: []
-                      parent: 1
-                      state: true
-                      threshold_step: 1000
-                      threshold_width: 100
-                      type: ''
-                      use_threshold_width: false
-                    state: []
-                  Image_preprocessing: !!python/object/new:dynamic_reconfigure.encoding.Config
-                    dictitems:
-                      dilate_iterations: 2
-                      erode_ignore_empty_iterations: 0
-                      erode_iterations: 10
-                      gaussianblur_size: 0
-                      groups: !!python/object/new:dynamic_reconfigure.encoding.Config
-                        state: []
-                      id: 2
-                      medianblur_size: 0
-                      name: Image_preprocessing
-                      parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
-                        state: []
-                      parent: 1
-                      state: true
-                      structuring_element_a: 5
-                      structuring_element_b: 3
-                      type: ''
-                    state: []
-                state: []
-              id: 1
-              name: Depth_blob_detection_parameters
-              parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
-                state: []
-              parent: 0
-              state: true
-              type: ''
-            state: []
-        state: []
-      id: 0
-      name: Default
-      parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
-        state: []
-      parent: 0
-      state: true
-      type: ''
-    state: []
-  max_angle: 0.4
-  max_area: 10000
-  max_circularity: 0.9
-  max_convexity: 1.0
-  max_depth: 50000
-  max_inertia_ratio: 0.8
-  medianblur_size: 0
-  min_angle: 0.0
-  min_area: 100
-  min_circularity: 0.3
-  min_convexity: 0.75
-  min_depth: 1000
-  min_dist_between: 10.0
-  min_inertia_ratio: 0.2
-  min_known_pixels: 100
-  min_repeatability: 8
-  structuring_element_a: 5
-  structuring_element_b: 3
-  threshold_step: 1000
-  threshold_width: 100
-  use_threshold_width: false
-state: []
+## Depth blob detection parameters (all are also dynamically reconfigurable)
+# Parameters are listed in the order in which the corresponding
+# operations are executed (except for deprecated parameters).
+
+# image preprocessing
+unknown_pixel_value: 65535
+structuring_element_a: 5
+structuring_element_b: 3
+dilate_iterations: 2
+erode_iterations: 10
+erode_ignore_empty_iterations: 0
+
+gaussianblur_size: 0
+medianblur_size: 0
+
+# filtration of detected blobs
+filter_by_area: true
+min_area: 500
+max_area: 10000
+
+filter_by_circularity: false
+min_circularity: 0.3
+max_circularity: 0.9
+
+filter_by_orientation: true
+min_angle: 0.0
+max_angle: 0.4
+
+filter_by_inertia: false
+min_inertia_ratio: 0.2
+max_inertia_ratio: 0.8
+
+filter_by_convexity: false
+min_convexity: 0.75
+max_convexity: 1.0
+
+filter_by_color: true
+min_depth: 1000
+max_depth: 50000
+
+filter_by_known_pixels: true
+min_known_pixels_ratio: 0.5
+
+# further filtration
+min_dist_between: 10.0
+max_area_diff: 500
+min_repeatability: 8
+
+threshold_step: 500
+
+# deprecated parameters (do not work very well/replaced by better methods)
+use_threshold_width: false
+threshold_width: 100
+blur_empty_areas: false

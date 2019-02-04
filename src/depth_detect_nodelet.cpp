@@ -225,10 +225,11 @@ namespace uav_detect
             det.x = blob.location.x;
             det.y = blob.location.y;
             det.area = blob.area;
+            det.max_area_diff = blob.max_area_diff;
             det.circularity = blob.circularity;
             det.convexity = blob.convexity;
             det.avg_depth = blob.avg_depth;
-            det.known_pixels = blob.known_pixels;
+            det.known_pixels_ratio = blob.known_pixels_ratio;
             det.angle = blob.angle;
             det.inertia = blob.inertia;
             det.confidence = blob.confidence;

@@ -39,7 +39,7 @@ min_depth: 1000
 max_depth: 40000
 
 filter_by_known_pixels: true
-min_known_pixels: 100
+min_known_pixels_ratio: 0.5
 
 # further filtration
 min_dist_between: 10.0

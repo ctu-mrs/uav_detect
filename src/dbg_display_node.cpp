@@ -83,6 +83,7 @@ int main(int argc, char** argv)
   bool paused = false;
   bool fill_blobs = true;
   bool draw_mask = false;
+  size_t max_draw_contours = 20;
   cv::Mat source_img, processed_img;
   uav_detect::BlobDetections cur_detections;
   bool cur_detections_initialized;
@@ -190,18 +191,22 @@ int main(int argc, char** argv)
       for (const auto& blob : cur_detections.blobs)
       {
 
-        auto max = blob.contours.size();
+        auto n_contours = blob.contours.size();
         if (!blob.contours.empty())
         {
           sure++;
           const std::string id_txt = "id: " + to_string(blob.id);
+          bool blob_displaying_info = false;
 
           /* Draw blobs to the processed depthmap //{ */
           if (show_proc && !processed_img.empty())
           {
             if (fill_blobs)
             {
-              for (size_t it = blob.contours.size()-1; it; it--)
+              std::vector<cv::Point> cnt_detail_info(0);
+
+              size_t max_it = min(blob.contours.size(), max_draw_contours);
+              for (size_t it = 0; it < max_it; it++)
               {
                 const auto& pxs = blob.contours.at(it);
                 vector<cv::Point> cnt;
@@ -211,28 +216,43 @@ int main(int argc, char** argv)
           
                 vector<vector<cv::Point>> cnts;
                 cnts.push_back(cnt);
-                cv::drawContours(processed_im_copy, cnts, 0, Scalar(0, 65535, 65535/max*it), CV_FILLED);
+                cv::drawContours(processed_im_copy, cnts, 0, Scalar(0, 65535, 65535/n_contours*it), CV_FILLED);
                 if (!displaying_info && pointPolygonTest(cnt, cursor_pos, false) > 0)
                 {
+                  if (it == max_it-1)
+                  {
+                    cnt_detail_info = cnt;
+                  }
                   // display information about this contour
                   displaying_info = true;
+                  blob_displaying_info = true;
                   const int line_offset = 50;
                   const int line_space = 15;
                   int line_it = 0;
 
                   cv::putText(processed_im_copy, string("area: ") + to_string(blob.area), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-                  cv::putText(processed_im_copy, string("max. area diff. ratio: ") + to_string(blob.max_area_diff_ratio), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                  cv::putText(processed_im_copy, string("max. area diff. ratio: ") + to_string(blob.max_area_diff), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                   cv::putText(processed_im_copy, string("circularity: ") + to_string(blob.circularity), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                   cv::putText(processed_im_copy, string("convexity: ") + to_string(blob.convexity), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                   cv::putText(processed_im_copy, string("avg. depth: ") + to_string(blob.avg_depth), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-                  cv::putText(processed_im_copy, string("known pixels: ") + to_string(blob.known_pixels), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                  cv::putText(processed_im_copy, string("known pixels: ") + to_string(blob.known_pixels_ratio), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                   cv::putText(processed_im_copy, string("angle: ") + to_string(blob.angle), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                   cv::putText(processed_im_copy, string("inertia: ") + to_string(blob.inertia), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                   cv::putText(processed_im_copy, string("repeatability: ") + to_string(blob.contours.size()), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
           
                   cv::putText(processed_im_copy, string("confidence: ") + to_string(blob.confidence), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                   cv::putText(processed_im_copy, string("radius: ") + to_string(blob.radius), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                } else if (blob_displaying_info && it == max_it-1)
+                {
+                  cnt_detail_info = cnt;
                 }
+
+              }
+
+              if (!cnt_detail_info.empty())
+              {
+                double area = cv::contourArea(cnt_detail_info);
+                cv::putText(processed_im_copy, string("|   ") + to_string(area), Point(300, 50), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
               }
             } else
             {
@@ -257,7 +277,7 @@ int main(int argc, char** argv)
           
                 vector<vector<cv::Point>> cnts;
                 cnts.push_back(cnt);
-                cv::drawContours(rgb_im, cnts, 0, Scalar(0, 255, 255/max*it), CV_FILLED);
+                cv::drawContours(rgb_im, cnts, 0, Scalar(0, 255, 255/n_contours*it), CV_FILLED);
               }
             } else
             {
@@ -282,7 +302,7 @@ int main(int argc, char** argv)
           
                 vector<vector<cv::Point>> cnts;
                 cnts.push_back(cnt);
-                cv::drawContours(dm_im_colormapped, cnts, 0, Scalar(0, 255, 255/max*it), CV_FILLED);
+                cv::drawContours(dm_im_colormapped, cnts, 0, Scalar(0, 255, 255/n_contours*it), CV_FILLED);
               }
             } else
             {
@@ -370,6 +390,15 @@ int main(int argc, char** argv)
           ROS_INFO("[%s]: %sshowing rgb image", ros::this_node::getName().c_str(), show_rgb?"not ":"");
           show_rgb = !show_rgb;
           break;
+        case '+':
+          max_draw_contours++;
+          ROS_INFO("[%s]: displaying max. %lu contours", ros::this_node::getName().c_str(), max_draw_contours);
+          break;
+        case '-':
+          max_draw_contours--;
+          ROS_INFO("[%s]: displaying max. %lu contours", ros::this_node::getName().c_str(), max_draw_contours);
+          break;
+ 
       }
 
     }

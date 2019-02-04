@@ -5,11 +5,11 @@ int32   id
 uint32  x
 uint32  y
 uint32  area
-float32 max_area_diff_ratio
+uint32  max_area_diff
 float32 circularity
 float32 convexity
 float32 avg_depth
-uint32  known_pixels
+float32 known_pixels_ratio
 float32 angle
 float32 inertia
 float32 confidence
