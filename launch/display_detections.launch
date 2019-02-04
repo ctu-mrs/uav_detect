@@ -11,9 +11,9 @@
   <arg     if="$(arg profile)" name="launch_prefix_prf" value="valgrind --tool=callgrind"/>
 
   <arg name="simulation" default="$(optenv SIMULATION false)" />
-  <arg unless="$(arg simulation)" name="depthmap_topic" value="/$(arg uav_name)/rs_d435/aligned_depth_to_color/image_raw"/>
+  <arg unless="$(arg simulation)" name="depthmap_topic" value="/$(arg uav_name)/nerian_driver/depth_map"/>
   <arg     if="$(arg simulation)" name="depthmap_topic" value="/$(arg uav_name)/realsense/camera/depth/image_raw"/>
-  <arg unless="$(arg simulation)" name="rgb_topic" value="/$(arg uav_name)/rs_d435/color/image_rect_color"/>
+  <arg unless="$(arg simulation)" name="rgb_topic" value="/$(arg uav_name)/nerian_driver/left_image"/>
   <arg     if="$(arg simulation)" name="rgb_topic" value="/$(arg uav_name)/realsense/camera/color/image_raw"/>
 
   <arg name="ignore_mask" default="$(optenv IGNORE_MASK false)" />
@@ -25,9 +25,9 @@
 
       <param name="path_to_mask" value="$(arg mask_filename)" />
 
-      <remap from="~depthmap" to="/nerian_driver/depth_map" />
+      <remap from="~depthmap" to="$(arg depthmap_topic)" />
       <!-- <remap from="~depthmap" to="/nerian_stereo/disparity_map" /> -->
-      <remap from="~rgb_img" to="/nerian_driver/left_image" />
+      <remap from="~rgb_img" to="$(arg rgb_topic)" />
       <remap from="~blob_detections" to="/$(arg uav_name)/uav_detection/blob_detections" />
       <remap from="~processed_depthmap" to="/$(arg uav_name)/uav_detection/processed_depthmap" />
 
