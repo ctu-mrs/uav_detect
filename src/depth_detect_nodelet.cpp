@@ -230,6 +230,7 @@ namespace uav_detect
             det.convexity = blob.convexity;
             det.avg_depth = blob.avg_depth;
             det.known_pixels_ratio = blob.known_pixels_ratio;
+            det.known_pixels = blob.known_pixels;
             det.angle = blob.angle;
             det.inertia = blob.inertia;
             det.confidence = blob.confidence;

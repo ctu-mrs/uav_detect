@@ -84,7 +84,7 @@ int main(int argc, char** argv)
   bool fill_blobs = true;
   bool draw_mask = false;
   size_t max_draw_contours = 20;
-  cv::Mat source_img, processed_img;
+  cv::Mat source_img, processed_img, processed_img_raw;
   uav_detect::BlobDetections cur_detections;
   bool cur_detections_initialized;
 
@@ -133,7 +133,8 @@ int main(int argc, char** argv)
       if (show_proc && sh_dmp->has_data() && (!paused || processed_img.empty()))
       {
         sensor_msgs::ImageConstPtr img_ros = find_closest(cur_detections.header.stamp, dmp_buffer);
-        cv::cvtColor((cv_bridge::toCvCopy(img_ros, string("16UC1")))->image, processed_img, COLOR_GRAY2BGR);
+        processed_img_raw = cv_bridge::toCvCopy(img_ros, string("16UC1"))->image;
+        cv::cvtColor(processed_img_raw, processed_img, COLOR_GRAY2BGR);
 
         cv::namedWindow(det_winname, window_flags);
         setMouseCallback(det_winname, mouse_callback, NULL);
@@ -231,11 +232,12 @@ int main(int argc, char** argv)
                   int line_it = 0;
 
                   cv::putText(processed_im_copy, string("area: ") + to_string(blob.area), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-                  cv::putText(processed_im_copy, string("max. area diff. ratio: ") + to_string(blob.max_area_diff), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                  cv::putText(processed_im_copy, string("max. area diff: ") + to_string(blob.max_area_diff), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                   cv::putText(processed_im_copy, string("circularity: ") + to_string(blob.circularity), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                   cv::putText(processed_im_copy, string("convexity: ") + to_string(blob.convexity), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                   cv::putText(processed_im_copy, string("avg. depth: ") + to_string(blob.avg_depth), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-                  cv::putText(processed_im_copy, string("known pixels: ") + to_string(blob.known_pixels_ratio), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                  cv::putText(processed_im_copy, string("known pixels ratio: ") + to_string(blob.known_pixels_ratio), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
+                  cv::putText(processed_im_copy, string("known pixels: ") + to_string(blob.known_pixels), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                   cv::putText(processed_im_copy, string("angle: ") + to_string(blob.angle), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                   cv::putText(processed_im_copy, string("inertia: ") + to_string(blob.inertia), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
                   cv::putText(processed_im_copy, string("repeatability: ") + to_string(blob.contours.size()), Point(0, line_offset+line_it++*line_space), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
@@ -316,7 +318,11 @@ int main(int argc, char** argv)
       }
 
       if (show_proc && !processed_img.empty())
+      {
         cv::putText(processed_im_copy, string("found: ") + to_string(sure), Point(0, 30), FONT_HERSHEY_SIMPLEX, 1.1, Scalar(0, 0, 65535), 2);
+        uint16_t depth = processed_img_raw.at<uint16_t>(cursor_pos);
+        cv::putText(processed_im_copy, string("depth: ") + to_string(depth), Point(200, 30), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 0, 65535), 2);
+      }
 
       /* highlight masked-out area //{ */
       if (draw_mask && !mask_im_inv.empty())

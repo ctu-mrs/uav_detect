@@ -4,7 +4,7 @@
 
   <arg name="debug" default="false" />
   <arg unless="$(arg debug)" name="launch_prefix" value=""/>
-  <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch"/>
+  <arg     if="$(arg debug)" name="launch_prefix" value="gdb -ex run --args"/>
 
   <arg name="simulation" default="$(optenv SIMULATION false)" />
   <arg unless="$(arg simulation)" name="config_file" value="$(find uav_detect)/config/detection_params_nerian.yaml"/>

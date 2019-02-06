@@ -10,6 +10,7 @@ float32 circularity
 float32 convexity
 float32 avg_depth
 float32 known_pixels_ratio
+uint32  known_pixels
 float32 angle
 float32 inertia
 float32 confidence

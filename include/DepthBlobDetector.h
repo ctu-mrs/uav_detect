@@ -14,14 +14,15 @@ struct Blob
   double confidence = 0;
   cv::Point2d location;
   double radius = 0;
-  uint32_t area = 0;
-  uint32_t max_area_diff = 0;
+  double area = 0;
+  double max_area_diff = 0;
   double circularity = 0;
   double angle = 0;
   double inertia = 0;
   double convexity = 0;
   double avg_depth = 0;
   double known_pixels_ratio = 0;
+  uint32_t known_pixels = 0;
   std::vector<std::vector<cv::Point> > contours;
 };
 /*//}*/
