@@ -25,6 +25,7 @@ int main(int argc, char** argv)
 
   mrs_lib::ParamLoader pl(nh);
   std::string path_to_mask = pl.load_param2<std::string>("path_to_mask", std::string());
+  int unknown_pixel_value = pl.load_param2<int>("unknown_pixel_value", 0);
 
   cv::Mat mask_im_inv;
   if (path_to_mask.empty())
@@ -173,7 +174,7 @@ int main(int argc, char** argv)
         double min;
         double max;
         cv::Mat unknown_pixels;
-        cv::compare(source_img, 0, unknown_pixels, cv::CMP_EQ);
+        cv::compare(source_img, unknown_pixel_value, unknown_pixels, cv::CMP_EQ);
         cv::minMaxIdx(source_img, &min, &max, nullptr, nullptr, ~unknown_pixels);
         cv::Mat im_8UC1;
         source_img.convertTo(im_8UC1, CV_8UC1, 255.0 / (max-min), -min * 255.0 / (max-min)); 

@@ -43,10 +43,10 @@ min_known_pixels_ratio: 0.5
 
 # further filtration
 min_dist_between: 10.0
-max_area_diff: 500
-min_repeatability: 8
+max_area_diff: 10000
+min_repeatability: 4
 
-threshold_step: 500
+threshold_step: 1000
 
 # deprecated parameters (do not work very well/replaced by better methods)
 use_threshold_width: false
