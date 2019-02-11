@@ -37,7 +37,7 @@ public:
           const char *cfg_fname,
           const char *weights_fname,
           float nms,
-          int thresh,
+          float thresh,
           int n_classes);
   ~MRS_Detector();
 
@@ -57,7 +57,7 @@ public:
     std::string _weights_fname;
 
     float _nms;
-    int _thresh;
+    float _thresh;
     int _n_classes;
     std::vector<std::string> _class_names;
 

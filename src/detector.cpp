@@ -6,7 +6,7 @@ MRS_Detector::MRS_Detector(
                             const char *cfg_fname,
                             const char *weights_fname,
                             float nms,
-                            int thresh,
+                            float thresh,
                             int n_classes)
 {
   _init_OK = false;

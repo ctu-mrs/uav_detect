@@ -55,76 +55,47 @@ int main(int argc, char **argv)
   // Initialize cout to print with precision to two dec. places
   cout << std::fixed << std::setprecision(2);
 
-
   /**Load parameters from ROS* //{*/
+  mrs_lib::ParamLoader pl(nh);
   string uav_name, data_file, names_file, cfg_file, weights_file;
   float threshold, hier_threshold;
-  bool only_subsquare, double_detection;
+  bool double_detection;
 
   // UAV name
-  nh.param("uav_name", uav_name, string());
-  if (uav_name.empty())
-  {
-    ROS_ERROR("UAV_NAME is empty");
-    ros::shutdown();
-  }
+  uav_name = pl.load_param2<string>("uav_name");
   // Data file of the neural network
-  nh.param("data_file", data_file, string());
-  if (data_file.empty())
-  {
-    ROS_ERROR("No *.data file specified!");
-    ros::shutdown();
-  }
+  data_file = pl.load_param2<string>("data_file");
   // Names file of the neural network
-  nh.param("names_file", names_file, string());
-  if (names_file.empty())
-  {
-    ROS_ERROR("No *.names file specified!");
-    ros::shutdown();
-  }
+  names_file = pl.load_param2<string>("names_file");
   // Configuration file of the neural network
-  nh.param("cfg_file", cfg_file, string());
-  if (cfg_file.empty())
-  {
-    ROS_ERROR("No *.cfg file specified!");
-    ros::shutdown();
-  }
+  cfg_file = pl.load_param2<string>("cfg_file");
   // Weights file of the neural network
-  nh.param("weights_file", weights_file, string());
-  if (weights_file.empty())
-  {
-    ROS_ERROR("No *.weights file specified!");
-    ros::shutdown();
-  }
+  weights_file = pl.load_param2<string>("weights_file");
   // Detection threshold
-  nh.param("threshold", threshold, 0.1f);
+  threshold = pl.load_param2<double>("threshold", 0.1f);
   // Detection hier threshold
-  nh.param("hier_threshold", hier_threshold, 0.1f);
+  hier_threshold = pl.load_param2<double>("hier_threshold", 0.1f);
   // Whether to use only subsquare from the image
-  nh.param("only_subsquare", only_subsquare, true);
-  nh.param("double_detection", double_detection, true);
+  /* only_subsquare = pl.load_param2<bool>("only_subsquare", true); */
+  double_detection = pl.load_param2<bool>("double_detection", true);
 
-  // Load preset camera calibration parameters
-  nh.param("image_width", preset_width, -1);
-  nh.param("image_height", preset_height, -1);
-  nh.param("camera_name", preset_calib_name, string("NONE"));
-  nh.param("distortion_model", preset_distortion_model, string("NONE"));
-  nh.getParam("camera_matrix/data", preset_camera_matrix);
-  nh.getParam("distortion_coefficients/data", preset_distortion_coefficients);
-  nh.getParam("rectification_matrix/data", preset_rectification_matrix);
-  nh.getParam("projection_matrix/data", preset_projection_matrix);
+  sensor_msgs::RegionOfInterest roi;
+  roi.x_offset = pl.load_param2<int>("roi_x_offset", 0);
+  roi.y_offset = pl.load_param2<int>("roi_y_offset", 0);
+  roi.width = pl.load_param2<int>("roi_width", -1);
+  roi.height = pl.load_param2<int>("roi_height", -1);
+  /* bool use_roi = roi.width > 0 && roi.height > 0; */
+  /* cout << (use_roi ? "" : "not ") << "using ROI" << endl; */
 
-  cout << "Using parameters:" << std::endl;
-  cout << "\tuav name:\t" << uav_name << std::endl;
-  cout << "\tdata file:\t" << data_file << std::endl;
-  cout << "\tnames file:\t" << names_file << std::endl;
-  cout << "\tcfg file:\t" << cfg_file << std::endl;
-  cout << "\tweights file:\t" << weights_file << std::endl;
-  cout << "\tthreshold:\t" << threshold << std::endl;
-  cout << "\thier threshold:\t" << hier_threshold << std::endl;
-  cout << "\tonly subsquare:\t" << only_subsquare << std::endl;
-  cout << "\tdouble detection:\t" << double_detection << std::endl;
-  cout << "\tpreset camera calibration:\t" << preset_calib_name << std::endl;
+  /* // Load preset camera calibration parameters */
+  /* preset_width = pl.load_param2<int>("image_width", -1); */
+  /* preset_height = pl.load_param2<int>("image_height", -1); */
+  /* preset_calib_name = pl.load_param2<string>("camera_name", string("NONE")); */
+  /* preset_distortion_model = pl.load_param2<string>("distortion_model", string("NONE")); */
+  /* preset_camera_matrix = pl.load_param2<double>("camera_matrix/data", */ 
+  /* preset_distortion_coefficients = pl.load_param2<double>("distortion_coefficients/data", */ 
+  /* preset_rectification_matrix = pl.load_param2<double>("rectification_matrix/data", */ 
+  /* preset_projection_matrix = pl.load_param2<double>("projection_matrix/data", */ 
   //}
 
   /**Create publishers and subscribers* //{*/
@@ -161,12 +132,15 @@ int main(int argc, char **argv)
       int h_used = det_image.rows;
       int w_used = det_image.cols;
 
-      if (only_subsquare)
-      {
-        w_used = h_used;
-        cv::Rect sub_rect((det_image.cols - w_used)/2, 0, h_used, w_used);
-        det_image = det_image(sub_rect);  // a SHALLOW copy! sub_image shares pixels
-      }
+      if (roi.height <= 0)
+         roi.height = std::min(h_used, int(h_used - roi.y_offset));
+      if (roi.width <= 0)
+         roi.width = std::min(w_used, int(w_used - roi.x_offset));
+
+      h_used = roi.height;
+      w_used = roi.width;
+      cv::Rect roi_rect(roi.x_offset, roi.y_offset, roi.width, roi.height);
+      det_image = det_image(roi_rect);  // a SHALLOW copy! sub_image shares pixels
 
       vector<cnn_detect::Detection> detections = detector.detect(
               det_image,
@@ -228,11 +202,6 @@ int main(int argc, char **argv)
             det = best_det;
           }
         }
-        sensor_msgs::RegionOfInterest roi;
-        roi.x_offset = (det_image.cols - w_used)/2;
-        roi.y_offset = (det_image.rows - h_used)/2;
-        roi.width = w_used;
-        roi.height = h_used;
         det.roi = roi;
         cout << "\t" << detector.get_class_name(det.class_ID) << ", p=" << det.confidence << std::endl;
         cout << "\t[" << det.x << "; " << det.y << "]" << std::endl;
