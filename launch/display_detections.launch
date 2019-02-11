@@ -2,14 +2,19 @@
 
   <arg name="uav_name" default="$(optenv UAV_NAME uav)"/>
 
+  <arg name="debug" default="false" />
+  <arg unless="$(arg debug)" name="launch_prefix" value=""/>
+  <arg     if="$(arg debug)" name="launch_prefix" value="gdb -ex run --args"/>
+
   <group ns="$(arg uav_name)">
     
-    <node name="display_detections" pkg="cnn_detect" type="display_detections" output="screen" >
+    <node name="display_detections" pkg="cnn_detect" type="display_detections" output="screen" launch-prefix="$(arg launch_prefix)" >
       
       <rosparam file="$(find cnn_detect)/config/uav_detect.yaml" />
       <param name="uav_name" value="$(arg uav_name)" />
 
-      <remap from="~camera_input" to="mobius/image_raw" />
+      <remap from="~camera_input" to="rs_d435/color/image_rect_color" />
+      <remap from="~camera_info" to="rs_d435/color/camera_info" />
       <remap from="~detections" to="cnn_detect/detections" />
     
     </node>
