@@ -135,6 +135,7 @@ int main(int argc, char **argv)
   cv::namedWindow(det_winname, window_flags);
 
   cv::Mat det_image;
+  sensor_msgs::RegionOfInterest last_roi;
   /* bool det_image_usable = false; */
 
   while (ros::ok())
@@ -164,6 +165,7 @@ int main(int argc, char **argv)
           continue;
         cout << "Drawing one detection" << std::endl;
 
+        last_roi = det.roi;
         int w_used = det.roi.width;
         int h_used = det.roi.height;
         int x_lt = (int)round((det.x-det.width/2.0)*w_used) + det.roi.x_offset;
@@ -180,6 +182,10 @@ int main(int argc, char **argv)
         sprintf(buffer, "mrs_mav, %.2f", det.confidence);
         cv::putText(det_image, buffer, Point(x_lt, y_lt-16), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, Scalar(0, 0, 255), 2);
       }
+
+      cout << last_roi << endl;
+      cv::Rect roi(last_roi.x_offset-1, last_roi.y_offset-1, last_roi.width+2, last_roi.height+2);
+      cv::rectangle(det_image, roi, Scalar(255, 0, 0), 1);
 
       /* cv_bridge::CvImage img_bridge; */
       /* sensor_msgs::Image img_msg; // >> message to be sent */
