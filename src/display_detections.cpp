@@ -99,8 +99,6 @@ void detections_callback(const cnn_detect::Detections& dets_msg)
 int main(int argc, char **argv)
 {
   string uav_name, ovname;
-  int w_ov, h_ov/*no*/;  //output video dimenstion
-  bool save_vid;
   double prob_threshold;
 
   ros::init(argc, argv, "display_detections");
@@ -117,32 +115,12 @@ int main(int argc, char **argv)
     ros::shutdown();
   }
   nh.param("image_buffer_max_size", image_buffer_max_size, 60);
-  nh.param("save_vid", save_vid, false);
-  /* nh.param("out_vid_name", ovname, string("out.avi")); */
-  /* nh.param("out_vid_width", w_ov, 720); */
-  /* nh.param("out_vid_height", h_ov, 720); */
   nh.param("threshold", prob_threshold, 0.2);
 
   cout << "Using parameters:" << std::endl;
   cout << "\tuav name:\t" << uav_name << std::endl;
   cout << "\tmax. size of image buffer:\t" << image_buffer_max_size << std::endl;
-  /* cout << "\tsave vid.:\t" << save_vid << std::endl; */
-  /* cout << "\tout. vid. name:\t" << ovname << std::endl; */
-  /* cout << "\tout. vid. width:\t" << w_ov << std::endl; */
-  /* cout << "\tout. vid. height:\t" << h_ov << std::endl; */
   cout << "\tprob. threshold:\t" << prob_threshold << std::endl;
-
-  VideoWriter outputVideo;                                        // Open the output
-  if (save_vid)
-  {
-    outputVideo.open(ovname, VideoWriter::fourcc('M', 'J', 'P', 'G'), 25.0, Size(w_ov, h_ov), true);
-
-    if (!outputVideo.isOpened())
-    {
-      cout  << "Could not open the output video for write: " << ovname << endl;
-      return -1;
-    }
-  }
 
   /** Create publishers and subscribers **/
   ros::Subscriber camera_sub = nh.subscribe("camera_input", 1, camera_callback, ros::TransportHints().tcpNoDelay());
@@ -177,25 +155,8 @@ int main(int argc, char **argv)
       cv_bridge::CvImagePtr last_cam_image_ptr;
       last_cam_image_ptr = cv_bridge::toCvCopy(image_msg, sensor_msgs::image_encodings::BGR8); 
 
-      /* int cam_image_w = last_cam_image_ptr->image.cols; */
-      /* int cam_image_h = last_cam_image_ptr->image.rows; */
-
-      /* camera_model.fromCameraInfo(last_detections.camera_info); */
       /* camera_model.rectifyImage(last_cam_image_ptr->image, det_image); */
-      /* if (cam_image_w != w_used || cam_image_h != h_used) */
-      /* { */
-      /*   cv::Rect sub_rect((cam_image_w - w_used)/2, (cam_image_h - h_used)/2, h_used, w_used); */
-      /*   det_image = last_cam_image_ptr->image(sub_rect);  // a SHALLOW copy! sub_image shares pixels */
-      /* } else */
-      /* { */
-      /*   det_image = last_cam_image_ptr->image;  // a SHALLOW copy! sub_image shares pixels */
-      /* } */
-      /* det_image_usable = true; */
-      /* if (w_used != w_ov || h_used != h_ov) */
-      /* { */
-      /*   ROS_WARN("Detection image dimensions differ from output video dimensions. Cannot save video!"); */
-      /*   det_image_usable = false; */
-      /* } */
+      det_image = last_cam_image_ptr->image;  // a SHALLOW copy! sub_image shares pixels
 
       for (const auto &det : last_detections.detections)
       {
@@ -235,6 +196,7 @@ int main(int argc, char **argv)
       cout << "Detection processed" << std::endl;
     } else
     {
+      ROS_INFO_STREAM_THROTTLE(1.0, "[" << ros::this_node::getName().c_str() << "]: new_cam_image=" << new_cam_image << ", new_detections=" << new_detections);
       r.sleep();
     }
     /* if (save_vid && det_image_usable) */
