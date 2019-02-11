@@ -178,12 +178,12 @@ std::vector<uav_detect::Detection> MRS_Detector::detect(
       if(prob > _thresh)
       {
         uav_detect::Detection det;
-        det.probability = prob;
+        det.confidence = prob;
         det.class_ID = class_ID;
-        det.x_relative = _boxes[it].x;
-        det.y_relative = _boxes[it].y;
-        det.w_relative = _boxes[it].w;
-        det.h_relative = _boxes[it].h;
+        det.x = _boxes[it].x;
+        det.y = _boxes[it].y;
+        det.width = _boxes[it].w;
+        det.height = _boxes[it].h;
         ret.push_back(det);
         count++;
       }

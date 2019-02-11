@@ -4,14 +4,13 @@
 
   <group ns="$(arg uav_name)">
     
-    <node name="display_detections" pkg="uav_detect" type="display_detections" output="screen" >
+    <node name="display_detections" pkg="cnn_detect" type="display_detections" output="screen" >
       
-      <rosparam file="$(find mrs_trackers)/config/f550.yaml" />
-      <rosparam file="$(find uav_detect)/config/uav_detect.yaml" />
+      <rosparam file="$(find cnn_detect)/config/uav_detect.yaml" />
       <param name="uav_name" value="$(arg uav_name)" />
 
       <remap from="~camera_input" to="mobius/image_raw" />
-      <remap from="~detections" to="uav_detect/detections" />
+      <remap from="~detections" to="cnn_detect/detections" />
     
     </node>
   

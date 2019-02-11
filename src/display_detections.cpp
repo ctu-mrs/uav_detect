@@ -41,6 +41,18 @@ void camera_callback(const sensor_msgs::ImageConstPtr& image_msg)
   new_cam_image = true;
 }
 
+bool got_cinfo = false;
+image_geometry::PinholeCameraModel camera_model;
+void cinfo_callback(const sensor_msgs::CameraInfo& msg)
+{
+  if (got_cinfo)
+    return;
+  cout << "Got camera info" << std::endl;
+  camera_model.fromCameraInfo(msg);
+  got_cinfo = true;
+}
+
+
 sensor_msgs::ImageConstPtr find_closest(const std::list<sensor_msgs::ImageConstPtr>& image_ptr_buffer, ros::Time stamp)
 {
   size_t it = 0;
@@ -106,18 +118,18 @@ int main(int argc, char **argv)
   }
   nh.param("image_buffer_max_size", image_buffer_max_size, 60);
   nh.param("save_vid", save_vid, false);
-  nh.param("out_vid_name", ovname, string("out.avi"));
-  nh.param("out_vid_width", w_ov, 720);
-  nh.param("out_vid_height", h_ov, 720);
+  /* nh.param("out_vid_name", ovname, string("out.avi")); */
+  /* nh.param("out_vid_width", w_ov, 720); */
+  /* nh.param("out_vid_height", h_ov, 720); */
   nh.param("threshold", prob_threshold, 0.2);
 
   cout << "Using parameters:" << std::endl;
   cout << "\tuav name:\t" << uav_name << std::endl;
   cout << "\tmax. size of image buffer:\t" << image_buffer_max_size << std::endl;
-  cout << "\tsave vid.:\t" << save_vid << std::endl;
-  cout << "\tout. vid. name:\t" << ovname << std::endl;
-  cout << "\tout. vid. width:\t" << w_ov << std::endl;
-  cout << "\tout. vid. height:\t" << h_ov << std::endl;
+  /* cout << "\tsave vid.:\t" << save_vid << std::endl; */
+  /* cout << "\tout. vid. name:\t" << ovname << std::endl; */
+  /* cout << "\tout. vid. width:\t" << w_ov << std::endl; */
+  /* cout << "\tout. vid. height:\t" << h_ov << std::endl; */
   cout << "\tprob. threshold:\t" << prob_threshold << std::endl;
 
   VideoWriter outputVideo;                                        // Open the output
@@ -134,13 +146,18 @@ int main(int argc, char **argv)
 
   /** Create publishers and subscribers **/
   ros::Subscriber camera_sub = nh.subscribe("camera_input", 1, camera_callback, ros::TransportHints().tcpNoDelay());
+  ros::Subscriber cinfo_sub = nh.subscribe("camera_info", 1, cinfo_callback, ros::TransportHints().tcpNoDelay());
   ros::Subscriber detections_sub = nh.subscribe("detections", 1, detections_callback, ros::TransportHints().tcpNoDelay());
   ros::Publisher det_imgs_pub = nh.advertise<sensor_msgs::Image>("det_imgs", 1);
 
   cout << "----------------------------------------------------------" << std::endl;
 
+  int window_flags = WINDOW_NORMAL | WINDOW_KEEPRATIO | WINDOW_GUI_NORMAL;
+  string det_winname = "CNN_detections";
+  cv::namedWindow(det_winname, window_flags);
+
   cv::Mat det_image;
-  bool det_image_usable = false;
+  /* bool det_image_usable = false; */
 
   while (ros::ok())
   {
@@ -153,73 +170,76 @@ int main(int argc, char **argv)
       new_detections = false;
       cout << "Processing new detections" << std::endl;
 
-      sensor_msgs::ImageConstPtr image_msg = find_closest(image_ptr_buffer, last_detections.stamp);
+      sensor_msgs::ImageConstPtr image_msg = find_closest(image_ptr_buffer, last_detections.header.stamp);
       if (image_msg == nullptr)
         continue;
 
       cv_bridge::CvImagePtr last_cam_image_ptr;
       last_cam_image_ptr = cv_bridge::toCvCopy(image_msg, sensor_msgs::image_encodings::BGR8); 
 
-      int cam_image_w = last_cam_image_ptr->image.cols;
-      int cam_image_h = last_cam_image_ptr->image.rows;
-      int w_used = last_detections.w_used;
-      int h_used = last_detections.h_used;
+      /* int cam_image_w = last_cam_image_ptr->image.cols; */
+      /* int cam_image_h = last_cam_image_ptr->image.rows; */
 
-      image_geometry::PinholeCameraModel camera_model;
-      camera_model.fromCameraInfo(last_detections.camera_info);
+      /* camera_model.fromCameraInfo(last_detections.camera_info); */
       /* camera_model.rectifyImage(last_cam_image_ptr->image, det_image); */
-      if (cam_image_w != w_used || cam_image_h != h_used)
-      {
-        cv::Rect sub_rect((cam_image_w - w_used)/2, (cam_image_h - h_used)/2, h_used, w_used);
-        det_image = last_cam_image_ptr->image(sub_rect);  // a SHALLOW copy! sub_image shares pixels
-      } else
-      {
-        det_image = last_cam_image_ptr->image;  // a SHALLOW copy! sub_image shares pixels
-      }
-      det_image_usable = true;
-      if (w_used != w_ov || h_used != h_ov)
-      {
-        ROS_WARN("Detection image dimensions differ from output video dimensions. Cannot save video!");
-        det_image_usable = false;
-      }
+      /* if (cam_image_w != w_used || cam_image_h != h_used) */
+      /* { */
+      /*   cv::Rect sub_rect((cam_image_w - w_used)/2, (cam_image_h - h_used)/2, h_used, w_used); */
+      /*   det_image = last_cam_image_ptr->image(sub_rect);  // a SHALLOW copy! sub_image shares pixels */
+      /* } else */
+      /* { */
+      /*   det_image = last_cam_image_ptr->image;  // a SHALLOW copy! sub_image shares pixels */
+      /* } */
+      /* det_image_usable = true; */
+      /* if (w_used != w_ov || h_used != h_ov) */
+      /* { */
+      /*   ROS_WARN("Detection image dimensions differ from output video dimensions. Cannot save video!"); */
+      /*   det_image_usable = false; */
+      /* } */
 
       for (const auto &det : last_detections.detections)
       {
-        if (det.probability < prob_threshold)
+        if (det.confidence < prob_threshold)
           continue;
         cout << "Drawing one detection" << std::endl;
 
-        int x_lt = (int)round((det.x_relative-det.w_relative/2.0)*w_used);
-        int y_lt = (int)round((det.y_relative-det.h_relative/2.0)*h_used);
-        int w = (int)round(det.w_relative*w_used);
-        int h = (int)round(det.h_relative*h_used);
+        int w_used = det.roi.width;
+        int h_used = det.roi.height;
+        int x_lt = (int)round((det.x-det.width/2.0)*w_used) + det.roi.x_offset;
+        int y_lt = (int)round((det.y-det.height/2.0)*h_used) + det.roi.y_offset;
+        int w = (int)round(det.width*w_used);
+        int h = (int)round(det.height*h_used);
         cv::Rect det_rect(
                   x_lt,
                   y_lt,
                   w,
                   h);
-        cv::rectangle(det_image, det_rect, Scalar(0, 0, 255), round(det.probability*10));
+        cv::rectangle(det_image, det_rect, Scalar(0, 0, 255), round(det.confidence*10));
         char buffer[255];
-        sprintf(buffer, "mrs_mav, %.2f", det.probability);
+        sprintf(buffer, "mrs_mav, %.2f", det.confidence);
         cv::putText(det_image, buffer, Point(x_lt, y_lt-16), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, Scalar(0, 0, 255), 2);
       }
 
-      cv_bridge::CvImage img_bridge;
-      sensor_msgs::Image img_msg; // >> message to be sent
-      std_msgs::Header header; // empty header
-      header.stamp = ros::Time::now(); // time
-      img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::BGR8, det_image);
-      img_bridge.toImageMsg(img_msg); // from cv_bridge to sensor_msgs::Image
-      det_imgs_pub.publish(img_msg); // ros::Publisher pub_img = node.advertise<senso
+      /* cv_bridge::CvImage img_bridge; */
+      /* sensor_msgs::Image img_msg; // >> message to be sent */
+      /* std_msgs::Header header; // empty header */
+      /* header.stamp = ros::Time::now(); // time */
+      /* img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::BGR8, det_image); */
+      /* img_bridge.toImageMsg(img_msg); // from cv_bridge to sensor_msgs::Image */
+      /* det_imgs_pub.publish(img_msg); // ros::Publisher pub_img = node.advertise<senso */
+
+      imshow(det_winname, det_image);
+      waitKey(3);
+      /* int key = waitKey(3); */
 
       cout << "Detection processed" << std::endl;
     } else
     {
       r.sleep();
     }
-    if (save_vid && det_image_usable)
-    {
-      outputVideo.write(det_image);
-    }
+    /* if (save_vid && det_image_usable) */
+    /* { */
+    /*   outputVideo.write(det_image); */
+    /* } */
   }
 }

@@ -180,10 +180,10 @@ int main(int argc, char **argv)
         {
           // find top-left corner of an area around the detection with width and height in pixels
           // equal to width and height of the CNN so that it is in bounds of the image
-          int l = det.x_relative*w_used-w_cnn/2;
+          int l = det.x*w_used-w_cnn/2;
           if (l < 0)
             l = 0;
-          int t = det.y_relative*h_used-h_cnn/2;
+          int t = det.y*h_used-h_cnn/2;
           if (t < 0)
             t = 0;
           int r = l+w_cnn;
@@ -212,33 +212,36 @@ int main(int argc, char **argv)
           uav_detect::Detection best_det;
           for (const auto& subdet : subdetections)
           {
-            if (subdet.probability > max_prob)
+            if (subdet.confidence > max_prob)
             {
-              max_prob = subdet.probability;
+              max_prob = subdet.confidence;
               best_det = subdet;
               redetected = true;
             }
           }
           if (redetected)
           {
-            best_det.x_relative = (best_det.x_relative*double(w_cnn) + l)/double(w_used);
-            best_det.y_relative = (best_det.y_relative*double(h_cnn) + t)/double(h_used);
-            best_det.w_relative = best_det.w_relative*double(w_cnn)/double(w_used);
-            best_det.h_relative = best_det.h_relative*double(h_cnn)/double(h_used);
+            best_det.x = (best_det.x*double(w_cnn) + l)/double(w_used);
+            best_det.y = (best_det.y*double(h_cnn) + t)/double(h_used);
+            best_det.width = best_det.width*double(w_cnn)/double(w_used);
+            best_det.height = best_det.height*double(h_cnn)/double(h_used);
             det = best_det;
           }
         }
-        cout << "\t" << detector.get_class_name(det.class_ID) << ", p=" << det.probability << std::endl;
-        cout << "\t[" << det.x_relative << "; " << det.y_relative << "]" << std::endl;
-        cout << "\tw=" << det.w_relative << ", h=" << det.h_relative << std::endl;
+        sensor_msgs::RegionOfInterest roi;
+        roi.x_offset = (det_image.cols - w_used)/2;
+        roi.y_offset = (det_image.rows - h_used)/2;
+        roi.width = w_used;
+        roi.height = h_used;
+        det.roi = roi;
+        cout << "\t" << detector.get_class_name(det.class_ID) << ", p=" << det.confidence << std::endl;
+        cout << "\t[" << det.x << "; " << det.y << "]" << std::endl;
+        cout << "\tw=" << det.width << ", h=" << det.height << std::endl;
       }
 
       uav_detect::Detections msg;
       msg.detections = detections;
-      msg.w_used = w_used;
-      msg.h_used = h_used;
-      msg.camera_info = sensor_msgs::CameraInfo(last_cam_info);
-      msg.stamp = last_cam_image_ptr->header.stamp;
+      msg.header = last_cam_image_ptr->header;
       detections_pub.publish(msg);
 
       // Calculate FPS

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(uav_detect)
+project(cnn_detect)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -62,8 +62,8 @@ include_directories(include
   ~/git/darknet_ocl/src
 )
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O0")
-add_definitions(-g)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -O3")
+# add_definitions(-g)
 add_executable(display_detections src/display_detections.cpp)
 add_dependencies(display_detections
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
@@ -85,12 +85,12 @@ target_link_libraries(uav_detect
   darknet-cpp-shared
 )
 
-add_executable(filter_single src/filter_single.cpp src/rlcnn_util.cpp src/ocam_functions.cpp)
-add_dependencies(filter_single
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
-)
-target_link_libraries(filter_single
-  ${catkin_LIBRARIES}
-  ${OpenCV_LIBRARIES}
-)
+# add_executable(filter_single src/filter_single.cpp src/rlcnn_util.cpp src/ocam_functions.cpp)
+# add_dependencies(filter_single
+#   ${${PROJECT_NAME}_EXPORTED_TARGETS}
+#   ${catkin_EXPORTED_TARGETS}
+# )
+# target_link_libraries(filter_single
+#   ${catkin_LIBRARIES}
+#   ${OpenCV_LIBRARIES}
+# )

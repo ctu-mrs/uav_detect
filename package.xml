@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package>
-  <name>uav_detect</name>
+  <name>cnn_detect</name>
   <version>1.0.0</version>
   <description>Package for detection of MRS UAVs from camera image</description>
 

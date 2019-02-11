@@ -4,19 +4,18 @@
 
   <group ns="$(arg uav_name)">
     
-    <node name="uav_detect" pkg="uav_detect" type="uav_detect" output="screen" >
+    <node name="cnn_detect" pkg="cnn_detect" type="uav_detect" output="screen">
       
-      <rosparam file="$(find uav_detect)/config/mobius.yaml" />
-      <rosparam file="$(find mrs_trackers)/config/f550.yaml" />
-      <rosparam file="$(find uav_detect)/config/uav_detect.yaml" />
-      <param name="data_file" value="$(find uav_detect)/mrs/mrs.data" />
-      <param name="names_file" value="$(find uav_detect)/mrs/mrs.names" />
-      <param name="cfg_file" value="$(find uav_detect)/mrs/tiny-yolo-mrs.cfg" />
-      <param name="weights_file" value="$(find uav_detect)/mrs/tiny-yolo-mrs_10000.weights" />
+      <rosparam file="$(find cnn_detect)/config/mobius.yaml" />
+      <rosparam file="$(find cnn_detect)/config/uav_detect.yaml" />
+      <param name="data_file" value="$(find cnn_detect)/mrs/mrs.data" />
+      <param name="names_file" value="$(find cnn_detect)/mrs/mrs.names" />
+      <param name="cfg_file" value="$(find cnn_detect)/mrs/tiny-yolo-mrs.cfg" />
+      <param name="weights_file" value="$(find cnn_detect)/mrs/tiny-yolo-mrs_for_experiments.weights" />
       <param name="uav_name" value="$(arg uav_name)" />
 
-      <remap from="~camera_input" to="mobius_front/image_raw" />
-      <remap from="~camera_info" to="mobius_front/camera_info" />
+      <remap from="~camera_input" to="rs_d435/color/image_rect_color" />
+      <remap from="~camera_info" to="rs_d435/color/camera_info" />
     
     </node>
   
