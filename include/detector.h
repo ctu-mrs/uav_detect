@@ -18,7 +18,7 @@
 // this actually include OpenCL related function definitions
 #include "cuda.h"
 
-#include <uav_detect/Detection.h>
+#include <cnn_detect/Detection.h>
 
 
 /*struct Detection
@@ -43,7 +43,7 @@ public:
 
   bool initialize();
 
-  std::vector<uav_detect::Detection> detect(const cv::Mat &image,
+  std::vector<cnn_detect::Detection> detect(const cv::Mat &image,
                                             float thresh,
                                             float hier_thresh);
   std::string get_class_name(int class_ID);
