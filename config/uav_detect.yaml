@@ -2,4 +2,6 @@ threshold: 0.1
 only_subsquare: false
 double_detection: false
 
-roi_x_offset: 512
+roi_x_offset: 560
+roi_y_offset: 80
+roi_height: 540
