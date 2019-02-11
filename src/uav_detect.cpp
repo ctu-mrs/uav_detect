@@ -132,15 +132,16 @@ int main(int argc, char **argv)
       int h_used = det_image.rows;
       int w_used = det_image.cols;
 
-      if (roi.height <= 0)
+      if (long(roi.y_offset) + roi.height > h_used)
          roi.height = std::min(h_used, int(h_used - roi.y_offset));
-      if (roi.width <= 0)
+      if (long(roi.x_offset) + roi.width > w_used)
          roi.width = std::min(w_used, int(w_used - roi.x_offset));
 
       h_used = roi.height;
       w_used = roi.width;
       cv::Rect roi_rect(roi.x_offset, roi.y_offset, roi.width, roi.height);
       det_image = det_image(roi_rect);  // a SHALLOW copy! sub_image shares pixels
+      cout << roi << endl;
 
       vector<cnn_detect::Detection> detections = detector.detect(
               det_image,

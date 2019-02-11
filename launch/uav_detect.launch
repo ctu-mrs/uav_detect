@@ -2,9 +2,13 @@
 
   <arg name="uav_name" default="$(optenv UAV_NAME uav)"/>
 
+  <arg name="debug" default="false" />
+  <arg unless="$(arg debug)" name="launch_prefix" value=""/>
+  <arg     if="$(arg debug)" name="launch_prefix" value="gdb -ex run --args"/>
+
   <group ns="$(arg uav_name)">
     
-    <node name="cnn_detect" pkg="cnn_detect" type="uav_detect" output="screen">
+    <node name="cnn_detect" pkg="cnn_detect" type="uav_detect" output="screen" launch-prefix="$(arg launch_prefix)" >
       
       <rosparam file="$(find cnn_detect)/config/mobius.yaml" />
       <rosparam file="$(find cnn_detect)/config/uav_detect.yaml" />
