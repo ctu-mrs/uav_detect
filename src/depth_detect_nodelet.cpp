@@ -2,6 +2,7 @@
 
 #include <nodelet/nodelet.h>
 
+#include <sensor_msgs/RegionOfInterest.h>
 #include <uav_detect/BlobDetection.h>
 #include <uav_detect/BlobDetections.h>
 #include <uav_detect/Contour.h>
@@ -35,6 +36,10 @@ namespace uav_detect
       // LOAD STATIC PARAMETERS
       ROS_INFO("Loading static parameters:");
       pl.load_param("unknown_pixel_value", m_unknown_pixel_value, 0);
+      m_roi.x_offset = pl.load_param2<int>("roi/x_offset", 0);
+      m_roi.y_offset = pl.load_param2<int>("roi/y_offset", 0);
+      m_roi.width = pl.load_param2<int>("roi/width", 0);
+      m_roi.height = pl.load_param2<int>("roi/height", 0);
       std::string path_to_mask = pl.load_param2<std::string>("path_to_mask", std::string());
 
       // LOAD DYNAMIC PARAMETERS
@@ -104,6 +109,16 @@ namespace uav_detect
         ros::Time start_t = ros::Time::now();
 
         cv_bridge::CvImage source_msg = *cv_bridge::toCvCopy(m_depthmap_sh->get_data(), string("16UC1"));
+
+        /* Apply ROI //{ */
+        if (m_roi.y_offset + m_roi.height > unsigned(source_msg.image.rows))
+          m_roi.height = std::clamp(int(source_msg.image.rows - m_roi.y_offset), 0, source_msg.image.rows);
+        if (m_roi.x_offset + m_roi.width > unsigned(source_msg.image.cols))
+          m_roi.width = std::clamp(int(source_msg.image.rows - m_roi.x_offset), 0, source_msg.image.rows);
+        
+        cv::Rect roi(m_roi.x_offset, m_roi.y_offset, m_roi.width, m_roi.height);
+        source_msg.image = source_msg.image(roi);
+        //}
 
         /* Prepare the image for detection //{ */
         // create the detection image
@@ -294,6 +309,7 @@ namespace uav_detect
 
     /* Parameters, loaded from ROS //{ */
     int m_unknown_pixel_value;
+    sensor_msgs::RegionOfInterest m_roi;
     //}
 
     /* ROS related variables (subscribers, timers etc.) //{ */
