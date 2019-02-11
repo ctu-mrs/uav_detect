@@ -9,8 +9,8 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 
-#include <uav_detect/Detection.h>
-#include <uav_detect/Detections.h>
+#include <cnn_detect/Detection.h>
+#include <cnn_detect/Detections.h>
 
 #include <iomanip>
 

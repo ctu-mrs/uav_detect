@@ -47,7 +47,7 @@ void camera_info_callback(sensor_msgs::CameraInfo info_msg)
 
 int main(int argc, char **argv)
 {
-  ros::init(argc, argv, "uav_detect");
+  ros::init(argc, argv, "cnn_detect");
   ROS_INFO ("Node initialized.");
 
   ros::NodeHandle nh = ros::NodeHandle("~");
@@ -128,7 +128,7 @@ int main(int argc, char **argv)
   //}
 
   /**Create publishers and subscribers* //{*/
-  ros::Publisher detections_pub = nh.advertise<uav_detect::Detections>("detections", 20);
+  ros::Publisher detections_pub = nh.advertise<cnn_detect::Detections>("detections", 20);
   #ifdef DEBUG
   // Debug only
   #warning "Building with -DDEBUG (turn off in CMakeLists.txt)"
@@ -168,7 +168,7 @@ int main(int argc, char **argv)
         det_image = det_image(sub_rect);  // a SHALLOW copy! sub_image shares pixels
       }
 
-      vector<uav_detect::Detection> detections = detector.detect(
+      vector<cnn_detect::Detection> detections = detector.detect(
               det_image,
               threshold,
               hier_threshold);
@@ -202,14 +202,14 @@ int main(int argc, char **argv)
           cv::Rect around_det(l, t, w_cnn, h_cnn);
           cv::Mat sub_image = det_image(around_det);
 
-          vector<uav_detect::Detection> subdetections = detector.detect(
+          vector<cnn_detect::Detection> subdetections = detector.detect(
                 sub_image,
                 threshold,
                 hier_threshold);
 
           double max_prob = 0.0;
           bool redetected = false;
-          uav_detect::Detection best_det;
+          cnn_detect::Detection best_det;
           for (const auto& subdet : subdetections)
           {
             if (subdet.confidence > max_prob)
@@ -239,7 +239,7 @@ int main(int argc, char **argv)
         cout << "\tw=" << det.width << ", h=" << det.height << std::endl;
       }
 
-      uav_detect::Detections msg;
+      cnn_detect::Detections msg;
       msg.detections = detections;
       msg.header = last_cam_image_ptr->header;
       detections_pub.publish(msg);

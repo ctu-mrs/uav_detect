@@ -18,8 +18,8 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 
-#include <uav_detect/Detection.h>
-#include <uav_detect/Detections.h>
+#include <cnn_detect/Detection.h>
+#include <cnn_detect/Detections.h>
 
 #include <list>
 
@@ -30,7 +30,7 @@ bool new_cam_image = false;
 bool new_detections = false;
 int image_buffer_max_size;
 std::list<sensor_msgs::ImageConstPtr> image_ptr_buffer;
-uav_detect::Detections last_detections;
+cnn_detect::Detections last_detections;
 
 void camera_callback(const sensor_msgs::ImageConstPtr& image_msg)
 {
@@ -89,7 +89,7 @@ sensor_msgs::ImageConstPtr find_closest(const std::list<sensor_msgs::ImageConstP
   return closest_image;
 }
 
-void detections_callback(const uav_detect::Detections& dets_msg)
+void detections_callback(const cnn_detect::Detections& dets_msg)
 {
   cout << "Got detection" << std::endl;
   last_detections = dets_msg;
