@@ -111,10 +111,10 @@ namespace uav_detect
         cv_bridge::CvImage source_msg = *cv_bridge::toCvCopy(m_depthmap_sh->get_data(), string("16UC1"));
 
         /* Apply ROI //{ */
-        if (m_roi.y_offset + m_roi.height > unsigned(source_msg.image.rows))
+        if (m_roi.y_offset + m_roi.height > unsigned(source_msg.image.rows) || m_roi.height == 0)
           m_roi.height = std::clamp(int(source_msg.image.rows - m_roi.y_offset), 0, source_msg.image.rows);
-        if (m_roi.x_offset + m_roi.width > unsigned(source_msg.image.cols))
-          m_roi.width = std::clamp(int(source_msg.image.rows - m_roi.x_offset), 0, source_msg.image.rows);
+        if (m_roi.x_offset + m_roi.width > unsigned(source_msg.image.cols) || m_roi.width == 0)
+          m_roi.width = std::clamp(int(source_msg.image.cols- m_roi.x_offset), 0, source_msg.image.cols);
         
         cv::Rect roi(m_roi.x_offset, m_roi.y_offset, m_roi.width, m_roi.height);
         source_msg.image = source_msg.image(roi);
@@ -125,7 +125,10 @@ namespace uav_detect
         cv::Mat detect_im = source_msg.image.clone();
         cv::Mat raw_im = source_msg.image;
         cv::Mat known_pixels;
-        cv::compare(raw_im, m_unknown_pixel_value, known_pixels, cv::CMP_NE);
+        if (m_unknown_pixel_value != std::numeric_limits<uint16_t>::max() || m_drmgr_ptr->config.blur_empty_areas)
+        {
+          cv::compare(raw_im, m_unknown_pixel_value, known_pixels, cv::CMP_NE);
+        }
 
         if (m_drmgr_ptr->config.blur_empty_areas)
         {

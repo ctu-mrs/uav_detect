@@ -3,7 +3,12 @@
 # operations are executed (except for deprecated parameters).
 
 # image preprocessing
-unknown_pixel_value: 65535
+roi/x_offset: 560
+roi/y_offset: 80
+roi/width: 0
+roi/height: 540
+
+unknown_pixel_value: 0
 structuring_element_a: 3
 structuring_element_b: 5
 dilate_iterations: 0
