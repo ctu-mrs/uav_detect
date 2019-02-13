@@ -7,8 +7,8 @@
   <arg     if="$(arg debug)" name="launch_prefix" value="gdb -ex run --args"/>
 
   <arg name="simulation" default="$(optenv SIMULATION false)" />
-  <arg unless="$(arg simulation)" name="config_file" value="$(find uav_detect)/config/detection_params_F550.yaml"/>
-  <arg     if="$(arg simulation)" name="config_file" value="$(find uav_detect)/config/sim_detection_params_F550.yaml"/>
+  <arg unless="$(arg simulation)" name="config_file" value="$(find uav_detect)/config/detection_params_realsense.yaml"/>
+  <arg     if="$(arg simulation)" name="config_file" value="$(find uav_detect)/config/detection_params_sim.yaml"/>
   <arg unless="$(arg simulation)" name="depthmap_topic" value="/$(arg uav_name)/rs_d435/aligned_depth_to_color/image_raw"/>
   <arg     if="$(arg simulation)" name="depthmap_topic" value="/$(arg uav_name)/realsense/camera/depth/image_raw"/>
 
