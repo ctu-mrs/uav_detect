@@ -196,11 +196,7 @@ namespace uav_detect
             det.id = m_last_detection_id++;
             blob.id = det.id;
             det.class_id = -1;
-          
-            det.roi.x_offset = 0;
-            det.roi.y_offset = 0;
-            det.roi.width = detect_im.cols;
-            det.roi.height = detect_im.rows;
+            det.roi = m_roi;
           
             cv::Rect brect = cv::boundingRect(blob.contours.at(blob.contours.size()/2));
             det.x = (brect.x + brect.width/2.0)/double(detect_im.cols);
