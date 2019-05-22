@@ -108,7 +108,7 @@ namespace uav_detect
       {
         ros::Time start_t = ros::Time::now();
 
-        cv_bridge::CvImage source_msg = *cv_bridge::toCvCopy(m_depthmap_sh->get_data(), string("16UC1"));
+        cv_bridge::CvImage source_msg = *cv_bridge::toCvCopy(m_depthmap_sh->get_data(), std::string("16UC1"));
 
         /* Apply ROI //{ */
         if (m_roi.y_offset + m_roi.height > unsigned(source_msg.image.rows) || m_roi.height == 0)
@@ -132,12 +132,12 @@ namespace uav_detect
 
         if (m_drmgr_ptr->config.blur_empty_areas)
         {
-          cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(5, 3), Point(-1, -1));
+          cv::Mat element = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 3), cv::Point(-1, -1));
           cv::Mat mask, tmp;
           mask = ~known_pixels;
-          cv::dilate(detect_im, tmp, element, Point(-1, -1), 3);
-          /* cv::GaussianBlur(tmp, tmp, Size(19, 75), 40); */
-          cv::blur(detect_im, tmp, Size(115, 215));
+          cv::dilate(detect_im, tmp, element, cv::Point(-1, -1), 3);
+          /* cv::GaussianBlur(tmp, tmp, cv::Size(19, 75), 40); */
+          cv::blur(detect_im, tmp, cv::Size(115, 215));
           tmp.copyTo(detect_im, mask);
         }
 
@@ -145,9 +145,9 @@ namespace uav_detect
         {
           const int elem_a = m_drmgr_ptr->config.structuring_element_a;
           const int elem_b = m_drmgr_ptr->config.structuring_element_b;
-          cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(elem_a, elem_b), Point(-1, -1));
-          cv::dilate(detect_im, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.dilate_iterations);
-          cv::erode(detect_im, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.erode_iterations);
+          cv::Mat element = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(elem_a, elem_b), cv::Point(-1, -1));
+          cv::dilate(detect_im, detect_im, element, cv::Point(-1, -1), m_drmgr_ptr->config.dilate_iterations);
+          cv::erode(detect_im, detect_im, element, cv::Point(-1, -1), m_drmgr_ptr->config.erode_iterations);
 
           // erode without using zero (unknown) pixels
           if (m_drmgr_ptr->config.erode_ignore_empty_iterations > 0)
@@ -158,7 +158,7 @@ namespace uav_detect
               unknown_as_max = cv::Mat(raw_im.size(), CV_16UC1, std::numeric_limits<uint16_t>::max());
               detect_im.copyTo(unknown_as_max, known_pixels);
             }
-            cv::erode(unknown_as_max, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.erode_ignore_empty_iterations);
+            cv::erode(unknown_as_max, detect_im, element, cv::Point(-1, -1), m_drmgr_ptr->config.erode_ignore_empty_iterations);
           }
         }
 

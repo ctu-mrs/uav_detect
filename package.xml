@@ -52,7 +52,12 @@
   <build_depend>tf2_geometry_msgs</build_depend>
   <build_depend>mrs_lib</build_depend>
   <build_depend>nodelet</build_depend>
+  <build_depend>pcl_ros</build_depend>
+  <build_depend>pcl_conversions</build_depend>
+  <build_depend>pcl_msgs</build_depend>
   
+  <run_depend>pcl_conversions</run_depend>
+  <run_depend>pcl_ros</run_depend>
   <run_depend>message_generation</run_depend>
   <run_depend>message_runtime</run_depend>
   <run_depend>roscpp</run_depend>
@@ -75,7 +80,8 @@
     <!-- <metapackage/> -->
 
     <!-- Other tools can request additional information be placed here -->
-    <nodelet plugin="${prefix}/depth_detector_nodelet.xml" />
+    <nodelet plugin="${prefix}/pcl_detector_nodelet.xml" />
+    <nodelet plugin="${prefix}/depth_preprocessor_nodelet.xml" />
 
     generate_messages_cpp
   </export>

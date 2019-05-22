@@ -1,0 +1,6 @@
+<library path="lib/libDepthmapPreprocessor">
+  <class name="uav_detect/DepthmapPreprocessor" type="uav_detect::DepthmapPreprocessor" base_class_type="nodelet::Nodelet">
+    <description>Nodelet for preprocessing a depthmap</description>
+  </class>
+</library>
+

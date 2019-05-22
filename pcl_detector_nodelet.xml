@@ -1,0 +1,6 @@
+<library path="lib/libPCLDetector">
+  <class name="uav_detect/PCLDetector" type="uav_detect::PCLDetector" base_class_type="nodelet::Nodelet">
+    <description>Nodelet for detecting a flying object in a pointcloud</description>
+  </class>
+</library>
+
