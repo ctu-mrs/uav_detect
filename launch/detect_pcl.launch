@@ -9,8 +9,8 @@
   <arg name="simulation" default="$(optenv SIMULATION false)" />
   <arg unless="$(arg simulation)" name="config_file" value="$(find uav_detect)/config/detection_params_nerian.yaml"/>
   <arg     if="$(arg simulation)" name="config_file" value="$(find uav_detect)/config/detection_params_sim.yaml"/>
-  <arg unless="$(arg simulation)" name="cinfo_topic" value="/smoke/rs_d435/aligned_depth_to_color/camera_info"/>
-  <arg unless="$(arg simulation)" name="depthmap_topic" value="/smoke/rs_d435/aligned_depth_to_color/image_raw"/>
+  <arg unless="$(arg simulation)" name="cinfo_topic" value="/uav/rs_d435/aligned_depth_to_color/camera_info"/>
+  <arg unless="$(arg simulation)" name="depthmap_topic" value="/uav/rs_d435/aligned_depth_to_color/image_raw"/>
   <!-- <arg unless="$(arg simulation)" name="pcl_topic" value="/smoke/velodyne_point_cloud"/> -->
   <arg unless="$(arg simulation)" name="pcl_topic" value="/$(arg uav_name)/points"/>
   <arg     if="$(arg simulation)" name="pcl_topic" value="/$(arg uav_name)/realsense/camera/depth/image_raw"/>

@@ -111,18 +111,16 @@ namespace uav_detect
         vg.filter(*cloud_filtered);
         m_cloud_global = cloud_filtered;
 
-        /* pcl::PointIndices::Ptr valid_idx = boost::make_shared<pcl::PointIndices>(); */
-        /* const auto& vecpts = cloud->points; */
-        /* for (unsigned it = 0; it < vecpts.size(); it++) */
-        /* { */
-        /*   const auto& pt = vecpts[it]; */
-        /*   if (std::isinf(pt.x) || std::isnan(pt.x) */
-        /*    || std::isinf(pt.y) || std::isnan(pt.y) */
-        /*    || std::isinf(pt.z) || std::isnan(pt.z)) */
-        /*     continue; */
-        /*   else */
-        /*     valid_idx->indices.push_back(it); */
-        /* } */
+        pcl::PointIndices::Ptr valid_idx = boost::make_shared<pcl::PointIndices>();
+        const auto& vecpts = cloud_filtered->points;
+        for (unsigned it = 0; it < vecpts.size(); it++)
+        {
+          const auto& pt = vecpts[it];
+          if (distsq_from_origin(pt) > 15.0f*15.0f)
+            continue;
+          else
+            valid_idx->indices.push_back(it);
+        }
         /* ROS_INFO_STREAM("[PCLDetector]: Pointcloud after removing invalids has " << valid_idx->indices.size() << " points"); */
 
         // Creating the KdTree object for the search method of the extraction
@@ -131,13 +129,13 @@ namespace uav_detect
 
         std::vector<pcl::PointIndices> cluster_indices;
         pcl::ConditionalEuclideanClustering<pcl::PointXYZ> ec;
-        ec.setClusterTolerance(2.5); // 50cm
+        ec.setClusterTolerance(2.5);  // metres
         ec.setConditionFunction(&scaled_dist_thresholding);
         ec.setMinClusterSize(10);
-        ec.setMaxClusterSize(n_pts);
+        ec.setMaxClusterSize(500);
         /* ec.setSearchMethod(kdtree); */
         ec.setInputCloud(cloud_filtered);
-        /* ec.setIndices(valid_idx); */
+        ec.setIndices(valid_idx);
         ec.segment(cluster_indices);
 
         pcl::PointCloud<pcl::PointXYZL> cloud_labeled;
