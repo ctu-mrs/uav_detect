@@ -12,7 +12,7 @@
   <arg unless="$(arg simulation)" name="cinfo_topic" value="/uav/rs_d435/aligned_depth_to_color/camera_info"/>
   <arg unless="$(arg simulation)" name="depthmap_topic" value="/uav/rs_d435/aligned_depth_to_color/image_raw"/>
   <!-- <arg unless="$(arg simulation)" name="pcl_topic" value="/smoke/velodyne_point_cloud"/> -->
-  <arg unless="$(arg simulation)" name="pcl_topic" value="/$(arg uav_name)/points"/>
+  <arg unless="$(arg simulation)" name="pcl_topic" value="/$(arg uav_name)/velodyne/scan"/>
   <arg     if="$(arg simulation)" name="pcl_topic" value="/$(arg uav_name)/realsense/camera/depth/image_raw"/>
 
   <arg name="ignore_mask" default="$(optenv IGNORE_MASK false)" />
