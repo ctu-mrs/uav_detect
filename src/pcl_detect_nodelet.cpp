@@ -59,6 +59,8 @@ namespace uav_detect
       m_node_name = "PCLDetector";
 
       /* Create publishers and subscribers //{ */
+      // Initialize transform listener
+      m_tf_listener_ptr = std::make_unique<tf2_ros::TransformListener>(m_tf_buffer);
       // Initialize subscribers
       mrs_lib::SubscribeMgr smgr(nh, m_node_name);
       const bool subs_time_consistent = false;
@@ -77,8 +79,6 @@ namespace uav_detect
       m_avg_delay = 0.0f;
 
       /* m_detector = dbd::PCLBlobDetector(m_drmgr_ptr->config, m_unknown_pixel_value); */
-
-      //}
 
       m_main_loop_timer = nh.createTimer(ros::Rate(1000), &PCLDetector::main_loop, this);
       /* m_info_loop_timer = nh.createTimer(ros::Rate(1), &PCLDetector::info_loop, this); */
@@ -99,33 +99,53 @@ namespace uav_detect
       {
         ros::Time start_t = ros::Time::now();
 
-        const PC::ConstPtr cloud = m_pcl_sh->get_data();
-        const auto n_pts = cloud->size();
-        ROS_INFO_STREAM("[PCLDetector]: Processing pointcloud with " << n_pts << " points");
+        PC::ConstPtr cloud = m_pcl_sh->get_data();
+        ROS_INFO_STREAM("[PCLDetector]: Input PC has " << cloud->size() << " points");
 
-        *m_cloud_global = *cloud;
-        pcl::VoxelGrid<pcl::PointXYZ> vg;
-        PC::Ptr cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-        vg.setInputCloud(m_cloud_global);
-        vg.setLeafSize(0.25f, 0.25f, 0.25f);
-        vg.filter(*cloud_filtered);
-        m_cloud_global = cloud_filtered;
-
-        pcl::PointIndices::Ptr valid_idx = boost::make_shared<pcl::PointIndices>();
-        const auto& vecpts = cloud_filtered->points;
-        for (unsigned it = 0; it < vecpts.size(); it++)
+        /* filter input cloud and transform it to world //{ */
+        
         {
-          const auto& pt = vecpts[it];
-          if (distsq_from_origin(pt) > 15.0f*15.0f)
-            continue;
-          else
-            valid_idx->indices.push_back(it);
+          pcl::VoxelGrid<pcl::PointXYZ> vg;
+          PC::Ptr cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+          vg.setLeafSize(0.25f, 0.25f, 0.25f);
+          vg.setInputCloud(cloud);
+          vg.filter(*cloud_filtered);
+          cloud = cloud_filtered;
+          ROS_INFO_STREAM("[PCLDetector]: Filtered input PC has " << cloud->size() << " points");
         }
+        
+        //}
+
+        /* add filtered input cloud to global cloud and filter it //{ */
+        
+        {
+          *m_cloud_global += *cloud;
+          pcl::VoxelGrid<pcl::PointXYZ> vg;
+          PC::Ptr cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+          vg.setLeafSize(0.25f, 0.25f, 0.25f);
+          vg.setInputCloud(m_cloud_global);
+          vg.filter(*cloud_filtered);
+          m_cloud_global = cloud_filtered;
+          ROS_INFO_STREAM("[PCLDetector]: Global pointcloud has " << m_cloud_global->size() << " points");
+        }
+        
+        //}
+
+        /* pcl::PointIndices::Ptr valid_idx = boost::make_shared<pcl::PointIndices>(); */
+        /* const auto& vecpts = m_cloud_global->points; */
+        /* for (unsigned it = 0; it < vecpts.size(); it++) */
+        /* { */
+        /*   const auto& pt = vecpts[it]; */
+        /*   if (distsq_from_origin(pt) > 15.0f*15.0f) */
+        /*     continue; */
+        /*   else */
+        /*     valid_idx->indices.push_back(it); */
+        /* } */
         /* ROS_INFO_STREAM("[PCLDetector]: Pointcloud after removing invalids has " << valid_idx->indices.size() << " points"); */
 
         // Creating the KdTree object for the search method of the extraction
         /* pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree = boost::make_shared<pcl::search::KdTree<pcl::PointXYZ>>(); */
-        /* kdtree->setInputCloud(cloud_filtered); */
+        /* kdtree->setInputCloud(m_cloud_global); */
 
         std::vector<pcl::PointIndices> cluster_indices;
         pcl::ConditionalEuclideanClustering<pcl::PointXYZ> ec;
@@ -134,12 +154,12 @@ namespace uav_detect
         ec.setMinClusterSize(10);
         ec.setMaxClusterSize(500);
         /* ec.setSearchMethod(kdtree); */
-        ec.setInputCloud(cloud_filtered);
-        ec.setIndices(valid_idx);
+        ec.setInputCloud(m_cloud_global);
+        /* ec.setIndices(valid_idx); */
         ec.segment(cluster_indices);
 
         pcl::PointCloud<pcl::PointXYZL> cloud_labeled;
-        cloud_labeled.reserve(n_pts);
+        cloud_labeled.reserve(m_cloud_global->size());
         /* cloud_labeled.width = n_pts; */
         /* cloud_labeled.height = 1; */
         /* cloud_labeled.is_dense = true; */
@@ -149,7 +169,7 @@ namespace uav_detect
           pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
           for (std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit)
           {
-            const auto& pt = cloud_filtered->points[*pit];
+            const auto& pt = m_cloud_global->points[*pit];
             pcl::PointXYZL ptl;
             ptl.x = pt.x;
             ptl.y = pt.y;
@@ -197,12 +217,39 @@ namespace uav_detect
 
   private:
 
+    /* get_transform_to_world() method //{ */
+    bool get_transform_to_world(const string& frame_id, ros::Time stamp, Eigen::Affine3d& tf_out) const
+    {
+      try
+      {
+        const ros::Duration timeout(1.0 / 100.0);
+        geometry_msgs::TransformStamped transform;
+        // Obtain transform from snesor into world frame
+        transform = m_tf_buffer.lookupTransform(m_world_frame, frame_id, stamp, timeout);
+
+        // Obtain transform from camera frame into world
+        tf_out = tf2::transformToEigen(transform.transform);
+      }
+      catch (tf2::TransformException& ex)
+      {
+        NODELET_WARN_THROTTLE(1.0, "[%s]: Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", m_node_name.c_str(), frame_id.c_str(),
+                          m_world_frame.c_str(), ex.what());
+        return false;
+      }
+      return true;
+    }
+    //}
+
+  private:
+
     // --------------------------------------------------------------
     // |                ROS-related member variables                |
     // --------------------------------------------------------------
 
     /* ROS related variables (subscribers, timers etc.) //{ */
     std::unique_ptr<drmgr_t> m_drmgr_ptr;
+    tf2_ros::Buffer m_tf_buffer;
+    std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
     mrs_lib::SubscribeHandlerPtr<PC::ConstPtr> m_pcl_sh;
     ros::Publisher m_detections_pub;
     /* ros::Publisher m_detected_blobs_pub; */
