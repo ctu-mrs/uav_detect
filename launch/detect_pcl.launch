@@ -9,11 +9,11 @@
   <arg name="simulation" default="$(optenv SIMULATION false)" />
   <arg unless="$(arg simulation)" name="config_file" value="$(find uav_detect)/config/detection_params_nerian.yaml"/>
   <arg     if="$(arg simulation)" name="config_file" value="$(find uav_detect)/config/detection_params_sim.yaml"/>
-  <arg unless="$(arg simulation)" name="cinfo_topic" value="/uav/rs_d435/aligned_depth_to_color/camera_info"/>
-  <arg unless="$(arg simulation)" name="depthmap_topic" value="/uav/rs_d435/aligned_depth_to_color/image_raw"/>
+  <arg unless="$(arg simulation)" name="cinfo_topic" value="/$(arg uav_name)/rs_d435/aligned_depth_to_color/camera_info"/>
+  <arg     if="$(arg simulation)" name="cinfo_topic" value="/$(arg uav_name)/rs_d435/aligned_depth_to_color/camera_info"/>
   <!-- <arg unless="$(arg simulation)" name="pcl_topic" value="/smoke/velodyne_point_cloud"/> -->
   <arg unless="$(arg simulation)" name="pcl_topic" value="/$(arg uav_name)/velodyne/scan"/>
-  <arg     if="$(arg simulation)" name="pcl_topic" value="/$(arg uav_name)/realsense/camera/depth/image_raw"/>
+  <arg     if="$(arg simulation)" name="pcl_topic" value="/$(arg uav_name)/velodyne/scan"/>
 
   <arg name="ignore_mask" default="$(optenv IGNORE_MASK false)" />
   <arg unless="$(arg ignore_mask)" name="mask_filename" value="$(find uav_detect)/masks/nerian_eagleone_mask.bmp"/>
@@ -27,12 +27,12 @@
 
   <group ns="$(arg uav_name)">
     
-    <node pkg="nodelet" type="nodelet" name="depthmap_preproc" args="standalone uav_detect/DepthmapPreprocessor" output="screen">
-      <remap from="~camera_info" to="$(arg cinfo_topic)" />
-      <remap from="~depthmap" to="$(arg depthmap_topic)" />
-      <remap from="~processed_depthmap" to="processed_depthmap" />
-      <!-- <remap from="~points" to="$(arg pcl_topic)" /> -->
-    </node>
+    <!-- <node pkg="nodelet" type="nodelet" name="depthmap_preproc" args="standalone uav_detect/DepthmapPreprocessor" output="screen"> -->
+    <!--   <remap from="~camera_info" to="$(arg cinfo_topic)" /> -->
+    <!--   <remap from="~depthmap" to="$(arg depthmap_topic)" /> -->
+    <!--   <remap from="~processed_depthmap" to="processed_depthmap" /> -->
+    <!--   <remap from="~points" to="$(arg pcl_topic)" /> -->
+    <!-- </node> -->
     
     <node pkg="nodelet" type="nodelet" name="point_cloud_xyz" args="standalone depth_image_proc/point_cloud_xyz" output="screen">
       <remap from="camera_info" to="$(arg cinfo_topic)" />

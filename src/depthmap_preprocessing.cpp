@@ -70,20 +70,9 @@ namespace uav_detect
       cv::Mat detect_im = source_msg.image.clone();
       cv::Mat raw_im = source_msg.image;
       cv::Mat known_pixels;
-      if (m_unknown_pixel_value != std::numeric_limits<uint16_t>::max() || m_drmgr_ptr->config.blur_empty_areas)
+      if (m_unknown_pixel_value != std::numeric_limits<uint16_t>::max())
       {
         cv::compare(raw_im, m_unknown_pixel_value, known_pixels, cv::CMP_NE);
-      }
-
-      if (m_drmgr_ptr->config.blur_empty_areas)
-      {
-        cv::Mat element = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 3), cv::Point(-1, -1));
-        cv::Mat mask, tmp;
-        mask = ~known_pixels;
-        cv::dilate(detect_im, tmp, element, cv::Point(-1, -1), 3);
-        /* cv::GaussianBlur(tmp, tmp, cv::Size(19, 75), 40); */
-        cv::blur(detect_im, tmp, cv::Size(115, 215));
-        tmp.copyTo(detect_im, mask);
       }
 
       // dilate and erode the image if requested

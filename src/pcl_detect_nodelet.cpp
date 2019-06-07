@@ -15,7 +15,11 @@
 #include <pcl_ros/point_cloud.h>
 #include <pcl_ros/transforms.h>
 #include <pcl_conversions/pcl_conversions.h>
+
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/crop_box.h>
+
+#include <pcl/surface/poisson.h>
 
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/RegionOfInterest.h>
@@ -58,6 +62,25 @@ namespace uav_detect
 
       m_node_name = "PCLDetector";
 
+      /* Load parameters from ROS //{*/
+      NODELET_INFO("Loading default dynamic parameters:");
+      m_drmgr_ptr = make_unique<drmgr_t>(nh, m_node_name);
+
+      mrs_lib::ParamLoader pl(nh, m_node_name);
+      // LOAD STATIC PARAMETERS
+      NODELET_INFO("Loading static parameters:");
+      pl.load_param("world_frame", m_world_frame);
+      pl.load_param("active_box_size", m_drmgr_ptr->config.active_box_size);
+
+      // LOAD DYNAMIC PARAMETERS
+      // CHECK LOADING STATUS
+      if (!pl.loaded_successfully())
+      {
+        NODELET_ERROR("Some compulsory parameters were not loaded successfully, ending the node");
+        ros::shutdown();
+      }
+      //}
+
       /* Create publishers and subscribers //{ */
       // Initialize transform listener
       m_tf_listener_ptr = std::make_unique<tf2_ros::TransformListener>(m_tf_buffer);
@@ -97,21 +120,51 @@ namespace uav_detect
     {
       if (m_pcl_sh->new_data())
       {
-        ros::Time start_t = ros::Time::now();
+        /* ros::Time start_t = ros::Time::now(); */
+
+        NODELET_INFO_STREAM("[PCLDetector]: Processing new data --------------------------------------------------------- ");
 
         PC::ConstPtr cloud = m_pcl_sh->get_data();
-        ROS_INFO_STREAM("[PCLDetector]: Input PC has " << cloud->size() << " points");
+        ros::Time msg_stamp;
+        pcl_conversions::fromPCL(cloud->header.stamp, msg_stamp);
+        NODELET_INFO_STREAM("[PCLDetector]: Input PC has " << cloud->size() << " points");
 
         /* filter input cloud and transform it to world //{ */
         
+        Eigen::Vector3d tf_trans;
         {
+          /* filter by voxel grid //{ */
           pcl::VoxelGrid<pcl::PointXYZ> vg;
           PC::Ptr cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
           vg.setLeafSize(0.25f, 0.25f, 0.25f);
           vg.setInputCloud(cloud);
           vg.filter(*cloud_filtered);
+          //}
+
+          /* filter by cropping points outside a box, relative to the sensor //{ */
+          const auto box_size = m_drmgr_ptr->config.active_box_size;
+          const Eigen::Vector4f box_point1(box_size/2, box_size/2, box_size/2, 1);
+          const Eigen::Vector4f box_point2(-box_size/2, -box_size/2, -box_size/2, 1);
+          pcl::CropBox<pcl::PointXYZ> cb;
+          cb.setMax(box_point1);
+          cb.setMin(box_point2);
+          cb.setInputCloud(cloud_filtered);
+          cb.filter(*cloud_filtered);
+          //}
+
+          Eigen::Affine3d s2w_tf;
+          bool tf_ok = get_transform_to_world(cloud->header.frame_id, msg_stamp, s2w_tf);
+          if (!tf_ok)
+          {
+            NODELET_ERROR("[PCLDetector]: Could not transform pointcloud to global, skipping.");
+            return;
+          }
+          tf_trans = s2w_tf.translation();
+          pcl::transformPointCloud(*cloud_filtered, *cloud_filtered, s2w_tf.cast<float>());
+          /* tf2::doTransform(cloud, cloud, s2w_tf); */
+
           cloud = cloud_filtered;
-          ROS_INFO_STREAM("[PCLDetector]: Filtered input PC has " << cloud->size() << " points");
+          NODELET_INFO_STREAM("[PCLDetector]: Filtered input PC has " << cloud->size() << " points");
         }
         
         //}
@@ -119,14 +172,29 @@ namespace uav_detect
         /* add filtered input cloud to global cloud and filter it //{ */
         
         {
+          /* filter by mutual point distance (voxel grid) //{ */
           *m_cloud_global += *cloud;
           pcl::VoxelGrid<pcl::PointXYZ> vg;
           PC::Ptr cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
           vg.setLeafSize(0.25f, 0.25f, 0.25f);
           vg.setInputCloud(m_cloud_global);
           vg.filter(*cloud_filtered);
+          //}
+
+          /* filter by cropping points outside a box, relative to the sensor //{ */
+          const auto box_size = m_drmgr_ptr->config.active_box_size;
+          const Eigen::Vector4f sensor_origin(tf_trans.x(), tf_trans.y(), tf_trans.z(), 1.0f);
+          const Eigen::Vector4f box_point1 = sensor_origin - Eigen::Vector4f(box_size/2, box_size/2, box_size/2, 0);
+          const Eigen::Vector4f box_point2 = sensor_origin + Eigen::Vector4f(box_size/2, box_size/2, box_size/2, 0);
+          pcl::CropBox<pcl::PointXYZ> cb;
+          cb.setMin(box_point1);
+          cb.setMax(box_point2);
+          cb.setInputCloud(cloud_filtered);
+          cb.filter(*cloud_filtered);
+          //}
+
           m_cloud_global = cloud_filtered;
-          ROS_INFO_STREAM("[PCLDetector]: Global pointcloud has " << m_cloud_global->size() << " points");
+          NODELET_INFO_STREAM("[PCLDetector]: Global pointcloud has " << m_cloud_global->size() << " points");
         }
         
         //}
@@ -136,55 +204,56 @@ namespace uav_detect
         /* for (unsigned it = 0; it < vecpts.size(); it++) */
         /* { */
         /*   const auto& pt = vecpts[it]; */
-        /*   if (distsq_from_origin(pt) > 15.0f*15.0f) */
+        /*   if (distsq_from_origin(pt) > 20.0f*20.0f) */
         /*     continue; */
         /*   else */
         /*     valid_idx->indices.push_back(it); */
         /* } */
-        /* ROS_INFO_STREAM("[PCLDetector]: Pointcloud after removing invalids has " << valid_idx->indices.size() << " points"); */
+        /* NODELET_INFO_STREAM("[PCLDetector]: Pointcloud after removing far points has " << valid_idx->indices.size() << " points"); */
 
         // Creating the KdTree object for the search method of the extraction
         /* pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree = boost::make_shared<pcl::search::KdTree<pcl::PointXYZ>>(); */
         /* kdtree->setInputCloud(m_cloud_global); */
 
-        std::vector<pcl::PointIndices> cluster_indices;
-        pcl::ConditionalEuclideanClustering<pcl::PointXYZ> ec;
-        ec.setClusterTolerance(2.5);  // metres
-        ec.setConditionFunction(&scaled_dist_thresholding);
-        ec.setMinClusterSize(10);
-        ec.setMaxClusterSize(500);
-        /* ec.setSearchMethod(kdtree); */
-        ec.setInputCloud(m_cloud_global);
-        /* ec.setIndices(valid_idx); */
-        ec.segment(cluster_indices);
+        /* std::vector<pcl::PointIndices> cluster_indices; */
+        /* pcl::ConditionalEuclideanClustering<pcl::PointXYZ> ec; */
+        /* ec.setClusterTolerance(2.5);  // metres */
+        /* ec.setConditionFunction(&scaled_dist_thresholding); */
+        /* ec.setMinClusterSize(10); */
+        /* ec.setMaxClusterSize(500); */
+        /* /1* ec.setSearchMethod(kdtree); *1/ */
+        /* ec.setInputCloud(m_cloud_global); */
+        /* /1* ec.setIndices(valid_idx); *1/ */
+        /* ec.segment(cluster_indices); */
 
-        pcl::PointCloud<pcl::PointXYZL> cloud_labeled;
-        cloud_labeled.reserve(m_cloud_global->size());
-        /* cloud_labeled.width = n_pts; */
-        /* cloud_labeled.height = 1; */
-        /* cloud_labeled.is_dense = true; */
-        int label = 0;
-        for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
-        {
-          pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
-          for (std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit)
-          {
-            const auto& pt = m_cloud_global->points[*pit];
-            pcl::PointXYZL ptl;
-            ptl.x = pt.x;
-            ptl.y = pt.y;
-            ptl.z = pt.z;
-            ptl.label = label;
-            cloud_labeled.points.push_back(ptl);
-          }
-          label++;
-        }
-        ROS_INFO_STREAM("[PCLDetector]: Extracted " << label << " clusters");
-        ROS_INFO_STREAM("[PCLDetector]: Processed pointcloud has " << cloud_labeled.size() << " points");
+        /* pcl::PointCloud<pcl::PointXYZL> cloud_labeled; */
+        /* cloud_labeled.reserve(m_cloud_global->size()); */
+        /* /1* cloud_labeled.width = n_pts; *1/ */
+        /* /1* cloud_labeled.height = 1; *1/ */
+        /* /1* cloud_labeled.is_dense = true; *1/ */
+        /* int label = 0; */
+        /* for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it) */
+        /* { */
+        /*   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(); */
+        /*   for (std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit) */
+        /*   { */
+        /*     const auto& pt = m_cloud_global->points[*pit]; */
+        /*     pcl::PointXYZL ptl; */
+        /*     ptl.x = pt.x; */
+        /*     ptl.y = pt.y; */
+        /*     ptl.z = pt.z; */
+        /*     ptl.label = label; */
+        /*     cloud_labeled.points.push_back(ptl); */
+        /*   } */
+        /*   label++; */
+        /* } */
+        /* NODELET_INFO_STREAM("[PCLDetector]: Extracted " << label << " clusters"); */
+        /* NODELET_INFO_STREAM("[PCLDetector]: Processed pointcloud has " << cloud_labeled.size() << " points"); */
 
         sensor_msgs::PointCloud2 dbg_cloud;
-        pcl::toROSMsg(cloud_labeled, dbg_cloud);
-        dbg_cloud.header = pcl_conversions::fromPCL(cloud->header);
+        pcl::toROSMsg(*m_cloud_global, dbg_cloud);
+        dbg_cloud.header.frame_id = m_world_frame;
+        dbg_cloud.header.stamp = msg_stamp;
         m_processed_pcl_pub.publish(dbg_cloud);
         /* /1* Update statistics for info_loop //{ *1/ */
         /* { */
@@ -198,6 +267,8 @@ namespace uav_detect
         /*   m_det_blobs += blobs.size(); */
         /* } */
         /* //} */
+
+        NODELET_INFO_STREAM("[PCLDetector]: Done processing data --------------------------------------------------------- ");
       }
     }
     //}
@@ -209,7 +280,7 @@ namespace uav_detect
     /*   std::lock_guard<std::mutex> lck(m_stat_mtx); */
     /*   const float blobs_per_image = m_det_blobs/float(m_images_processed); */
     /*   const float input_fps = m_images_processed/dt; */
-    /*   ROS_INFO_STREAM("[" << m_node_name << "]: det. blobs/image: " << blobs_per_image << " | inp. FPS: " << round(input_fps) << " | proc. FPS: " << round(m_avg_fps) << " | delay: " << round(1000.0f*m_avg_delay) << "ms"); */
+    /*   NODELET_INFO_STREAM("[" << m_node_name << "]: det. blobs/image: " << blobs_per_image << " | inp. FPS: " << round(input_fps) << " | proc. FPS: " << round(m_avg_fps) << " | delay: " << round(1000.0f*m_avg_delay) << "ms"); */
     /*   m_det_blobs = 0; */
     /*   m_images_processed = 0; */
     /* } */
@@ -223,11 +294,9 @@ namespace uav_detect
       try
       {
         const ros::Duration timeout(1.0 / 100.0);
+        // Obtain transform from sensor into world frame
         geometry_msgs::TransformStamped transform;
-        // Obtain transform from snesor into world frame
         transform = m_tf_buffer.lookupTransform(m_world_frame, frame_id, stamp, timeout);
-
-        // Obtain transform from camera frame into world
         tf_out = tf2::transformToEigen(transform.transform);
       }
       catch (tf2::TransformException& ex)
@@ -258,6 +327,14 @@ namespace uav_detect
     ros::Timer m_info_loop_timer;
     std::string m_node_name;
     //}
+
+  private:
+
+    // --------------------------------------------------------------
+    // |                 Parameters, loaded from ROS                |
+    // --------------------------------------------------------------
+
+    std::string m_world_frame;
 
   private:
 
