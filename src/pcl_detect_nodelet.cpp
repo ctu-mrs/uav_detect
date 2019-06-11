@@ -138,7 +138,7 @@ namespace uav_detect
         pcl_conversions::fromPCL(cloud->header.stamp, msg_stamp);
         NODELET_INFO_STREAM("[PCLDetector]: Input PC has " << cloud->size() << " points");
 
-        /* filter input cloud and transform it to world //{ */
+        /* filter input cloud and transform it to world, calculate its normals //{ */
         
         pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals = boost::make_shared<pcl::PointCloud<pcl::PointNormal>>();
         Eigen::Vector3d tf_trans;
@@ -247,10 +247,10 @@ namespace uav_detect
         /* add filtered input cloud to global cloud and filter it //{ */
         
         {
-          /* filter by mutual point distance (voxel grid) //{ */
           *m_cloud_global += *cloud_with_normals;
+
+          /* filter by mutual point distance (voxel grid) //{ */
           pcl::VoxelGrid<pcl::PointNormal> vg;
-          PC::Ptr cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
           vg.setLeafSize(0.25f, 0.25f, 0.25f);
           vg.setInputCloud(m_cloud_global);
           vg.filter(*m_cloud_global);
@@ -273,11 +273,23 @@ namespace uav_detect
         
         //}
 
-        pcl::PointCloud<pcl::PointNormal> mesh_cloud;
-        std::vector<pcl::Vertices> mesh_vertices;
-        pcl::Poisson<pcl::PointNormal> poisson;
-        poisson.setInputCloud(m_cloud_global);
-        poisson.reconstruct(mesh_cloud, mesh_vertices);
+        /* fit a surface to the global cloud and filter the edge points //{ */
+        {
+          pcl::PointCloud<pcl::PointNormal>::Ptr mesh_cloud = boost::make_shared<pcl::PointCloud<pcl::PointNormal>>();
+          std::vector<pcl::Vertices> mesh_vertices;
+          pcl::Poisson<pcl::PointNormal> poisson;
+          poisson.setInputCloud(m_cloud_global);
+          poisson.reconstruct(*mesh_cloud, mesh_vertices);
+          m_cloud_global = mesh_cloud;
+          
+          /* filter by mutual point distance (voxel grid) //{ */
+          pcl::VoxelGrid<pcl::PointNormal> vg;
+          vg.setLeafSize(0.25f, 0.25f, 0.25f);
+          vg.setInputCloud(m_cloud_global);
+          vg.filter(*m_cloud_global);
+          //}
+        }
+        //}
 
         /* unused //{ */
         
@@ -335,7 +347,7 @@ namespace uav_detect
         //}
 
         sensor_msgs::PointCloud2 dbg_cloud;
-        pcl::toROSMsg(mesh_cloud, dbg_cloud);
+        pcl::toROSMsg(*m_cloud_global, dbg_cloud);
         dbg_cloud.header.frame_id = m_world_frame;
         dbg_cloud.header.stamp = msg_stamp;
         m_processed_pcl_pub.publish(dbg_cloud);
