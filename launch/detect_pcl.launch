@@ -11,9 +11,9 @@
   <arg     if="$(arg simulation)" name="config_file" value="$(find uav_detect)/config/detection_params_sim.yaml"/>
   <arg unless="$(arg simulation)" name="cinfo_topic" value="/$(arg uav_name)/rs_d435/aligned_depth_to_color/camera_info"/>
   <arg     if="$(arg simulation)" name="cinfo_topic" value="/$(arg uav_name)/rs_d435/aligned_depth_to_color/camera_info"/>
-  <!-- <arg unless="$(arg simulation)" name="pcl_topic" value="/smoke/velodyne_point_cloud"/> -->
-  <arg unless="$(arg simulation)" name="pcl_topic" value="/$(arg uav_name)/velodyne/scan"/>
-  <arg     if="$(arg simulation)" name="pcl_topic" value="/$(arg uav_name)/velodyne/scan"/>
+  <!-- <arg unless="$(arg simulation)" name="pc_topic" value="/smoke/velodyne_point_cloud"/> -->
+  <arg unless="$(arg simulation)" name="pc_topic" value="/$(arg uav_name)/velodyne/scan"/>
+  <arg     if="$(arg simulation)" name="pc_topic" value="/$(arg uav_name)/velodyne/scan"/>
 
   <arg name="ignore_mask" default="$(optenv IGNORE_MASK false)" />
   <arg unless="$(arg ignore_mask)" name="mask_filename" value="$(find uav_detect)/masks/nerian_eagleone_mask.bmp"/>
@@ -31,13 +31,13 @@
     <!--   <remap from="~camera_info" to="$(arg cinfo_topic)" /> -->
     <!--   <remap from="~depthmap" to="$(arg depthmap_topic)" /> -->
     <!--   <remap from="~processed_depthmap" to="processed_depthmap" /> -->
-    <!--   <remap from="~points" to="$(arg pcl_topic)" /> -->
+    <!--   <remap from="~points" to="$(arg pc_topic)" /> -->
     <!-- </node> -->
     
     <node pkg="nodelet" type="nodelet" name="point_cloud_xyz" args="standalone depth_image_proc/point_cloud_xyz" output="screen">
       <remap from="camera_info" to="$(arg cinfo_topic)" />
       <remap from="image_rect" to="processed_depthmap" />
-      <!-- <remap from="~points" to="$(arg pcl_topic)" /> -->
+      <!-- <remap from="~points" to="$(arg pc_topic)" /> -->
     </node>
 
     <node pkg="nodelet" type="nodelet" name="uav_detection" args="$(arg nodelet_load)" output="screen" launch-prefix="$(arg launch_prefix)">
@@ -46,7 +46,7 @@
       <param name="path_to_mask" value="$(arg mask_filename)" />
       <rosparam file="$(arg config_file)" />
     
-      <remap from="~pcl" to="$(arg pcl_topic)" />
+      <remap from="~pc" to="$(arg pc_topic)" />
       <!-- <remap from="~depthmap" to="/nerian_stereo/disparity_map" /> -->
 
     </node>

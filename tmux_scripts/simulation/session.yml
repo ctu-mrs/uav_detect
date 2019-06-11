@@ -2,6 +2,7 @@ name: simulation
 root: ~/
 
 startup_window: takeoff
+pre_window: export UAV_NAME=uav1; export SIMULATION=true
 # startup_pane: 1
 
 windows:
@@ -9,12 +10,12 @@ windows:
       layout: even-vertical
       panes:
         # - export DISPLAY=:1; roslaunch uav_detect simulation.launch
-        - roslaunch uav_localize simulation.launch
+        - roslaunch uav_localize simulation.launch gui:=false
         # - roslaunch simulation simulation.launch
   - spawn:
       layout: even-vertical
       panes:
-        - waitForSimulation; spawn 1 --run --delete --enable-rangefinder --enable-ground-truth --enable-velodyne
+        - waitForSimulation; spawn 1 --run --delete --enable-rangefinder --enable-ground-truth --enable-velodyne --velodyne-organize-pc
         # - waitForSimulation; spawn 2 --run --delete --enable-rangefinder --enable-ground-truth
   - odometry:
       layout: even-vertical
@@ -53,3 +54,7 @@ windows:
       layout: even-vertical
       panes:
         - 'history -s rosservice call /$UAV_NAME/control_manager/goto \"goal: \[0.0, 10.0, 1.5, 0.0\]\"'
+  - uav_detect:
+      layout: even-vertical
+      panes:
+        - roslaunch uav_detect detect_pcl.launch
