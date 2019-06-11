@@ -19,6 +19,7 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/crop_box.h>
 
+#include <pcl/features/normal_3d_omp.h>
 #include <pcl/features/integral_image_normal.h>
 #include <pcl/surface/poisson.h>
 
@@ -142,28 +143,7 @@ namespace uav_detect
         pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals = boost::make_shared<pcl::PointCloud<pcl::PointNormal>>();
         Eigen::Vector3d tf_trans;
         {
-          pcl::PointCloud<pcl::Normal>::Ptr normals = boost::make_shared<pcl::PointCloud<pcl::Normal>>();
-          {
-            // estimate normals
-            pcl::IntegralImageNormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
-            ne.setNormalEstimationMethod(ne.AVERAGE_3D_GRADIENT);
-            ne.setMaxDepthChangeFactor(0.02f);
-            ne.setNormalSmoothingSize(10.0f);
-            ne.setInputCloud(cloud);
-            ne.compute(*normals);
-          }
-
-          pcl::PointIndices::Ptr idx_filtered = boost::make_shared<pcl::PointIndices>();
-
-          /* filter by voxel grid //{ */
-          {
-            pcl::VoxelGrid<pcl::PointXYZ> vg;
-            vg.setLeafSize(0.25f, 0.25f, 0.25f);
-            vg.setInputCloud(cloud);
-            /* vg.filter(*cloud_filtered); */
-            vg.getRemovedIndices(*idx_filtered);
-          }
-          //}
+          PC::Ptr cloud_filtered = boost::make_shared<PC>();
 
           /* filter by cropping points outside a box, relative to the sensor //{ */
           {
@@ -173,13 +153,13 @@ namespace uav_detect
             pcl::CropBox<pcl::PointXYZ> cb;
             cb.setMax(box_point1);
             cb.setMin(box_point2);
-            cb.setIndices(idx_filtered);
+            /* cb.setIndices(idx_filtered); */
             cb.setInputCloud(cloud);
-            /* cb.filter(*cloud_filtered); */
-            cb.getRemovedIndices(*idx_filtered);
+            cb.filter(*cloud_filtered);
+            /* cb.getRemovedIndices(*idx_filtered); */
           }
           //}
-
+          
           /* filter by cropping points inside a box, relative to the sensor //{ */
           {
             const Eigen::Vector4f box_point1(
@@ -196,12 +176,40 @@ namespace uav_detect
             cb.setMax(box_point1);
             cb.setMin(box_point2);
             cb.setNegative(true);
-            cb.setIndices(idx_filtered);
-            cb.setInputCloud(cloud);
-            /* cb.filter(*cloud_filtered); */
-            cb.getRemovedIndices(*idx_filtered);
+            /* cb.setIndices(idx_filtered); */
+            cb.setInputCloud(cloud_filtered);
+            cb.filter(*cloud_filtered);
+            /* cb.getRemovedIndices(*idx_filtered); */
           }
           //}
+
+          /* filter by voxel grid //{ */
+          {
+            pcl::VoxelGrid<pcl::PointXYZ> vg;
+            vg.setLeafSize(0.25f, 0.25f, 0.25f);
+            vg.setInputCloud(cloud_filtered);
+            vg.filter(*cloud_filtered);
+          }
+          //}
+
+          pcl::PointCloud<pcl::Normal>::Ptr normals = boost::make_shared<pcl::PointCloud<pcl::Normal>>();
+          {
+            pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::Normal> ne;
+            pcl::search::KdTree<pcl::PointXYZ>::Ptr tree = boost::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
+            tree->setInputCloud(cloud_filtered);
+            ne.setNumberOfThreads(4);
+            ne.setViewPoint(0, 0, 0);
+            ne.setInputCloud(cloud_filtered);
+            ne.setSearchMethod(tree);
+            ne.setKSearch(5);
+            ne.compute(*normals);          // estimate normals
+            /* pcl::IntegralImageNormalEstimation<pcl::PointXYZ, pcl::Normal> ne; */
+            /* ne.setNormalEstimationMethod(ne.AVERAGE_3D_GRADIENT); */
+            /* ne.setMaxDepthChangeFactor(0.02f); */
+            /* ne.setNormalSmoothingSize(10.0f); */
+            /* ne.setInputCloud(cloud); */
+            /* ne.compute(*normals); */
+          }
 
           /* cloud_with_normals->reserve(cloud_filtered->size()); */
           /* for (const auto& pt : cloud_filtered->points) */
@@ -224,9 +232,9 @@ namespace uav_detect
             return;
           }
           tf_trans = s2w_tf.translation();
-          pcl::PointCloud<pcl::PointXYZ>::ConstPtr cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(*cloud, idx_filtered->indices);
-          pcl::PointCloud<pcl::Normal>::ConstPtr normals_filtered = boost::make_shared<pcl::PointCloud<pcl::Normal>>(*normals, idx_filtered->indices);
-          pcl::concatenateFields(*cloud, *normals, *cloud_with_normals);
+          /* pcl::PointCloud<pcl::PointXYZ>::ConstPtr cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(*cloud, idx_filtered->indices); */
+          /* pcl::PointCloud<pcl::Normal>::ConstPtr normals_filtered = boost::make_shared<pcl::PointCloud<pcl::Normal>>(*normals, idx_filtered->indices); */
+          pcl::concatenateFields(*cloud_filtered, *normals, *cloud_with_normals);
           pcl::transformPointCloud(*cloud_with_normals, *cloud_with_normals, s2w_tf.cast<float>());
           /* tf2::doTransform(cloud, cloud, s2w_tf); */
 

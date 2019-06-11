@@ -16,5 +16,5 @@ exclude_box:
   size:
     x: 1 # meters
     y: 1 # meters
-    z: 0.6 # meters
+    z: 1 # meters
 
