@@ -80,6 +80,7 @@ namespace uav_detect
       pl.load_param("exclude_box/size/x", m_exclude_box_size_x);
       pl.load_param("exclude_box/size/y", m_exclude_box_size_y);
       pl.load_param("exclude_box/size/z", m_exclude_box_size_z);
+      pl.load_param("keep_pc_organized", m_keep_pc_organized, false);
 
       // LOAD DYNAMIC PARAMETERS
       // CHECK LOADING STATUS
@@ -117,12 +118,14 @@ namespace uav_detect
       /* m_info_loop_timer = nh.createTimer(ros::Rate(1), &PCLDetector::info_loop, this); */
 
       m_cloud_global = boost::make_shared<pcl::PointCloud<pcl::PointNormal>>();
+      m_cloud_global->header.frame_id = m_world_frame;
 
       cout << "----------------------------------------------------------" << std::endl;
 
     }
     //}
 
+  private:
     pcl::PointCloud<pcl::PointNormal>::Ptr m_cloud_global;
 
     /* main_loop() method //{ */
@@ -142,10 +145,10 @@ namespace uav_detect
         /* filter input cloud and transform it to world, calculate its normals //{ */
         
         pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals = boost::make_shared<pcl::PointCloud<pcl::PointNormal>>();
+        PC::Ptr cloud_filtered = boost::make_shared<PC>(*cloud);
         Eigen::Vector3d tf_trans;
         {
-          /* PC::Ptr cloud_filtered = boost::make_shared<PC>(); */
-          pcl::PointIndices::Ptr indices_filtered = boost::make_shared<pcl::PointIndices>();
+          /* pcl::PointIndices::Ptr indices_filtered = boost::make_shared<pcl::PointIndices>(); */
 
           /* filter by cropping points outside a box, relative to the sensor //{ */
           {
@@ -155,15 +158,16 @@ namespace uav_detect
             pcl::CropBox<pcl::PointXYZ> cb;
             cb.setMax(box_point1);
             cb.setMin(box_point2);
-            /* cb.setNegative(false); */
-            /* cb.filter(*cloud_filtered); */
             cb.setInputCloud(cloud);
             cb.setNegative(false);
-            cb.filter(indices_filtered->indices);
+            cb.setKeepOrganized(m_keep_pc_organized);
+            cb.filter(*cloud_filtered);
+            /* cb.setNegative(false); */
+            /* cb.filter(indices_filtered->indices); */
           }
           //}
-          /* NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 1: " << cloud_filtered->size() << " points"); */
-          NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 1: " << indices_filtered->indices.size() << " points");
+          NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 1: " << cloud_filtered->size() << " points");
+          /* NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 1: " << indices_filtered->indices.size() << " points"); */
           
           /* filter by cropping points inside a box, relative to the sensor //{ */
           {
@@ -180,49 +184,56 @@ namespace uav_detect
             pcl::CropBox<pcl::PointXYZ> cb;
             cb.setMax(box_point1);
             cb.setMin(box_point2);
-            /* cb.setInputCloud(cloud_filtered); */
-            /* cb.setNegative(true); */
-            /* cb.filter(*cloud_filtered); */
-            cb.setInputCloud(cloud);
-            cb.setIndices(indices_filtered);
+            cb.setInputCloud(cloud_filtered);
             cb.setNegative(true);
-            cb.filter(indices_filtered->indices);
+            cb.setKeepOrganized(m_keep_pc_organized);
+            cb.filter(*cloud_filtered);
+            /* cb.setInputCloud(cloud); */
+            /* cb.setIndices(indices_filtered); */
+            /* cb.setNegative(true); */
+            /* cb.filter(indices_filtered->indices); */
           }
           //}
-          /* NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 2: " << cloud_filtered->size() << " points"); */
-          NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 2: " << indices_filtered->indices.size() << " points");
-
-          /* /1* filter by voxel grid //{ *1/ */
-          /* { */
-          /*   pcl::VoxelGrid<pcl::PointXYZ> vg; */
-          /*   vg.setLeafSize(0.25f, 0.25f, 0.25f); */
-          /*   /1* vg.setInputCloud(cloud_filtered); *1/ */
-          /*   /1* vg.filter(*cloud_filtered); *1/ */
-          /* } */
-          /* //} */
-          /* NODELET_INFO_STREAM("[PCLDetector]: Input PC after VoxelGrid: " << cloud_filtered->size() << " points"); */
-          NODELET_INFO_STREAM("[PCLDetector]: Input PC after VoxelGrid: " << indices_filtered->indices.size() << " points");
+          NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 2: " << cloud_filtered->size() << " points");
+          /* NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 2: " << indices_filtered->indices.size() << " points"); */
 
           pcl::PointCloud<pcl::Normal>::Ptr normals = boost::make_shared<pcl::PointCloud<pcl::Normal>>();
           {
-            /* pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::Normal> ne; */
-            /* pcl::search::KdTree<pcl::PointXYZ>::Ptr tree = boost::make_shared<pcl::search::KdTree<pcl::PointXYZ>>(); */
-            /* tree->setInputCloud(cloud_filtered); */
-            /* ne.setNumberOfThreads(4); */
-            /* ne.setViewPoint(0, 0, 0); */
+            pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::Normal> ne;
+            pcl::search::KdTree<pcl::PointXYZ>::Ptr tree = boost::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
+            tree->setInputCloud(cloud_filtered);
+            ne.setNumberOfThreads(4);
+            ne.setViewPoint(0, 0, 0);
+            ne.setInputCloud(cloud_filtered);
+            ne.setSearchMethod(tree);
+            ne.setKSearch(5);
+            ne.compute(*normals);          // estimate normals
+
+            /* pcl::IntegralImageNormalEstimation<pcl::PointXYZ, pcl::Normal> ne; */
+            /* ne.setNormalEstimationMethod(ne.AVERAGE_3D_GRADIENT); */
+            /* ne.setMaxDepthChangeFactor(0.02f); */
+            /* ne.setNormalSmoothingSize(10.0f); */
             /* ne.setInputCloud(cloud_filtered); */
-            /* ne.setSearchMethod(tree); */
-            /* ne.setKSearch(5); */
-            /* ne.compute(*normals);          // estimate normals */
-            pcl::IntegralImageNormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
-            ne.setNormalEstimationMethod(ne.AVERAGE_3D_GRADIENT);
-            ne.setMaxDepthChangeFactor(0.02f);
-            ne.setNormalSmoothingSize(10.0f);
-            ne.setIndices(indices_filtered);
-            /* ne.setInputCloud(cloud_filtered); */
-            ne.setInputCloud(cloud);
-            ne.compute(*normals);
+            /* /1* ne.setIndices(indices_filtered); *1/ */
+            /* /1* ne.setInputCloud(cloud); *1/ */
+            /* ne.compute(*normals); */
           }
+
+          pcl::concatenateFields(*cloud_filtered, *normals, *cloud_with_normals);
+          /* filter by voxel grid //{ */
+          {
+            /* pcl::VoxelGrid<pcl::PointXYZ> vg; */
+            pcl::VoxelGrid<pcl::PointNormal> vg;
+            vg.setLeafSize(0.25f, 0.25f, 0.25f);
+            /* vg.setInputCloud(cloud_filtered); */
+            /* vg.filter(*cloud_filtered); */
+            vg.setInputCloud(cloud_with_normals);
+            vg.filter(*cloud_with_normals);
+          }
+          //}
+          NODELET_INFO_STREAM("[PCLDetector]: Input PC after VoxelGrid: " << cloud_with_normals->size() << " points");
+          /* NODELET_INFO_STREAM("[PCLDetector]: Input PC after VoxelGrid: " << indices_filtered->indices.size() << " points"); */
+
 
           Eigen::Affine3d s2w_tf;
           bool tf_ok = get_transform_to_world(cloud->header.frame_id, msg_stamp, s2w_tf);
@@ -232,9 +243,9 @@ namespace uav_detect
             return;
           }
           tf_trans = s2w_tf.translation();
-          pcl::PointCloud<pcl::PointXYZ>::ConstPtr cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(*cloud, indices_filtered->indices);
+          /* pcl::PointCloud<pcl::PointXYZ>::ConstPtr cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(*cloud, indices_filtered->indices); */
           /* pcl::PointCloud<pcl::Normal>::ConstPtr normals_filtered = boost::make_shared<pcl::PointCloud<pcl::Normal>>(*normals, idx_filtered->indices); */
-          pcl::concatenateFields(*cloud_filtered, *normals, *cloud_with_normals);
+          /* pcl::concatenateFields(*cloud_filtered, *normals, *cloud_with_normals); */
           pcl::transformPointCloud(*cloud_with_normals, *cloud_with_normals, s2w_tf.cast<float>());
           cloud_with_normals->header.frame_id = m_world_frame;
           /* tf2::doTransform(cloud, cloud, s2w_tf); */
@@ -292,78 +303,68 @@ namespace uav_detect
         }
         //}
 
-        /* unused //{ */
+        /* /1* unused //{ *1/ */
         
-        /* pcl::PointIndices::Ptr valid_idx = boost::make_shared<pcl::PointIndices>(); */
-        /* const auto& vecpts = m_cloud_global->points; */
-        /* for (unsigned it = 0; it < vecpts.size(); it++) */
-        /* { */
-        /*   const auto& pt = vecpts[it]; */
-        /*   if (distsq_from_origin(pt) > 20.0f*20.0f) */
-        /*     continue; */
-        /*   else */
-        /*     valid_idx->indices.push_back(it); */
-        /* } */
-        /* NODELET_INFO_STREAM("[PCLDetector]: Pointcloud after removing far points has " << valid_idx->indices.size() << " points"); */
+        /* /1* pcl::PointIndices::Ptr valid_idx = boost::make_shared<pcl::PointIndices>(); *1/ */
+        /* /1* const auto& vecpts = m_cloud_global->points; *1/ */
+        /* /1* for (unsigned it = 0; it < vecpts.size(); it++) *1/ */
+        /* /1* { *1/ */
+        /* /1*   const auto& pt = vecpts[it]; *1/ */
+        /* /1*   if (distsq_from_origin(pt) > 20.0f*20.0f) *1/ */
+        /* /1*     continue; *1/ */
+        /* /1*   else *1/ */
+        /* /1*     valid_idx->indices.push_back(it); *1/ */
+        /* /1* } *1/ */
+        /* /1* NODELET_INFO_STREAM("[PCLDetector]: Pointcloud after removing far points has " << valid_idx->indices.size() << " points"); *1/ */
         
-        // Creating the KdTree object for the search method of the extraction
-        /* pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree = boost::make_shared<pcl::search::KdTree<pcl::PointXYZ>>(); */
-        /* kdtree->setInputCloud(m_cloud_global); */
+        /* // Creating the KdTree object for the search method of the extraction */
+        /* /1* pcl::search::KdTree<pcl::PointXYZ>::Ptr kdtree = boost::make_shared<pcl::search::KdTree<pcl::PointXYZ>>(); *1/ */
+        /* /1* kdtree->setInputCloud(m_cloud_global); *1/ */
         
-        /* std::vector<pcl::PointIndices> cluster_indices; */
-        /* pcl::ConditionalEuclideanClustering<pcl::PointXYZ> ec; */
-        /* ec.setClusterTolerance(2.5);  // metres */
-        /* ec.setConditionFunction(&scaled_dist_thresholding); */
-        /* ec.setMinClusterSize(10); */
-        /* ec.setMaxClusterSize(500); */
-        /* /1* ec.setSearchMethod(kdtree); *1/ */
-        /* ec.setInputCloud(m_cloud_global); */
-        /* /1* ec.setIndices(valid_idx); *1/ */
-        /* ec.segment(cluster_indices); */
+        /* /1* std::vector<pcl::PointIndices> cluster_indices; *1/ */
+        /* /1* pcl::ConditionalEuclideanClustering<pcl::PointXYZ> ec; *1/ */
+        /* /1* ec.setClusterTolerance(2.5);  // metres *1/ */
+        /* /1* ec.setConditionFunction(&scaled_dist_thresholding); *1/ */
+        /* /1* ec.setMinClusterSize(10); *1/ */
+        /* /1* ec.setMaxClusterSize(500); *1/ */
+        /* /1* /2* ec.setSearchMethod(kdtree); *2/ *1/ */
+        /* /1* ec.setInputCloud(m_cloud_global); *1/ */
+        /* /1* /2* ec.setIndices(valid_idx); *2/ *1/ */
+        /* /1* ec.segment(cluster_indices); *1/ */
         
-        /* pcl::PointCloud<pcl::PointXYZL> cloud_labeled; */
-        /* cloud_labeled.reserve(m_cloud_global->size()); */
-        /* /1* cloud_labeled.width = n_pts; *1/ */
-        /* /1* cloud_labeled.height = 1; *1/ */
-        /* /1* cloud_labeled.is_dense = true; *1/ */
-        /* int label = 0; */
-        /* for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it) */
-        /* { */
-        /*   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(); */
-        /*   for (std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit) */
-        /*   { */
-        /*     const auto& pt = m_cloud_global->points[*pit]; */
-        /*     pcl::PointXYZL ptl; */
-        /*     ptl.x = pt.x; */
-        /*     ptl.y = pt.y; */
-        /*     ptl.z = pt.z; */
-        /*     ptl.label = label; */
-        /*     cloud_labeled.points.push_back(ptl); */
-        /*   } */
-        /*   label++; */
-        /* } */
-        /* NODELET_INFO_STREAM("[PCLDetector]: Extracted " << label << " clusters"); */
-        /* NODELET_INFO_STREAM("[PCLDetector]: Processed pointcloud has " << cloud_labeled.size() << " points"); */
+        /* /1* pcl::PointCloud<pcl::PointXYZL> cloud_labeled; *1/ */
+        /* /1* cloud_labeled.reserve(m_cloud_global->size()); *1/ */
+        /* /1* /2* cloud_labeled.width = n_pts; *2/ *1/ */
+        /* /1* /2* cloud_labeled.height = 1; *2/ *1/ */
+        /* /1* /2* cloud_labeled.is_dense = true; *2/ *1/ */
+        /* /1* int label = 0; *1/ */
+        /* /1* for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it) *1/ */
+        /* /1* { *1/ */
+        /* /1*   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(); *1/ */
+        /* /1*   for (std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit) *1/ */
+        /* /1*   { *1/ */
+        /* /1*     const auto& pt = m_cloud_global->points[*pit]; *1/ */
+        /* /1*     pcl::PointXYZL ptl; *1/ */
+        /* /1*     ptl.x = pt.x; *1/ */
+        /* /1*     ptl.y = pt.y; *1/ */
+        /* /1*     ptl.z = pt.z; *1/ */
+        /* /1*     ptl.label = label; *1/ */
+        /* /1*     cloud_labeled.points.push_back(ptl); *1/ */
+        /* /1*   } *1/ */
+        /* /1*   label++; *1/ */
+        /* /1* } *1/ */
+        /* /1* NODELET_INFO_STREAM("[PCLDetector]: Extracted " << label << " clusters"); *1/ */
+        /* /1* NODELET_INFO_STREAM("[PCLDetector]: Processed pointcloud has " << cloud_labeled.size() << " points"); *1/ */
         
-        //}
+        /* //} */
+
+        m_cloud_global->header.stamp = cloud->header.stamp;
 
         if (m_filtered_input_pc_pub.getNumSubscribers() > 0)
-        {
-          sensor_msgs::PointCloud2 dbg_cloud;
-          pcl::toROSMsg(*cloud_with_normals, dbg_cloud);
-          dbg_cloud.header.frame_id = cloud_with_normals->header.frame_id;
-          dbg_cloud.header.stamp = msg_stamp;
-          m_filtered_input_pc_pub.publish(dbg_cloud);
-        }
+          m_filtered_input_pc_pub.publish(cloud_with_normals);
 
         if (m_global_pc_pub.getNumSubscribers() > 0)
-        {
-          sensor_msgs::PointCloud2 dbg_cloud;
-          pcl::toROSMsg(*m_cloud_global, dbg_cloud);
-          dbg_cloud.header.frame_id = m_world_frame;
-          dbg_cloud.header.stamp = msg_stamp;
-          m_global_pc_pub.publish(dbg_cloud);
-        }
+          m_global_pc_pub.publish(m_cloud_global);
 
         NODELET_INFO_STREAM("[PCLDetector]: Done processing data --------------------------------------------------------- ");
       }
@@ -431,6 +432,8 @@ namespace uav_detect
     // |                 Parameters, loaded from ROS                |
     // --------------------------------------------------------------
 
+    /* Parameters, loaded from ROS //{ */
+    
     std::string m_world_frame;
     double m_exclude_box_offset_x;
     double m_exclude_box_offset_y;
@@ -438,6 +441,9 @@ namespace uav_detect
     double m_exclude_box_size_x;
     double m_exclude_box_size_y;
     double m_exclude_box_size_z;
+    bool m_keep_pc_organized;
+    
+    //}
 
   private:
 

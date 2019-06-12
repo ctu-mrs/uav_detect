@@ -57,4 +57,4 @@ windows:
   - uav_detect:
       layout: even-vertical
       panes:
-        - roslaunch uav_detect detect_pcl.launch
+        - waitForSimulation; roslaunch uav_detect detect_pcl.launch
