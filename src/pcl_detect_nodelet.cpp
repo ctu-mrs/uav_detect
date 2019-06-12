@@ -23,6 +23,9 @@
 #include <pcl/features/integral_image_normal.h>
 #include <pcl/surface/poisson.h>
 
+#include <pcl/sample_consensus/ransac.h>
+#include <pcl/sample_consensus/sac_model_plane.h>
+
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/RegionOfInterest.h>
 #include <uav_detect/DetectionParamsConfig.h>
@@ -199,15 +202,16 @@ namespace uav_detect
 
           pcl::PointCloud<pcl::Normal>::Ptr normals = boost::make_shared<pcl::PointCloud<pcl::Normal>>();
           {
-            pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::Normal> ne;
-            pcl::search::KdTree<pcl::PointXYZ>::Ptr tree = boost::make_shared<pcl::search::KdTree<pcl::PointXYZ>>();
-            tree->setInputCloud(cloud_filtered);
-            ne.setNumberOfThreads(4);
-            ne.setViewPoint(0, 0, 0);
-            ne.setInputCloud(cloud_filtered);
-            ne.setSearchMethod(tree);
-            ne.setKSearch(5);
-            ne.compute(*normals);          // estimate normals
+            *normals = estimate_normals_organized(*cloud_filtered);
+            /* pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::Normal> ne; */
+            /* pcl::search::KdTree<pcl::PointXYZ>::Ptr tree = boost::make_shared<pcl::search::KdTree<pcl::PointXYZ>>(); */
+            /* tree->setInputCloud(cloud_filtered); */
+            /* ne.setNumberOfThreads(4); */
+            /* ne.setViewPoint(0, 0, 0); */
+            /* ne.setInputCloud(cloud_filtered); */
+            /* ne.setSearchMethod(tree); */
+            /* ne.setKSearch(5); */
+            /* ne.compute(*normals);          // estimate normals */
 
             /* pcl::IntegralImageNormalEstimation<pcl::PointXYZ, pcl::Normal> ne; */
             /* ne.setNormalEstimationMethod(ne.AVERAGE_3D_GRADIENT); */
@@ -385,6 +389,57 @@ namespace uav_detect
     /* //} */
 
   private:
+
+    /* estimate_normals_organized() method //{ */
+    pcl::PointCloud<pcl::Normal> estimate_normals_organized(const PC& pc)
+    {
+      pcl::PointCloud<pcl::Normal> normals;
+      normals.reserve(pc.size());
+    
+      for (unsigned i = 0; i < pc.width; i++)
+        for (unsigned j = 0; j < pc.height; j++)
+        {
+          pcl::Normal n = estimate_normal(i, j, pc, m_drmgr_ptr->config.normal_neighborhood);
+    
+          normals.push_back(n);
+        }
+    
+      normals.width = pc.width;
+      normals.height = pc.height;
+      normals.is_dense = pc.is_dense;
+      normals.header = pc.header;
+      return normals;
+    }
+    
+    pcl::Normal estimate_normal(unsigned col, unsigned row, const PC& pc, unsigned neighborhood = 4)
+    {
+      const unsigned col_bot = std::max(col - neighborhood, 0u);
+      const unsigned col_top = std::min(col + neighborhood, pc.width);
+      const unsigned row_bot = std::max(row - neighborhood, 0u);
+      const unsigned row_top = std::min(row + neighborhood, pc.height);
+      std::vector<int> inliers;
+      PC::Ptr neig_pc = boost::make_shared<PC>();
+      neig_pc->reserve(neighborhood*neighborhood);
+      for (unsigned i = col_bot; i < col_top; i++)
+        for (unsigned j = row_bot; j < row_top; j++)
+        {
+          neig_pc->push_back(pc.at(col, row));
+        }
+    
+      pcl::SampleConsensusModelPlane<pcl::PointXYZ>::Ptr model_p
+        = boost::make_shared<pcl::SampleConsensusModelPlane<pcl::PointXYZ>>(neig_pc, true);
+      pcl::RandomSampleConsensus<pcl::PointXYZ> ransac(model_p);
+      ransac.setDistanceThreshold(m_drmgr_ptr->config.normal_threshold);
+      Eigen::VectorXf coeffs;
+      static const float nan = std::numeric_limits<float>::quiet_NaN();
+      if (ransac.computeModel())
+        ransac.getModelCoefficients(coeffs);
+      else
+        coeffs << nan, nan, nan;
+    
+      return pcl::Normal(coeffs(0), coeffs(1), coeffs(2));
+    }
+    //}
 
     /* get_transform_to_world() method //{ */
     bool get_transform_to_world(const string& frame_id, ros::Time stamp, Eigen::Affine3d& tf_out) const

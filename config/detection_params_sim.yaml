@@ -18,3 +18,4 @@ exclude_box:
     y: 1 # meters
     z: 1 # meters
 
+keep_pc_organized: true
