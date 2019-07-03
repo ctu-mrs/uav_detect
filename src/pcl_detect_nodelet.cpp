@@ -202,7 +202,7 @@ namespace uav_detect
 
           pcl::PointCloud<pcl::Normal>::Ptr normals = boost::make_shared<pcl::PointCloud<pcl::Normal>>();
           {
-            *normals = estimate_normals_organized(*cloud_filtered);
+            *normals = estimate_normals_organized(*cloud_filtered, *cloud);
             /* pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::Normal> ne; */
             /* pcl::search::KdTree<pcl::PointXYZ>::Ptr tree = boost::make_shared<pcl::search::KdTree<pcl::PointXYZ>>(); */
             /* tree->setInputCloud(cloud_filtered); */
@@ -223,7 +223,13 @@ namespace uav_detect
             /* ne.compute(*normals); */
           }
 
-          pcl::concatenateFields(*cloud_filtered, *normals, *cloud_with_normals);
+          {
+            pcl::concatenateFields(*cloud_filtered, *normals, *cloud_with_normals);
+            std::vector<int> unused_vec;
+            pcl::removeNaNFromPointCloud(*cloud_with_normals, *cloud_with_normals, unused_vec);
+            pcl::removeNaNNormalsFromPointCloud(*cloud_with_normals, *cloud_with_normals, unused_vec);
+          }
+
           /* filter by voxel grid //{ */
           {
             /* pcl::VoxelGrid<pcl::PointXYZ> vg; */
@@ -391,7 +397,7 @@ namespace uav_detect
   private:
 
     /* estimate_normals_organized() method //{ */
-    pcl::PointCloud<pcl::Normal> estimate_normals_organized(const PC& pc)
+    pcl::PointCloud<pcl::Normal> estimate_normals_organized(const PC& pc, const PC& unfiltered_pc)
     {
       pcl::PointCloud<pcl::Normal> normals;
       normals.reserve(pc.size());
@@ -399,7 +405,7 @@ namespace uav_detect
       for (unsigned i = 0; i < pc.width; i++)
         for (unsigned j = 0; j < pc.height; j++)
         {
-          pcl::Normal n = estimate_normal(i, j, pc, m_drmgr_ptr->config.normal_neighborhood);
+          pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, m_drmgr_ptr->config.normal_neighborhood);
     
           normals.push_back(n);
         }
@@ -410,34 +416,72 @@ namespace uav_detect
       normals.header = pc.header;
       return normals;
     }
-    
-    pcl::Normal estimate_normal(unsigned col, unsigned row, const PC& pc, unsigned neighborhood = 4)
+
+    template <class Point_T>
+    bool valid_pt(Point_T pt)
     {
-      const unsigned col_bot = std::max(col - neighborhood, 0u);
-      const unsigned col_top = std::min(col + neighborhood, pc.width);
-      const unsigned row_bot = std::max(row - neighborhood, 0u);
-      const unsigned row_top = std::min(row + neighborhood, pc.height);
-      std::vector<int> inliers;
-      PC::Ptr neig_pc = boost::make_shared<PC>();
-      neig_pc->reserve(neighborhood*neighborhood);
-      for (unsigned i = col_bot; i < col_top; i++)
-        for (unsigned j = row_bot; j < row_top; j++)
-        {
-          neig_pc->push_back(pc.at(col, row));
-        }
+      return (std::isfinite(pt.x) &&
+              std::isfinite(pt.y) &&
+              std::isfinite(pt.z));
+    }
     
+    pcl::Normal estimate_normal(const int col, const int row, const PC& pc, const PC& unfiltered_pc, int neighborhood = 4)
+    {
+      static const float nan = std::numeric_limits<float>::quiet_NaN();
+      static const pcl::Normal invalid_normal(nan, nan, nan);
+      const auto pt = pc.at(col, row);
+      if (!valid_pt(pt))
+        return invalid_normal;
+
+      const int col_bot = std::max(col - neighborhood, 0);
+      const int col_top = std::min(col + neighborhood, (int)pc.width-1);
+      const int row_bot = std::max(row - neighborhood, 0);
+      const int row_top = std::min(row + neighborhood, (int)pc.height-1);
+      PC::Ptr neig_pc = boost::make_shared<PC>();
+      neig_pc->reserve((2*neighborhood+1)*(2*neighborhood+1));
+      for (int i = col_bot; i <= col_top; i++)
+        for (int j = row_bot; j <= row_top; j++)
+        {
+          const auto pt = unfiltered_pc.at(i, j);
+          if (valid_pt(pt))
+            neig_pc->push_back(pt);
+        }
+
       pcl::SampleConsensusModelPlane<pcl::PointXYZ>::Ptr model_p
         = boost::make_shared<pcl::SampleConsensusModelPlane<pcl::PointXYZ>>(neig_pc, true);
+      if (neig_pc->size() < model_p->getSampleSize())
+        return invalid_normal;
+
       pcl::RandomSampleConsensus<pcl::PointXYZ> ransac(model_p);
       ransac.setDistanceThreshold(m_drmgr_ptr->config.normal_threshold);
-      Eigen::VectorXf coeffs;
-      static const float nan = std::numeric_limits<float>::quiet_NaN();
+      ransac.setMaxIterations(m_drmgr_ptr->config.normal_iterations);
+      ransac.setProbability(m_drmgr_ptr->config.normal_probability);
       if (ransac.computeModel())
+      {
+        Eigen::VectorXf coeffs;
         ransac.getModelCoefficients(coeffs);
+        Eigen::Vector3f normal_vec = coeffs.block<3, 1>(0, 0).normalized();
+        const Eigen::Vector3f camera_vec = -Eigen::Vector3f(pt.x, pt.y, pt.z).normalized();
+        /* const Eigen::Vector3f camera_vec = -Eigen::Vector3f(0, 0, 1).normalized(); */
+        const auto ancos = normal_vec.dot(camera_vec);
+        if (ancos < 0.0)
+        {
+          /* cout << "do flipping normal " << coeffs << " to correspond to " << camera_vec << " (dot product is " << dprod << ")" << std::endl; */
+          normal_vec = -normal_vec;
+        }
+        /* else */
+        /* { */
+        /*   cout << "not flipping normal " << coeffs << " to correspond to " << camera_vec << " (dot product is " << dprod << ")" << std::endl; */
+        /* } */
+        const pcl::Normal ret(normal_vec(0), normal_vec(1), normal_vec(2));
+        cout << "Camera: [" << std::endl << camera_vec.transpose() << std::endl << "]" << std::endl;
+        cout << "Normal: [" << std::endl << normal_vec.transpose() << std::endl << "], acos: " << ancos << std::endl;
+        return ret;
+      }
       else
-        coeffs << nan, nan, nan;
-    
-      return pcl::Normal(coeffs(0), coeffs(1), coeffs(2));
+      {
+        return invalid_normal;
+      }
     }
     //}
 
