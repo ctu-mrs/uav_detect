@@ -200,6 +200,12 @@ namespace uav_detect
           NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 2: " << cloud_filtered->size() << " points");
           /* NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 2: " << indices_filtered->indices.size() << " points"); */
 
+          /* auto pt = cloud_filtered->at(500, 3); */
+          /* cloud_filtered->clear(); */
+          /* cloud_filtered->push_back(pt); */
+          /* cloud_filtered->push_back(pt); */
+          /* cloud_filtered->height = 2; */
+          /* cloud_filtered->width = 2; */
           pcl::PointCloud<pcl::Normal>::Ptr normals = boost::make_shared<pcl::PointCloud<pcl::Normal>>();
           {
             *normals = estimate_normals_organized(*cloud_filtered, *cloud);
@@ -401,12 +407,13 @@ namespace uav_detect
     {
       pcl::PointCloud<pcl::Normal> normals;
       normals.reserve(pc.size());
+      const auto neighborhood = m_drmgr_ptr->config.normal_neighborhood;
     
       for (unsigned i = 0; i < pc.width; i++)
         for (unsigned j = 0; j < pc.height; j++)
         {
-          pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, m_drmgr_ptr->config.normal_neighborhood);
-    
+          /* cout << "Using neighborhood0: " << neighborhood << std::endl; */
+          const pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, neighborhood);
           normals.push_back(n);
         }
     
@@ -424,11 +431,56 @@ namespace uav_detect
               std::isfinite(pt.y) &&
               std::isfinite(pt.z));
     }
-    
+
+    using plane_params_t = Eigen::Vector4f;
+    constexpr static float nan = std::numeric_limits<float>::quiet_NaN();
+    plane_params_t fit_plane(PC::ConstPtr pcl)
+    {
+      const static plane_params_t invalid_plane_params = plane_params_t(nan, nan, nan, nan);
+      if (pcl->size() < 3)
+        return invalid_plane_params;
+
+      Eigen::Matrix<float, 3, -1> points = pcl->getMatrixXfMap(3, 4, 0);
+      /* cout << "Fitting plane to points:" << std::endl << points << std::endl; */
+      const Eigen::Vector3f centroid = points.rowwise().mean();
+      points.colwise() -= centroid;
+      const auto svd = points.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV);
+      const Eigen::Vector3f normal = svd.matrixU().rightCols<1>().normalized();
+      const double d = normal.dot(centroid);
+      const plane_params_t ret(normal.x(), normal.y(), normal.z(), d);
+      return ret;
+    }
+
+    plane_params_t fit_plane_RANSAC(PC::ConstPtr pcl)
+    {
+      const static plane_params_t invalid_plane_params = plane_params_t(nan, nan, nan, nan);
+      pcl::SampleConsensusModelPlane<pcl::PointXYZ>::Ptr model_p
+        = boost::make_shared<pcl::SampleConsensusModelPlane<pcl::PointXYZ>>(pcl, true);
+      if (pcl->size() < model_p->getSampleSize())
+        return invalid_plane_params;
+
+      pcl::RandomSampleConsensus<pcl::PointXYZ> ransac(model_p);
+      ransac.setDistanceThreshold(m_drmgr_ptr->config.normal_threshold);
+      ransac.setMaxIterations(m_drmgr_ptr->config.normal_iterations);
+      ransac.setProbability(m_drmgr_ptr->config.normal_probability);
+      if (ransac.computeModel())
+      {
+        Eigen::VectorXf coeffs;
+        ransac.getModelCoefficients(coeffs);
+        // normalize the normal (lel)
+        const double c = coeffs.block<3, 1>(0, 0).norm();
+        coeffs = coeffs/c;
+        return coeffs;
+      } else
+      {
+        return invalid_plane_params;
+      }
+    }
+
     pcl::Normal estimate_normal(const int col, const int row, const PC& pc, const PC& unfiltered_pc, int neighborhood = 4)
     {
-      static const float nan = std::numeric_limits<float>::quiet_NaN();
-      static const pcl::Normal invalid_normal(nan, nan, nan);
+      /* cout << "Using neighborhood: " << neighborhood << std::endl; */
+      const static pcl::Normal invalid_normal(nan, nan, nan);
       const auto pt = pc.at(col, row);
       if (!valid_pt(pt))
         return invalid_normal;
@@ -437,6 +489,7 @@ namespace uav_detect
       const int col_top = std::min(col + neighborhood, (int)pc.width-1);
       const int row_bot = std::max(row - neighborhood, 0);
       const int row_top = std::min(row + neighborhood, (int)pc.height-1);
+      /* cout << "bounds: [" << col_bot << ", " << col_top << "]; [" << row_bot << ", " << row_top << "]" << std::endl; */
       PC::Ptr neig_pc = boost::make_shared<PC>();
       neig_pc->reserve((2*neighborhood+1)*(2*neighborhood+1));
       for (int i = col_bot; i <= col_top; i++)
@@ -447,42 +500,30 @@ namespace uav_detect
             neig_pc->push_back(pt);
         }
 
-      pcl::SampleConsensusModelPlane<pcl::PointXYZ>::Ptr model_p
-        = boost::make_shared<pcl::SampleConsensusModelPlane<pcl::PointXYZ>>(neig_pc, true);
-      if (neig_pc->size() < model_p->getSampleSize())
+      /* cout << "Neighborhood points size: " << neig_pc->size() << std::endl; */
+      plane_params_t plane_params = fit_plane(neig_pc);
+      Eigen::Vector3f normal_vec = plane_params.block<3, 1>(0, 0);
+      if (!normal_vec.array().isFinite().all())
         return invalid_normal;
 
-      pcl::RandomSampleConsensus<pcl::PointXYZ> ransac(model_p);
-      ransac.setDistanceThreshold(m_drmgr_ptr->config.normal_threshold);
-      ransac.setMaxIterations(m_drmgr_ptr->config.normal_iterations);
-      ransac.setProbability(m_drmgr_ptr->config.normal_probability);
-      if (ransac.computeModel())
+      const Eigen::Vector3f camera_vec = -Eigen::Vector3f(pt.x, pt.y, pt.z).normalized();
+      /* const Eigen::Vector3f camera_vec = -Eigen::Vector3f(0, 0, 1).normalized(); */
+      const auto ancos = normal_vec.dot(camera_vec);
+      if (ancos < 0.0)
       {
-        Eigen::VectorXf coeffs;
-        ransac.getModelCoefficients(coeffs);
-        Eigen::Vector3f normal_vec = coeffs.block<3, 1>(0, 0).normalized();
-        const Eigen::Vector3f camera_vec = -Eigen::Vector3f(pt.x, pt.y, pt.z).normalized();
-        /* const Eigen::Vector3f camera_vec = -Eigen::Vector3f(0, 0, 1).normalized(); */
-        const auto ancos = normal_vec.dot(camera_vec);
-        if (ancos < 0.0)
-        {
-          /* cout << "do flipping normal " << coeffs << " to correspond to " << camera_vec << " (dot product is " << dprod << ")" << std::endl; */
-          normal_vec = -normal_vec;
-        }
-        /* else */
-        /* { */
-        /*   cout << "not flipping normal " << coeffs << " to correspond to " << camera_vec << " (dot product is " << dprod << ")" << std::endl; */
-        /* } */
-        const pcl::Normal ret(normal_vec(0), normal_vec(1), normal_vec(2));
-        cout << "Camera: [" << std::endl << camera_vec.transpose() << std::endl << "]" << std::endl;
-        cout << "Normal: [" << std::endl << normal_vec.transpose() << std::endl << "], acos: " << ancos << std::endl;
-        return ret;
+        /* cout << "do flipping normal " << coeffs << " to correspond to " << camera_vec << " (dot product is " << dprod << ")" << std::endl; */
+        normal_vec = -normal_vec;
       }
-      else
-      {
-        return invalid_normal;
-      }
+      /* else */
+      /* { */
+      /*   cout << "not flipping normal " << coeffs << " to correspond to " << camera_vec << " (dot product is " << dprod << ")" << std::endl; */
+      /* } */
+      const pcl::Normal ret(normal_vec(0), normal_vec(1), normal_vec(2));
+      /* cout << "Camera: [" << std::endl << camera_vec.transpose() << std::endl << "]" << std::endl; */
+      /* cout << "Normal: [" << std::endl << normal_vec.transpose() << std::endl << "], acos: " << ancos << std::endl; */
+      return ret;
     }
+
     //}
 
     /* get_transform_to_world() method //{ */
