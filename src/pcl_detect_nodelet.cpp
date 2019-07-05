@@ -407,7 +407,8 @@ namespace uav_detect
     {
       pcl::PointCloud<pcl::Normal> normals;
       normals.reserve(pc.size());
-      const auto neighborhood = m_drmgr_ptr->config.normal_neighborhood;
+      const auto neighborhood_rows = m_drmgr_ptr->config.normal_neighborhood_rows;
+      const auto neighborhood_cols = m_drmgr_ptr->config.normal_neighborhood_cols;
     
       /* for (unsigned i = 0; i < pc.width; i++) */
       /*   for (unsigned j = 0; j < pc.height; j++) */
@@ -415,7 +416,7 @@ namespace uav_detect
       unsigned j = 3;
         {
           /* cout << "Using neighborhood0: " << neighborhood << std::endl; */
-          const pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, neighborhood);
+          const pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, neighborhood_rows, neighborhood_cols);
           normals.push_back(n);
         }
     
@@ -482,7 +483,7 @@ namespace uav_detect
       }
     }
 
-    pcl::Normal estimate_normal(const int col, const int row, PC& pc, const PC& unfiltered_pc, int neighborhood = 4)
+    pcl::Normal estimate_normal(const int col, const int row, PC& pc, const PC& unfiltered_pc, int neighborhood_rows, int neighborhood_cols)
     {
       /* cout << "Using neighborhood: " << neighborhood << std::endl; */
       const static pcl::Normal invalid_normal(nan, nan, nan);
@@ -490,13 +491,13 @@ namespace uav_detect
       /* if (!valid_pt(pt)) */
       /*   return invalid_normal; */
 
-      const int col_bot = std::max(col - neighborhood, 0);
-      const int col_top = std::min(col + neighborhood, (int)pc.width-1);
-      const int row_bot = std::max(row - neighborhood, 0);
-      const int row_top = std::min(row + neighborhood, (int)pc.height-1);
+      const int col_bot = std::max(col - neighborhood_cols, 0);
+      const int col_top = std::min(col + neighborhood_cols, (int)pc.width-1);
+      const int row_bot = std::max(row - neighborhood_rows, 0);
+      const int row_top = std::min(row + neighborhood_rows, (int)pc.height-1);
       /* cout << "bounds: [" << col_bot << ", " << col_top << "]; [" << row_bot << ", " << row_top << "]" << std::endl; */
       PC::Ptr neig_pc = boost::make_shared<PC>();
-      neig_pc->reserve((2*neighborhood+1)*(2*neighborhood+1));
+      neig_pc->reserve((2*neighborhood_cols+1)*(2*neighborhood_rows+1));
       for (int i = col_bot; i <= col_top; i++)
         for (int j = row_bot; j <= row_top; j++)
         {
