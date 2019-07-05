@@ -412,8 +412,8 @@ namespace uav_detect
     
       /* for (unsigned i = 0; i < pc.width; i++) */
       /*   for (unsigned j = 0; j < pc.height; j++) */
-      unsigned i = 500;
-      unsigned j = 3;
+      const auto i = std::clamp(m_drmgr_ptr->config.normal_col, 0, int(pc.width)-1);
+      const auto j = std::clamp(m_drmgr_ptr->config.normal_row, 0, int(pc.height)-1);
         {
           /* cout << "Using neighborhood0: " << neighborhood << std::endl; */
           const pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, neighborhood_rows, neighborhood_cols);
