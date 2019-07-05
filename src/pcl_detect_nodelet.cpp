@@ -403,20 +403,25 @@ namespace uav_detect
   private:
 
     /* estimate_normals_organized() method //{ */
-    pcl::PointCloud<pcl::Normal> estimate_normals_organized(const PC& pc, const PC& unfiltered_pc)
+    pcl::PointCloud<pcl::Normal> estimate_normals_organized(PC& pc, const PC& unfiltered_pc)
     {
       pcl::PointCloud<pcl::Normal> normals;
       normals.reserve(pc.size());
       const auto neighborhood = m_drmgr_ptr->config.normal_neighborhood;
     
-      for (unsigned i = 0; i < pc.width; i++)
-        for (unsigned j = 0; j < pc.height; j++)
+      /* for (unsigned i = 0; i < pc.width; i++) */
+      /*   for (unsigned j = 0; j < pc.height; j++) */
+      unsigned i = 500;
+      unsigned j = 3;
         {
           /* cout << "Using neighborhood0: " << neighborhood << std::endl; */
           const pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, neighborhood);
           normals.push_back(n);
         }
     
+      for (unsigned it = 0; it < pc.size()-1; it++)
+        normals.push_back(normals.at(0));
+
       normals.width = pc.width;
       normals.height = pc.height;
       normals.is_dense = pc.is_dense;
@@ -477,13 +482,13 @@ namespace uav_detect
       }
     }
 
-    pcl::Normal estimate_normal(const int col, const int row, const PC& pc, const PC& unfiltered_pc, int neighborhood = 4)
+    pcl::Normal estimate_normal(const int col, const int row, PC& pc, const PC& unfiltered_pc, int neighborhood = 4)
     {
       /* cout << "Using neighborhood: " << neighborhood << std::endl; */
       const static pcl::Normal invalid_normal(nan, nan, nan);
       const auto pt = pc.at(col, row);
-      if (!valid_pt(pt))
-        return invalid_normal;
+      /* if (!valid_pt(pt)) */
+      /*   return invalid_normal; */
 
       const int col_bot = std::max(col - neighborhood, 0);
       const int col_top = std::min(col + neighborhood, (int)pc.width-1);
@@ -500,6 +505,7 @@ namespace uav_detect
             neig_pc->push_back(pt);
         }
 
+      pc = *neig_pc;
       /* cout << "Neighborhood points size: " << neig_pc->size() << std::endl; */
       plane_params_t plane_params = fit_plane(neig_pc);
       Eigen::Vector3f normal_vec = plane_params.block<3, 1>(0, 0);
