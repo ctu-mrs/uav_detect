@@ -144,6 +144,7 @@ namespace uav_detect
         ros::Time msg_stamp;
         pcl_conversions::fromPCL(cloud->header.stamp, msg_stamp);
         NODELET_INFO_STREAM("[PCLDetector]: Input PC has " << cloud->size() << " points");
+        const auto leaf_size = m_drmgr_ptr->config.filtering_leaf_size;
 
         /* filter input cloud and transform it to world, calculate its normals //{ */
         
@@ -161,7 +162,7 @@ namespace uav_detect
             pcl::CropBox<pcl::PointXYZ> cb;
             cb.setMax(box_point1);
             cb.setMin(box_point2);
-            cb.setInputCloud(cloud);
+            cb.setInputCloud(cloud_filtered);
             cb.setNegative(false);
             cb.setKeepOrganized(m_keep_pc_organized);
             cb.filter(*cloud_filtered);
@@ -241,7 +242,7 @@ namespace uav_detect
           {
             /* pcl::VoxelGrid<pcl::PointXYZ> vg; */
             pcl::VoxelGrid<pcl::PointNormal> vg;
-            vg.setLeafSize(0.25f, 0.25f, 0.25f);
+            vg.setLeafSize(leaf_size, leaf_size, leaf_size);
             /* vg.setInputCloud(cloud_filtered); */
             /* vg.filter(*cloud_filtered); */
             vg.setInputCloud(cloud_with_normals);
@@ -280,7 +281,7 @@ namespace uav_detect
 
           /* filter by mutual point distance (voxel grid) //{ */
           pcl::VoxelGrid<pcl::PointNormal> vg;
-          vg.setLeafSize(0.25f, 0.25f, 0.25f);
+          vg.setLeafSize(leaf_size, leaf_size, leaf_size);
           vg.setInputCloud(m_cloud_global);
           vg.filter(*m_cloud_global);
           //}
@@ -313,7 +314,7 @@ namespace uav_detect
           
           /* filter by mutual point distance (voxel grid) //{ */
           pcl::VoxelGrid<pcl::PointNormal> vg;
-          vg.setLeafSize(0.25f, 0.25f, 0.25f);
+          vg.setLeafSize(leaf_size, leaf_size, leaf_size);
           vg.setInputCloud(m_cloud_global);
           vg.filter(*m_cloud_global);
           //}
@@ -404,17 +405,25 @@ namespace uav_detect
   private:
 
     /* estimate_normals_organized() method //{ */
+    // THESE VALUES HAVE TO CORRESPOND TO THE DYNAMIC RECONFIGURE ENUM
+    enum plane_fit_method_t
+    {
+      RANSAC = 0,
+      SVD = 1,
+    };
+
     pcl::PointCloud<pcl::Normal> estimate_normals_organized(PC& pc, const PC& unfiltered_pc, const bool debugging = false)
     {
       pcl::PointCloud<pcl::Normal> normals;
       const auto neighborhood_rows = m_drmgr_ptr->config.normal_neighborhood_rows;
       const auto neighborhood_cols = m_drmgr_ptr->config.normal_neighborhood_cols;
+      const plane_fit_method_t fitting_method = (plane_fit_method_t)m_drmgr_ptr->config.normal_method;
     
       if (debugging)
       {
         const auto i = std::clamp(m_drmgr_ptr->config.normal_debug_col, 0, int(pc.width)-1);
         const auto j = std::clamp(m_drmgr_ptr->config.normal_debug_row, 0, int(pc.height)-1);
-        const pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, neighborhood_rows, neighborhood_cols, debugging);
+        const pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, neighborhood_rows, neighborhood_cols, fitting_method, debugging);
         for (unsigned it = 0; it < pc.size(); it++)
           normals.push_back(n);
         normals.width = pc.width;
@@ -427,7 +436,7 @@ namespace uav_detect
         for (unsigned i = 0; i < pc.width; i++)
           for (unsigned j = 0; j < pc.height; j++)
           {
-            const pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, neighborhood_rows, neighborhood_cols, debugging);
+            const pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, neighborhood_rows, neighborhood_cols, fitting_method, debugging);
             normals.at(i, j) = n;
           }
       }
@@ -490,7 +499,7 @@ namespace uav_detect
       }
     }
 
-    pcl::Normal estimate_normal(const int col, const int row, PC& pc, const PC& unfiltered_pc, int neighborhood_rows, int neighborhood_cols, const bool debugging = false)
+    pcl::Normal estimate_normal(const int col, const int row, PC& pc, const PC& unfiltered_pc, const int neighborhood_rows, const int neighborhood_cols, const plane_fit_method_t method, const bool debugging = false)
     {
       /* cout << "Using neighborhood: " << neighborhood << std::endl; */
       const static pcl::Normal invalid_normal(nan, nan, nan);
@@ -516,7 +525,20 @@ namespace uav_detect
       if (debugging)
         pc = *neig_pc;
       /* cout << "Neighborhood points size: " << neig_pc->size() << std::endl; */
-      plane_params_t plane_params = fit_plane(neig_pc);
+      plane_params_t plane_params;
+      switch (method)
+      {
+        case plane_fit_method_t::RANSAC:
+          plane_params = fit_plane_RANSAC(neig_pc);
+          break;
+        case plane_fit_method_t::SVD:
+          plane_params = fit_plane(neig_pc);
+          break;
+        default:
+          ROS_ERROR("[PCLDetector]: Unknown plane fitting method: %d! Skipping.", method);
+          plane_params = plane_params_t(nan, nan, nan, nan);
+          break;
+      }
       Eigen::Vector3f normal_vec = plane_params.block<3, 1>(0, 0);
       if (!normal_vec.array().isFinite().all())
         return invalid_normal;
