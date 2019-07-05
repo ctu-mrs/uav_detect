@@ -208,7 +208,8 @@ namespace uav_detect
           /* cloud_filtered->width = 2; */
           pcl::PointCloud<pcl::Normal>::Ptr normals = boost::make_shared<pcl::PointCloud<pcl::Normal>>();
           {
-            *normals = estimate_normals_organized(*cloud_filtered, *cloud);
+            const bool debugging = m_drmgr_ptr->config.normal_debug;
+            *normals = estimate_normals_organized(*cloud_filtered, *cloud, debugging);
             /* pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::Normal> ne; */
             /* pcl::search::KdTree<pcl::PointXYZ>::Ptr tree = boost::make_shared<pcl::search::KdTree<pcl::PointXYZ>>(); */
             /* tree->setInputCloud(cloud_filtered); */
@@ -403,28 +404,34 @@ namespace uav_detect
   private:
 
     /* estimate_normals_organized() method //{ */
-    pcl::PointCloud<pcl::Normal> estimate_normals_organized(PC& pc, const PC& unfiltered_pc)
+    pcl::PointCloud<pcl::Normal> estimate_normals_organized(PC& pc, const PC& unfiltered_pc, const bool debugging = false)
     {
       pcl::PointCloud<pcl::Normal> normals;
-      normals.reserve(pc.size());
       const auto neighborhood_rows = m_drmgr_ptr->config.normal_neighborhood_rows;
       const auto neighborhood_cols = m_drmgr_ptr->config.normal_neighborhood_cols;
     
-      /* for (unsigned i = 0; i < pc.width; i++) */
-      /*   for (unsigned j = 0; j < pc.height; j++) */
-      const auto i = std::clamp(m_drmgr_ptr->config.normal_col, 0, int(pc.width)-1);
-      const auto j = std::clamp(m_drmgr_ptr->config.normal_row, 0, int(pc.height)-1);
-        {
-          /* cout << "Using neighborhood0: " << neighborhood << std::endl; */
-          const pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, neighborhood_rows, neighborhood_cols);
+      if (debugging)
+      {
+        const auto i = std::clamp(m_drmgr_ptr->config.normal_debug_col, 0, int(pc.width)-1);
+        const auto j = std::clamp(m_drmgr_ptr->config.normal_debug_row, 0, int(pc.height)-1);
+        const pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, neighborhood_rows, neighborhood_cols, debugging);
+        for (unsigned it = 0; it < pc.size(); it++)
           normals.push_back(n);
-        }
+        normals.width = pc.width;
+        normals.height = pc.height;
+      } else
+      {
+        normals.resize(pc.size());
+        normals.width = pc.width;
+        normals.height = pc.height;
+        for (unsigned i = 0; i < pc.width; i++)
+          for (unsigned j = 0; j < pc.height; j++)
+          {
+            const pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, neighborhood_rows, neighborhood_cols, debugging);
+            normals.at(i, j) = n;
+          }
+      }
     
-      for (unsigned it = 0; it < pc.size()-1; it++)
-        normals.push_back(normals.at(0));
-
-      normals.width = pc.width;
-      normals.height = pc.height;
       normals.is_dense = pc.is_dense;
       normals.header = pc.header;
       return normals;
@@ -483,13 +490,13 @@ namespace uav_detect
       }
     }
 
-    pcl::Normal estimate_normal(const int col, const int row, PC& pc, const PC& unfiltered_pc, int neighborhood_rows, int neighborhood_cols)
+    pcl::Normal estimate_normal(const int col, const int row, PC& pc, const PC& unfiltered_pc, int neighborhood_rows, int neighborhood_cols, const bool debugging = false)
     {
       /* cout << "Using neighborhood: " << neighborhood << std::endl; */
       const static pcl::Normal invalid_normal(nan, nan, nan);
       const auto pt = pc.at(col, row);
-      /* if (!valid_pt(pt)) */
-      /*   return invalid_normal; */
+      if (!valid_pt(pt) && !debugging)
+        return invalid_normal;
 
       const int col_bot = std::max(col - neighborhood_cols, 0);
       const int col_top = std::min(col + neighborhood_cols, (int)pc.width-1);
@@ -506,7 +513,8 @@ namespace uav_detect
             neig_pc->push_back(pt);
         }
 
-      pc = *neig_pc;
+      if (debugging)
+        pc = *neig_pc;
       /* cout << "Neighborhood points size: " << neig_pc->size() << std::endl; */
       plane_params_t plane_params = fit_plane(neig_pc);
       Eigen::Vector3f normal_vec = plane_params.block<3, 1>(0, 0);
