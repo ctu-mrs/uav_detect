@@ -21,6 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_sensor_msgs
   tf2_eigen
   tf2_geometry_msgs
+  visualization_msgs
   mrs_lib
   nodelet
   pcl_ros
@@ -100,7 +101,7 @@ add_definitions(
   ${PCL_DEFINITIONS}
   )
 
-add_library(PCLDetector src/pcl_detect_nodelet.cpp)
+add_library(PCLDetector src/pcl_detect_nodelet.cpp src/mesh_sampling.cpp)
 add_dependencies(PCLDetector
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS}

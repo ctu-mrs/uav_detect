@@ -15,6 +15,7 @@
 #include <pcl_ros/point_cloud.h>
 #include <pcl_ros/transforms.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl/surface/organized_fast_mesh.h>
 
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/crop_box.h>
@@ -28,6 +29,7 @@
 
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/RegionOfInterest.h>
+#include <visualization_msgs/Marker.h>
 #include <uav_detect/DetectionParamsConfig.h>
 
 using namespace cv;
@@ -41,11 +43,13 @@ typedef pcl::PointCloud<pcl::PointXYZ> PC;
 namespace uav_detect
 {
 
+  /* helper functions //{ */
+  
   float distsq_from_origin(const pcl::PointXYZ& point)
   {
     return point.x*point.x + point.y*point.y + point.z*point.z;
   }
-
+  
   bool scaled_dist_thresholding(const pcl::PointXYZ& point_a, const pcl::PointXYZ& point_b, float squared_distance)
   {
     static const float thresh = 0.25*0.25; // metres squared
@@ -55,6 +59,8 @@ namespace uav_detect
     const float scaled_thresh = thresh*sqrt(d_max);
     return squared_distance < scaled_thresh;
   }
+  
+  //}
 
   class PCLDetector : public nodelet::Nodelet
   {
@@ -106,6 +112,7 @@ namespace uav_detect
       /* m_detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1); */
       m_global_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("global_pc", 1);
       m_filtered_input_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("filterd_input_pc", 1);
+      m_mesh_pub = nh.advertise<visualization_msgs::Marker>("mesh", 1);
       //}
 
       m_last_detection_id = 0;
@@ -148,7 +155,7 @@ namespace uav_detect
 
         /* filter input cloud and transform it to world, calculate its normals //{ */
         
-        pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals = boost::make_shared<pcl::PointCloud<pcl::PointNormal>>();
+        /* pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normals = boost::make_shared<pcl::PointCloud<pcl::PointNormal>>(); */
         PC::Ptr cloud_filtered = boost::make_shared<PC>(*cloud);
         Eigen::Vector3d tf_trans;
         {
@@ -201,55 +208,32 @@ namespace uav_detect
           NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 2: " << cloud_filtered->size() << " points");
           /* NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 2: " << indices_filtered->indices.size() << " points"); */
 
-          /* auto pt = cloud_filtered->at(500, 3); */
-          /* cloud_filtered->clear(); */
-          /* cloud_filtered->push_back(pt); */
-          /* cloud_filtered->push_back(pt); */
-          /* cloud_filtered->height = 2; */
-          /* cloud_filtered->width = 2; */
-          pcl::PointCloud<pcl::Normal>::Ptr normals = boost::make_shared<pcl::PointCloud<pcl::Normal>>();
-          {
-            const bool debugging = m_drmgr_ptr->config.normal_debug;
-            *normals = estimate_normals_organized(*cloud_filtered, *cloud, debugging);
-            /* pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::Normal> ne; */
-            /* pcl::search::KdTree<pcl::PointXYZ>::Ptr tree = boost::make_shared<pcl::search::KdTree<pcl::PointXYZ>>(); */
-            /* tree->setInputCloud(cloud_filtered); */
-            /* ne.setNumberOfThreads(4); */
-            /* ne.setViewPoint(0, 0, 0); */
-            /* ne.setInputCloud(cloud_filtered); */
-            /* ne.setSearchMethod(tree); */
-            /* ne.setKSearch(5); */
-            /* ne.compute(*normals);          // estimate normals */
+          /* pcl::PointCloud<pcl::Normal>::Ptr normals = boost::make_shared<pcl::PointCloud<pcl::Normal>>(); */
+          /* { */
+          /*   const bool debugging = m_drmgr_ptr->config.normal_debug; */
+          /*   *normals = estimate_normals_organized(*cloud_filtered, *cloud, debugging); */
+          /* } */
 
-            /* pcl::IntegralImageNormalEstimation<pcl::PointXYZ, pcl::Normal> ne; */
-            /* ne.setNormalEstimationMethod(ne.AVERAGE_3D_GRADIENT); */
-            /* ne.setMaxDepthChangeFactor(0.02f); */
-            /* ne.setNormalSmoothingSize(10.0f); */
-            /* ne.setInputCloud(cloud_filtered); */
-            /* /1* ne.setIndices(indices_filtered); *1/ */
-            /* /1* ne.setInputCloud(cloud); *1/ */
-            /* ne.compute(*normals); */
-          }
+          /* { */
+          /*   /1* pcl::concatenateFields(*cloud_filtered, *normals, *cloud_with_normals); *1/ */
+          /*   std::vector<int> unused_vec; */
+          /*   /1* pcl::removeNaNFromPointCloud(*cloud_with_normals, *cloud_with_normals, unused_vec); *1/ */
+          /*   pcl::removeNaNFromPointCloud(*cloud_filtered, *cloud_filtered, unused_vec); */
+          /*   /1* pcl::removeNaNNormalsFromPointCloud(*cloud_with_normals, *cloud_with_normals, unused_vec); *1/ */
+          /* } */
 
-          {
-            pcl::concatenateFields(*cloud_filtered, *normals, *cloud_with_normals);
-            std::vector<int> unused_vec;
-            pcl::removeNaNFromPointCloud(*cloud_with_normals, *cloud_with_normals, unused_vec);
-            pcl::removeNaNNormalsFromPointCloud(*cloud_with_normals, *cloud_with_normals, unused_vec);
-          }
-
-          /* filter by voxel grid //{ */
-          {
-            /* pcl::VoxelGrid<pcl::PointXYZ> vg; */
-            pcl::VoxelGrid<pcl::PointNormal> vg;
-            vg.setLeafSize(leaf_size, leaf_size, leaf_size);
-            /* vg.setInputCloud(cloud_filtered); */
-            /* vg.filter(*cloud_filtered); */
-            vg.setInputCloud(cloud_with_normals);
-            vg.filter(*cloud_with_normals);
-          }
+          /* /1* filter by voxel grid //{ *1/ */
+          /* { */
+          /*   /1* pcl::VoxelGrid<pcl::PointXYZ> vg; *1/ */
+          /*   pcl::VoxelGrid<pcl::PointXYZ> vg; */
+          /*   vg.setLeafSize(leaf_size, leaf_size, leaf_size); */
+          /*   /1* vg.setInputCloud(cloud_filtered); *1/ */
+          /*   /1* vg.filter(*cloud_filtered); *1/ */
+          /*   vg.setInputCloud(cloud_filtered); */
+          /*   vg.filter(*cloud_filtered); */
+          /* } */
           //}
-          NODELET_INFO_STREAM("[PCLDetector]: Input PC after VoxelGrid: " << cloud_with_normals->size() << " points");
+          /* NODELET_INFO_STREAM("[PCLDetector]: Input PC after VoxelGrid: " << cloud_with_normals->size() << " points"); */
           /* NODELET_INFO_STREAM("[PCLDetector]: Input PC after VoxelGrid: " << indices_filtered->indices.size() << " points"); */
 
 
@@ -264,53 +248,59 @@ namespace uav_detect
           /* pcl::PointCloud<pcl::PointXYZ>::ConstPtr cloud_filtered = boost::make_shared<pcl::PointCloud<pcl::PointXYZ>>(*cloud, indices_filtered->indices); */
           /* pcl::PointCloud<pcl::Normal>::ConstPtr normals_filtered = boost::make_shared<pcl::PointCloud<pcl::Normal>>(*normals, idx_filtered->indices); */
           /* pcl::concatenateFields(*cloud_filtered, *normals, *cloud_with_normals); */
-          pcl::transformPointCloud(*cloud_with_normals, *cloud_with_normals, s2w_tf.cast<float>());
-          cloud_with_normals->header.frame_id = m_world_frame;
+          pcl::transformPointCloud(*cloud_filtered, *cloud_filtered, s2w_tf.cast<float>());
+          cloud_filtered->header.frame_id = m_world_frame;
           /* tf2::doTransform(cloud, cloud, s2w_tf); */
 
           /* cloud = cloud_filtered; */
-          NODELET_INFO_STREAM("[PCLDetector]: Filtered input PC has " << cloud_with_normals->size() << " points");
+          NODELET_INFO_STREAM("[PCLDetector]: Filtered input PC has " << cloud_filtered->size() << " points");
         }
         
         //}
 
-        /* add filtered input cloud to global cloud and filter it //{ */
+        /* /1* add filtered input cloud to global cloud and filter it //{ *1/ */
         
-        {
-          *m_cloud_global += *cloud_with_normals;
+        /* { */
+        /*   *m_cloud_global += *cloud_with_normals; */
 
-          /* filter by mutual point distance (voxel grid) //{ */
-          pcl::VoxelGrid<pcl::PointNormal> vg;
-          vg.setLeafSize(leaf_size, leaf_size, leaf_size);
-          vg.setInputCloud(m_cloud_global);
-          vg.filter(*m_cloud_global);
-          //}
+        /*   /1* filter by mutual point distance (voxel grid) //{ *1/ */
+        /*   pcl::VoxelGrid<pcl::PointNormal> vg; */
+        /*   vg.setLeafSize(leaf_size, leaf_size, leaf_size); */
+        /*   vg.setInputCloud(m_cloud_global); */
+        /*   vg.filter(*m_cloud_global); */
+        /*   //} */
 
-          /* filter by cropping points outside a box, relative to the sensor //{ */
-          const auto box_size = m_drmgr_ptr->config.active_box_size;
-          const Eigen::Vector4f sensor_origin(tf_trans.x(), tf_trans.y(), tf_trans.z(), 1.0f);
-          const Eigen::Vector4f box_point1 = sensor_origin - Eigen::Vector4f(box_size/2, box_size/2, box_size/2, 0);
-          const Eigen::Vector4f box_point2 = sensor_origin + Eigen::Vector4f(box_size/2, box_size/2, box_size/2, 0);
-          pcl::CropBox<pcl::PointNormal> cb;
-          cb.setMin(box_point1);
-          cb.setMax(box_point2);
-          cb.setInputCloud(m_cloud_global);
-          cb.filter(*m_cloud_global);
-          //}
+        /*   /1* filter by cropping points outside a box, relative to the sensor //{ *1/ */
+        /*   const auto box_size = m_drmgr_ptr->config.active_box_size; */
+        /*   const Eigen::Vector4f sensor_origin(tf_trans.x(), tf_trans.y(), tf_trans.z(), 1.0f); */
+        /*   const Eigen::Vector4f box_point1 = sensor_origin - Eigen::Vector4f(box_size/2, box_size/2, box_size/2, 0); */
+        /*   const Eigen::Vector4f box_point2 = sensor_origin + Eigen::Vector4f(box_size/2, box_size/2, box_size/2, 0); */
+        /*   pcl::CropBox<pcl::PointNormal> cb; */
+        /*   cb.setMin(box_point1); */
+        /*   cb.setMax(box_point2); */
+        /*   cb.setInputCloud(m_cloud_global); */
+        /*   cb.filter(*m_cloud_global); */
+        /*   //} */
 
-          NODELET_INFO_STREAM("[PCLDetector]: Global pointcloud has " << m_cloud_global->size() << " points");
-        }
+        /*   NODELET_INFO_STREAM("[PCLDetector]: Global pointcloud has " << m_cloud_global->size() << " points"); */
+        /* } */
         
-        //}
+        /* //} */
 
+        pcl::PolygonMesh mesh;
         /* fit a surface to the global cloud and filter the edge points //{ */
         {
-          pcl::PointCloud<pcl::PointNormal>::Ptr mesh_cloud = boost::make_shared<pcl::PointCloud<pcl::PointNormal>>();
-          std::vector<pcl::Vertices> mesh_vertices;
-          pcl::Poisson<pcl::PointNormal> poisson;
-          poisson.setInputCloud(m_cloud_global);
-          poisson.reconstruct(*mesh_cloud, mesh_vertices);
-          m_cloud_global = mesh_cloud;
+          /* pcl::PointCloud<pcl::PointNormal>::Ptr mesh_cloud = boost::make_shared<pcl::PointCloud<pcl::PointNormal>>(); */
+          /* std::vector<pcl::Vertices> mesh_vertices; */
+          mesh = reconstruct_mesh_organized(cloud_filtered);
+          if (mesh.polygons.empty())
+            ROS_ERROR("[PCLDetector]: Failed to reconstruct mesh using input pointcloud - is it organized?");
+          /* mesh_vertices = mesh.polygons; */
+          /* pcl::Poisson<pcl::PointNormal> poisson; */
+          /* poisson.setInputCloud(m_cloud_global); */
+          /* poisson.reconstruct(*mesh_cloud, mesh_vertices); */
+          /* m_cloud_global = mesh.cloud; */
+          m_cloud_global->header.frame_id = m_world_frame;
           
           /* filter by mutual point distance (voxel grid) //{ */
           pcl::VoxelGrid<pcl::PointNormal> vg;
@@ -379,10 +369,13 @@ namespace uav_detect
         m_cloud_global->header.stamp = cloud->header.stamp;
 
         if (m_filtered_input_pc_pub.getNumSubscribers() > 0)
-          m_filtered_input_pc_pub.publish(cloud_with_normals);
+          m_filtered_input_pc_pub.publish(cloud_filtered);
 
         if (m_global_pc_pub.getNumSubscribers() > 0)
           m_global_pc_pub.publish(m_cloud_global);
+
+        if (m_mesh_pub.getNumSubscribers() > 0)
+          m_mesh_pub.publish(to_marker_list_msg(mesh));
 
         NODELET_INFO_STREAM("[PCLDetector]: Done processing data --------------------------------------------------------- ");
       }
@@ -403,6 +396,114 @@ namespace uav_detect
     /* //} */
 
   private:
+
+    geometry_msgs::Point pcl2gmpt(const pcl::PointXYZ& pt0)
+    {
+      geometry_msgs::Point ret;
+      ret.x = pt0.x;
+      ret.y = pt0.y;
+      ret.z = pt0.z;
+      return ret;
+    }
+
+    using marker_pts_t = visualization_msgs::Marker::_points_type;
+    void fill_marker_pts_lines(const pcl::Vertices& mesh_verts, const PC& mesh_cloud, marker_pts_t& marker_pts)
+    {
+      geometry_msgs::Point prev_pt;
+      bool prev_pt_set = false;
+      for (const auto vert : mesh_verts.vertices)
+      {
+        const auto idx = vert;
+        const auto pt = mesh_cloud.at(idx);
+        const geometry_msgs::Point gmpt = pcl2gmpt(pt);
+        if (prev_pt_set)
+        {
+          marker_pts.push_back(prev_pt);
+          marker_pts.push_back(gmpt);
+        }
+        prev_pt = gmpt;
+        prev_pt_set = true;
+      }
+      if (prev_pt_set)
+      {
+        marker_pts.push_back(prev_pt);
+        const auto idx = mesh_verts.vertices.at(0);
+        const auto pt = mesh_cloud.at(idx);
+        const geometry_msgs::Point gmpt = pcl2gmpt(pt);
+        marker_pts.push_back(gmpt);
+      }
+    }
+
+    void fill_marker_pts_triangles(const pcl::Vertices& mesh_verts, const PC& mesh_cloud, marker_pts_t& marker_pts)
+    {
+      if (mesh_verts.vertices.size() != 3)
+        return;
+      for (const auto vert : mesh_verts.vertices)
+      {
+        const auto idx = vert;
+        const auto pt = mesh_cloud.at(idx);
+        const geometry_msgs::Point gmpt = pcl2gmpt(pt);
+        marker_pts.push_back(gmpt);
+      }
+    }
+
+    visualization_msgs::Marker to_marker_list_msg(const pcl::PolygonMesh& mesh)
+    {
+      visualization_msgs::Marker ret;
+      ret.header.frame_id = mesh.header.frame_id;
+      pcl_conversions::fromPCL(mesh.header.stamp, ret.header.stamp);
+      ret.ns = "uav_detect/mesh";
+      ret.id = 666;
+      ret.action = visualization_msgs::Marker::ADD;
+      ret.lifetime = ros::Duration(0.0);
+      ret.color.a = ret.color.r = ret.color.g = ret.color.b = 1.0;
+      if (mesh.polygons.empty())
+        return ret;
+
+      const auto n_verts = mesh.polygons.at(0).vertices.size();
+      if (n_verts == 3)
+      {
+        ret.scale.x = ret.scale.y = ret.scale.z = 1.0;
+        ret.type = visualization_msgs::Marker::TRIANGLE_LIST;
+      }
+      else
+      {
+        ret.scale.x = ret.scale.y = ret.scale.z = 0.1;
+        ret.type = visualization_msgs::Marker::LINE_LIST;
+      }
+      ret.points.reserve(mesh.polygons.size()*n_verts);
+      PC mesh_cloud;
+      pcl::fromPCLPointCloud2(mesh.cloud, mesh_cloud);
+      for (const auto& vert : mesh.polygons)
+      {
+        if (n_verts == 3)
+        {
+          if (vert.vertices.size() != n_verts)
+            ROS_WARN_THROTTLE(0.1, "[PCLDetector]: Number of vertices in mesh is incosistent (expected: %lu, got %lu)!", n_verts, vert.vertices.size());
+          fill_marker_pts_triangles(vert, mesh_cloud, ret.points);
+        }
+        else
+          fill_marker_pts_lines(vert, mesh_cloud, ret.points);
+      }
+      /* ret.colors; */
+      return ret;
+    }
+
+    /* reconstruct_mesh_organized() method //{ */
+
+    pcl::PolygonMesh reconstruct_mesh_organized(PC::Ptr& pc)
+    {
+      using ofm_t = pcl::OrganizedFastMesh<PC::PointType>;
+      pcl::PolygonMesh ret;
+      ofm_t ofm;
+      ofm.setInputCloud(pc);
+      ofm.setTriangulationType(ofm_t::TriangulationType::TRIANGLE_ADAPTIVE_CUT);
+      ofm.storeShadowedFaces(true);
+      ofm.reconstruct(ret);
+      return ret;
+    }
+
+    //}
 
     /* estimate_normals_organized() method //{ */
     // THESE VALUES HAVE TO CORRESPOND TO THE DYNAMIC RECONFIGURE ENUM
@@ -597,6 +698,7 @@ namespace uav_detect
     mrs_lib::SubscribeHandlerPtr<PC::ConstPtr> m_pc_sh;
     /* ros::Publisher m_detections_pub; */
     ros::Publisher m_global_pc_pub;
+    ros::Publisher m_mesh_pub;
     ros::Publisher m_filtered_input_pc_pub;
     ros::Timer m_main_loop_timer;
     ros::Timer m_info_loop_timer;
