@@ -10,6 +10,9 @@
 #include <random>
 #include <vector>
 
-void uniform_mesh_sampling(const pcl::PolygonMesh& mesh, const size_t n_pts, pcl::PointCloud<pcl::PointNormal>& cloud_out);
+namespace uav_detect
+{
+  pcl::PointCloud<pcl::PointNormal> uniform_mesh_sampling(const pcl::PolygonMesh& mesh, const size_t n_pts);
+}
 
 #endif // MESH_SAMPLING_H

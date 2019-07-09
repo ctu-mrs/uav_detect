@@ -31,6 +31,7 @@
 #include <sensor_msgs/RegionOfInterest.h>
 #include <visualization_msgs/Marker.h>
 #include <uav_detect/DetectionParamsConfig.h>
+#include <mesh_sampling.h>
 
 using namespace cv;
 using namespace std;
@@ -258,57 +259,45 @@ namespace uav_detect
         
         //}
 
-        /* /1* add filtered input cloud to global cloud and filter it //{ *1/ */
-        
-        /* { */
-        /*   *m_cloud_global += *cloud_with_normals; */
-
-        /*   /1* filter by mutual point distance (voxel grid) //{ *1/ */
-        /*   pcl::VoxelGrid<pcl::PointNormal> vg; */
-        /*   vg.setLeafSize(leaf_size, leaf_size, leaf_size); */
-        /*   vg.setInputCloud(m_cloud_global); */
-        /*   vg.filter(*m_cloud_global); */
-        /*   //} */
-
-        /*   /1* filter by cropping points outside a box, relative to the sensor //{ *1/ */
-        /*   const auto box_size = m_drmgr_ptr->config.active_box_size; */
-        /*   const Eigen::Vector4f sensor_origin(tf_trans.x(), tf_trans.y(), tf_trans.z(), 1.0f); */
-        /*   const Eigen::Vector4f box_point1 = sensor_origin - Eigen::Vector4f(box_size/2, box_size/2, box_size/2, 0); */
-        /*   const Eigen::Vector4f box_point2 = sensor_origin + Eigen::Vector4f(box_size/2, box_size/2, box_size/2, 0); */
-        /*   pcl::CropBox<pcl::PointNormal> cb; */
-        /*   cb.setMin(box_point1); */
-        /*   cb.setMax(box_point2); */
-        /*   cb.setInputCloud(m_cloud_global); */
-        /*   cb.filter(*m_cloud_global); */
-        /*   //} */
-
-        /*   NODELET_INFO_STREAM("[PCLDetector]: Global pointcloud has " << m_cloud_global->size() << " points"); */
-        /* } */
-        
-        /* //} */
-
         pcl::PolygonMesh mesh;
-        /* fit a surface to the global cloud and filter the edge points //{ */
+        /* fit a surface to the filtered cloud //{ */
         {
-          /* pcl::PointCloud<pcl::PointNormal>::Ptr mesh_cloud = boost::make_shared<pcl::PointCloud<pcl::PointNormal>>(); */
-          /* std::vector<pcl::Vertices> mesh_vertices; */
           mesh = reconstruct_mesh_organized(cloud_filtered);
           if (mesh.polygons.empty())
             ROS_ERROR("[PCLDetector]: Failed to reconstruct mesh using input pointcloud - is it organized?");
-          /* mesh_vertices = mesh.polygons; */
-          /* pcl::Poisson<pcl::PointNormal> poisson; */
-          /* poisson.setInputCloud(m_cloud_global); */
-          /* poisson.reconstruct(*mesh_cloud, mesh_vertices); */
-          /* m_cloud_global = mesh.cloud; */
           m_cloud_global->header.frame_id = m_world_frame;
-          
+        }
+        //}
+
+        pcl::PointCloud<pcl::PointNormal> cloud_with_normals = uniform_mesh_sampling(mesh, m_drmgr_ptr->config.mesh_resample_points);
+
+        /* add filtered input cloud to global cloud and filter it //{ */
+        
+        {
+          *m_cloud_global += cloud_with_normals;
+
           /* filter by mutual point distance (voxel grid) //{ */
           pcl::VoxelGrid<pcl::PointNormal> vg;
           vg.setLeafSize(leaf_size, leaf_size, leaf_size);
           vg.setInputCloud(m_cloud_global);
           vg.filter(*m_cloud_global);
           //}
+
+          /* filter by cropping points outside a box, relative to the sensor //{ */
+          const auto box_size = m_drmgr_ptr->config.active_box_size;
+          const Eigen::Vector4f sensor_origin(tf_trans.x(), tf_trans.y(), tf_trans.z(), 1.0f);
+          const Eigen::Vector4f box_point1 = sensor_origin - Eigen::Vector4f(box_size/2, box_size/2, box_size/2, 0);
+          const Eigen::Vector4f box_point2 = sensor_origin + Eigen::Vector4f(box_size/2, box_size/2, box_size/2, 0);
+          pcl::CropBox<pcl::PointNormal> cb;
+          cb.setMin(box_point1);
+          cb.setMax(box_point2);
+          cb.setInputCloud(m_cloud_global);
+          cb.filter(*m_cloud_global);
+          //}
+
+          NODELET_INFO_STREAM("[PCLDetector]: Global pointcloud has " << m_cloud_global->size() << " points");
         }
+        
         //}
 
         /* /1* unused //{ *1/ */
