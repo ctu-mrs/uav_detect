@@ -131,8 +131,9 @@ namespace uav_detect
   pcl::PointCloud<pcl::PointNormal> uniform_mesh_sampling(const pcl::PolygonMesh& mesh, const size_t n_pts)
   {
     pcl::PointCloud<pcl::PointNormal> ret;
+    if (mesh.polygons.empty())
+      return ret;
     ret.reserve(n_pts);
-    /* cloud_t::ConstPtr mesh_cloud = boost::make_shared<cloud_t>(mesh.cloud); */
     cloud_t mesh_cloud;
     pcl::fromPCLPointCloud2(mesh.cloud, mesh_cloud);
     std::vector<float> cumulative_areas = cumulative_mesh_areas(mesh.polygons, mesh_cloud);
