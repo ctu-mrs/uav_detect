@@ -118,7 +118,9 @@ namespace uav_detect
       /* m_detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); */ 
       /* m_detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1); */
       m_global_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("global_pc", 1);
+      m_resampled_global_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("resampled_global_pc", 1);
       m_filtered_input_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("filterd_input_pc", 1);
+      m_resampled_input_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("resampled_input_pc", 1);
       m_mesh_pub = nh.advertise<visualization_msgs::Marker>("mesh", 1);
       m_global_mesh_pub = nh.advertise<visualization_msgs::Marker>("global_mesh", 1);
       //}
@@ -293,6 +295,9 @@ namespace uav_detect
         }
         //}
 
+        if (m_global_pc_pub.getNumSubscribers() > 0)
+          m_global_pc_pub.publish(m_cloud_global);
+
         /* pcl::fromPCLPointCloud2(global_mesh.cloud, *m_cloud_global); */
         *m_cloud_global = uniform_mesh_sampling(global_mesh, m_drmgr_ptr->config.global_mesh_resample_points);
         NODELET_INFO_STREAM("[PCLDetector]: Resampled global pointcloud has " << m_cloud_global->size() << " points");
@@ -303,8 +308,11 @@ namespace uav_detect
         if (m_filtered_input_pc_pub.getNumSubscribers() > 0)
           m_filtered_input_pc_pub.publish(cloud_filtered);
 
-        if (m_global_pc_pub.getNumSubscribers() > 0)
-          m_global_pc_pub.publish(m_cloud_global);
+        if (m_resampled_input_pc_pub.getNumSubscribers() > 0)
+          m_resampled_input_pc_pub.publish(cloud_with_normals);
+
+        if (m_resampled_global_pc_pub.getNumSubscribers() > 0)
+          m_resampled_global_pc_pub.publish(m_cloud_global);
 
         if (m_mesh_pub.getNumSubscribers() > 0)
           m_mesh_pub.publish(to_marker_list_msg(mesh));
@@ -372,12 +380,12 @@ namespace uav_detect
       const auto pclA = mesh_cloud.at(poly.vertices.at(0));
       const auto pclB = mesh_cloud.at(poly.vertices.at(1));
       const auto pclC = mesh_cloud.at(poly.vertices.at(2));
-      const Eigen::Vector3f A(pclA.x, pclA.y, pclA.z);
-      const Eigen::Vector3f B(pclB.x, pclB.y, pclB.z);
-      const Eigen::Vector3f C(pclC.x, pclC.y, pclC.z);
-      const Eigen::Vector3f v0 = A - B;
-      const Eigen::Vector3f v1 = B - C;
-      const Eigen::Vector3f v2 = C - A;
+      const Eigen::Vector3f v0(pclA.x, pclA.y, pclA.z);
+      const Eigen::Vector3f v1(pclB.x, pclB.y, pclB.z);
+      const Eigen::Vector3f v2(pclC.x, pclC.y, pclC.z);
+      /* const Eigen::Vector3f v0 = A - B; */
+      /* const Eigen::Vector3f v1 = B - C; */
+      /* const Eigen::Vector3f v2 = C - A; */
       const Eigen::Vector3f v0v1 = v1 - v0;
       const Eigen::Vector3f v0v2 = v2 - v0;
       const float dist = vec.norm();
@@ -739,9 +747,11 @@ namespace uav_detect
     mrs_lib::SubscribeHandlerPtr<pc_XYZ_t::ConstPtr> m_pc_sh;
     /* ros::Publisher m_detections_pub; */
     ros::Publisher m_global_pc_pub;
+    ros::Publisher m_resampled_global_pc_pub;
     ros::Publisher m_mesh_pub;
     ros::Publisher m_global_mesh_pub;
     ros::Publisher m_filtered_input_pc_pub;
+    ros::Publisher m_resampled_input_pc_pub;
     ros::Timer m_main_loop_timer;
     ros::Timer m_info_loop_timer;
     std::string m_node_name;

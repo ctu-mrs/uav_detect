@@ -142,6 +142,7 @@ namespace uav_detect
       pcl::PointNormal pt = random_point_surface(mesh.polygons, mesh_cloud, cumulative_areas);
       ret.push_back(pt);
     }
+    ret.header = mesh.header;
     return ret;
   }
 
