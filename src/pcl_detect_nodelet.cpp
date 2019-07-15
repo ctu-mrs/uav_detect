@@ -17,6 +17,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/surface/organized_fast_mesh.h>
 #include <pcl/surface/gp3.h>
+#include <pcl/surface/concave_hull.h>
 
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/crop_box.h>
@@ -119,10 +120,11 @@ namespace uav_detect
       /* m_detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1); */
       m_global_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("global_pc", 1);
       m_resampled_global_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("resampled_global_pc", 1);
-      m_filtered_input_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("filterd_input_pc", 1);
+      m_filtered_input_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("filtered_input_pc", 1);
       m_resampled_input_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("resampled_input_pc", 1);
       m_mesh_pub = nh.advertise<visualization_msgs::Marker>("mesh", 1);
       m_global_mesh_pub = nh.advertise<visualization_msgs::Marker>("global_mesh", 1);
+      m_clusters_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("clusters_pc", 1);
       //}
 
       m_last_detection_id = 0;
@@ -277,13 +279,19 @@ namespace uav_detect
         pcl::PolygonMesh global_mesh;
         /* fit a surface to the filtered cloud //{ */
         {
-          pcl::GreedyProjectionTriangulation<pt_XYZNormal_t> mesher;
-          /* pcl::Poisson<pt_XYZNormal_t> poisson; */
+          /* pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_hull (new pcl::PointCloud<pcl::PointXYZ>); */
+          /* pcl::ConcaveHull<pcl::PointNormal> chull; */
+          /* chull.setInputCloud(m_cloud_global); */
+          /* chull.setAlpha(1.0); */
+          /* chull.reconstruct(global_mesh); */
+
+          pcl::Poisson<pt_XYZNormal_t> mesher;
+          /* pcl::GreedyProjectionTriangulation<pt_XYZNormal_t> mesher; */
           mesher.setInputCloud(m_cloud_global);
-          mesher.setMaximumNearestNeighbors(m_drmgr_ptr->config.meshing_MaximumNearestNeighbors);
-          mesher.setMu(m_drmgr_ptr->config.meshing_Mu);
-          mesher.setSearchRadius(m_drmgr_ptr->config.meshing_SearchRadius);
-          mesher.setMaximumSurfaceAngle(m_drmgr_ptr->config.meshing_MaximumSurfaceAngle);
+          /* mesher.setMaximumNearestNeighbors(m_drmgr_ptr->config.meshing_MaximumNearestNeighbors); */
+          /* mesher.setMu(m_drmgr_ptr->config.meshing_Mu); */
+          /* mesher.setSearchRadius(m_drmgr_ptr->config.meshing_SearchRadius); */
+          /* mesher.setMaximumSurfaceAngle(m_drmgr_ptr->config.meshing_MaximumSurfaceAngle); */
           mesher.reconstruct(global_mesh);
           NODELET_INFO_STREAM("[PCLDetector]: Global mesh has " << global_mesh.polygons.size() << " polygons");
         }
@@ -303,8 +311,38 @@ namespace uav_detect
         *m_cloud_global = uniform_mesh_sampling(global_mesh, m_drmgr_ptr->config.global_mesh_resample_points);
         NODELET_INFO_STREAM("[PCLDetector]: Resampled global pointcloud has " << m_cloud_global->size() << " points");
 
+        pcl::PointCloud<pcl::PointXYZL> cloud_clusters = segment_meshes(global_mesh);
+        /* /1* extract euclidean clusters //{ *1/ */
+        /* { */
+        /*   std::vector<pcl::PointIndices> cluster_indices; */
+        /*   pcl::EuclideanClusterExtraction<pcl::PointNormal> ec; */
+        /*   ec.setClusterTolerance(0.5); */
+        /*   ec.setMinClusterSize(1); */
+        /*   ec.setMaxClusterSize(25000); */
+        /*   ec.setInputCloud(m_cloud_global); */
+        /*   ec.extract(cluster_indices); */
+        /*   cloud_clusters.reserve(m_cloud_global->size()); */
+        /*   int label = 0; */
+        /*   for (const auto& idxs : cluster_indices) */
+        /*   { */
+        /*     for (const auto idx : idxs.indices) */
+        /*     { */
+        /*       const auto pt_orig = m_cloud_global->at(idx); */
+        /*       pcl::PointXYZL pt; */
+        /*       pt.x = pt_orig.x; */
+        /*       pt.y = pt_orig.y; */
+        /*       pt.z = pt_orig.z; */
+        /*       pt.label = label; */
+        /*       cloud_clusters.push_back(pt); */
+        /*     } */
+        /*     label++; */
+        /*   } */
+        /* } */
+        /* //} */
+
         m_cloud_global->header.stamp = cloud->header.stamp;
         m_cloud_global->header.frame_id = m_world_frame;
+        cloud_clusters.header = m_cloud_global->header;
 
         if (m_filtered_input_pc_pub.getNumSubscribers() > 0)
           m_filtered_input_pc_pub.publish(cloud_filtered);
@@ -320,6 +358,9 @@ namespace uav_detect
 
         if (m_global_mesh_pub.getNumSubscribers() > 0)
           m_global_mesh_pub.publish(to_marker_list_msg(global_mesh));
+
+        if (m_clusters_pc_pub.getNumSubscribers() > 0)
+          m_clusters_pc_pub.publish(cloud_clusters);
 
         NODELET_INFO_STREAM("[PCLDetector]: Done processing data --------------------------------------------------------- ");
   }
@@ -340,37 +381,6 @@ namespace uav_detect
     /* //} */
 
   private:
-
-    void filter_by_age(pc_XYZNormalt_t& cloud, uint32_t decay_time)
-    {
-      for (auto it = std::begin(cloud); it != std::end(cloud); ++it)
-      {
-        if  (it->label > decay_time)
-        {
-          it = cloud.erase(it);
-          it--;
-        }
-      }
-    }
-
-    pc_XYZNormalt_t cloud_add_time(const pc_XYZNormal_t& cloud_with_normals, const ros::Time& time)
-    {
-      pc_XYZNormalt_t ret;
-      ret.reserve(cloud_with_normals.size());
-      for (const auto& pt : cloud_with_normals)
-      {
-        pc_XYZNormalt_t::PointType ptt;
-        ptt.x = pt.x;
-        ptt.y = pt.y;
-        ptt.z = pt.z;
-        ptt.label = time.sec;
-        ptt.normal_x = pt.normal_x;
-        ptt.normal_y = pt.normal_y;
-        ptt.normal_z = pt.normal_z;
-        ret.push_back(ptt);
-      }
-      return ret;
-    }
 
     /* ray_triangle_intersect() method //{ */
     // implemented according to https://www.scratchapixel.com/code.php?id=11&origin=/lessons/3d-basic-rendering/ray-tracing-polygon-mesh
@@ -562,7 +572,7 @@ namespace uav_detect
       const auto pc_width = pc->width;
       const auto pc_height = pc->height;
       pc_XYZ_t mesh_cloud;
-      auto mesh_polygons = mesh.polygons;
+      auto& mesh_polygons = mesh.polygons;
       pcl::fromPCLPointCloud2(mesh.cloud, mesh_cloud);
 
       /* stitch the bottom row //{ */
@@ -635,12 +645,104 @@ namespace uav_detect
       }
       //}
       pcl::toPCLPointCloud2(mesh_cloud, mesh.cloud);
-      mesh.polygons = mesh_polygons;
       return mesh;
     }
 
     //}
 
+    /* segment_meshes() method //{ */
+
+    /* template <class Point_T> */
+    /* std::vector<Point_T> get_poly_pts(const pcl::Vertices& poly, const pcl::PointCloud<Point_T>& mesh_cloud) */
+    /* { */
+    /*   std::vector<Point_T> ret; */
+    /*   ret.reserve(poly.vertices.size()); */
+    /*   for (const auto idx : poly.vertices) */
+    /*     ret.push_back(mesh_cloud.at(idx)); */
+    /*   return ret; */
+    /* } */
+    using label_t = int;
+    label_t get_master_label(const label_t slave, const std::unordered_map<label_t, label_t>& equal_labels)
+    {
+      label_t master = slave;
+      auto master_it = equal_labels.find(slave);
+      while (master_it != std::end(equal_labels))
+      {
+        master = master_it->second;
+        master_it = equal_labels.find(master);
+      }
+      return master;
+    }
+
+    pcl::PointCloud<pcl::PointXYZL> segment_meshes(const pcl::PolygonMesh& mesh)
+    {
+      pcl::PointCloud<pcl::PointXYZL> ret;
+      pc_XYZ_t mesh_cloud;
+      pcl::fromPCLPointCloud2(mesh.cloud, mesh_cloud);
+      const auto& mesh_polygons = mesh.polygons;
+      const auto n_pts = mesh_cloud.size();
+
+      ret.reserve(n_pts);
+      std::vector<int> labels(n_pts, -1);
+      std::unordered_map<int, int> equal_labels;
+      int n_labels = 0;
+      for (const auto& poly : mesh_polygons)
+      {
+        int connected_label = -1;
+        for (const auto idx : poly.vertices)
+        {
+          const auto cur_label = labels.at(idx);
+          if (cur_label > -1 && connected_label != cur_label) // a label is assigned
+          {
+            if (connected_label > -1) // a label is already assigned to the polygon
+            {
+              const label_t master1 = get_master_label(cur_label, equal_labels);
+              const label_t master2 = get_master_label(connected_label, equal_labels);
+              if (master1 != master2)
+                equal_labels.insert({master1, master2});
+            } // if (connected_label > -1)
+            else
+            {
+              connected_label = cur_label;
+            } // else (connected_label > -1)
+          } // if (cur_label > -1) // a label is assigned
+        }
+        if (connected_label <= -1)
+        {
+          connected_label = n_labels++;
+        }
+        for (const auto idx : poly.vertices)
+          labels.at(idx) = connected_label;
+      }
+
+      std::unordered_map<int, int> equal_labels_filtered;
+      for (const auto& keyval : equal_labels)
+      {
+        const auto slave = keyval.first;
+        const auto master = get_master_label(slave, equal_labels);
+        equal_labels_filtered.insert({slave, master});
+      }
+
+      for (unsigned it = 0; it < labels.size(); it++)
+      {
+        auto label = labels.at(it);
+        if (equal_labels.find(label) != std::end(equal_labels))
+          label = equal_labels.at(label);
+        const auto pt = mesh_cloud.at(it);
+        pcl::PointXYZL ptl;
+        ptl.x = pt.x;
+        ptl.y = pt.y;
+        ptl.z = pt.z;
+        ptl.label = label;
+        ret.push_back(ptl);
+      }
+
+      return ret;
+    }
+
+    //}
+
+    /* valid_pt() method //{ */
     template <class Point_T>
     bool valid_pt(Point_T pt)
     {
@@ -648,6 +750,7 @@ namespace uav_detect
               std::isfinite(pt.y) &&
               std::isfinite(pt.z));
     }
+    //}
 
     /* get_transform_to_world() method //{ */
     bool get_transform_to_world(const string& frame_id, ros::Time stamp, Eigen::Affine3d& tf_out) const
@@ -686,6 +789,7 @@ namespace uav_detect
     ros::Publisher m_resampled_global_pc_pub;
     ros::Publisher m_mesh_pub;
     ros::Publisher m_global_mesh_pub;
+    ros::Publisher m_clusters_pc_pub;
     ros::Publisher m_filtered_input_pc_pub;
     ros::Publisher m_resampled_input_pc_pub;
     ros::Timer m_main_loop_timer;
