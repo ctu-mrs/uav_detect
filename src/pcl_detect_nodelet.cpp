@@ -283,6 +283,7 @@ namespace uav_detect
           mesher.setMaximumNearestNeighbors(m_drmgr_ptr->config.meshing_MaximumNearestNeighbors);
           mesher.setMu(m_drmgr_ptr->config.meshing_Mu);
           mesher.setSearchRadius(m_drmgr_ptr->config.meshing_SearchRadius);
+          mesher.setMaximumSurfaceAngle(m_drmgr_ptr->config.meshing_MaximumSurfaceAngle);
           mesher.reconstruct(global_mesh);
           NODELET_INFO_STREAM("[PCLDetector]: Global mesh has " << global_mesh.polygons.size() << " polygons");
         }
@@ -537,10 +538,17 @@ namespace uav_detect
 
     /* reconstruct_mesh_organized() method //{ */
 
-    pcl::PolygonMesh reconstruct_mesh_organized(pc_XYZ_t::Ptr& pc)
+    void add_triangle(const unsigned idx0, const unsigned idx1, const unsigned idx2, std::vector<pcl::Vertices>& mesh_polygons)
+    {
+      pcl::Vertices poly;
+      poly.vertices = {idx0, idx1, idx2};
+      mesh_polygons.push_back(poly);
+    }
+
+    pcl::PolygonMesh reconstruct_mesh_organized(const pc_XYZ_t::Ptr& pc)
     {
       using ofm_t = pcl::OrganizedFastMesh<pc_XYZ_t::PointType>;
-      pcl::PolygonMesh ret;
+      pcl::PolygonMesh mesh;
       ofm_t ofm;
       ofm.setInputCloud(pc);
       ofm.setTriangulationType(ofm_t::TriangulationType::TRIANGLE_ADAPTIVE_CUT);
@@ -548,170 +556,75 @@ namespace uav_detect
       const float shadow_angle_tolerance = use_shadowed_faces ? -1.0f : (m_drmgr_ptr->config.orgmesh_shadow_ang_tol/180.0f*M_PI);
       ofm.storeShadowedFaces(use_shadowed_faces);
       ofm.setAngleTolerance(shadow_angle_tolerance);
-      ofm.reconstruct(ret);
-      return ret;
+      ofm.reconstruct(mesh);
+      
+      // | ------------ Add the border cases to the mesh ------------ |
+      const auto pc_width = pc->width;
+      const auto pc_height = pc->height;
+      pc_XYZ_t mesh_cloud;
+      auto mesh_polygons = mesh.polygons;
+      pcl::fromPCLPointCloud2(mesh.cloud, mesh_cloud);
+      /* /1* stitch the bottom row //{ *1/ */
+      /* { */
+      /*   const int r_it = 0; */
+      /*   for (unsigned c_it1 = 0; c_it1 < pc_width-1; c_it1++) */
+      /*   { */
+      /*   } */
+
+      /*   auto idx0 = mesh_cloud.size(); */
+      /*   for (unsigned c_it1 = 0; c_it1 < pc_width-1; c_it1++) */
+      /*   { */
+      /*     const int c_it2 = c_it1+1; */
+      /*     mesh_cloud.push_back(pc->at(c_it1, r_it)); */
+      /*     mesh_cloud.push_back(pc->at(c_it2, r_it)); */
+      /*     mesh_cloud.push_back(pc->at(c_it2, r_it)); */
+      /*     add_triangle(idx0, idx0+1, idx0+2, mesh_polygons, mesh_cloud); */
+      /*     idx0 += 4; */
+      /*   } */
+      /* } */
+      /* //} */
+      
+      /* stitch the last and first columns //{ */
+      {
+        const int c_it1 = pc_width-1;
+        const int c_it2 = 0;
+        auto idx0 = mesh_cloud.size();
+        for (unsigned r_it1 = 0; r_it1 < pc_height-1; r_it1++)
+        {
+          const int r_it2 = r_it1+1;
+          const auto pt0 = pc->at(c_it1, r_it1);
+          const auto pt1 = pc->at(c_it2, r_it1);
+          const auto pt2 = pc->at(c_it1, r_it2);
+          const auto pt3 = pc->at(c_it2, r_it2);
+          if (!valid_pt(pt0)
+           || !valid_pt(pt1)
+           || !valid_pt(pt2)
+           || !valid_pt(pt3))
+            continue;
+          mesh_cloud.push_back(pt0);
+          mesh_cloud.push_back(pt1);
+          mesh_cloud.push_back(pt2);
+          mesh_cloud.push_back(pt3);
+          add_triangle(idx0+2, idx0+1, idx0, mesh_polygons);
+          add_triangle(idx0+2, idx0+3, idx0+1, mesh_polygons);
+          idx0 += 4;
+        }
+      }
+      //}
+      pcl::toPCLPointCloud2(mesh_cloud, mesh.cloud);
+      mesh.polygons = mesh_polygons;
+      return mesh;
     }
 
     //}
 
-    /* /1* estimate_normals_organized() method //{ *1/ */
-    /* // THESE VALUES HAVE TO CORRESPOND TO THE DYNAMIC RECONFIGURE ENUM */
-    /* enum plane_fit_method_t */
-    /* { */
-    /*   RANSAC = 0, */
-    /*   SVD = 1, */
-    /* }; */
-
-    /* pcl::PointCloud<pcl::Normal> estimate_normals_organized(pc_XYZ_t& pc, const pc_XYZ_t& unfiltered_pc, const bool debugging = false) */
-    /* { */
-    /*   pcl::PointCloud<pcl::Normal> normals; */
-    /*   const auto neighborhood_rows = m_drmgr_ptr->config.normal_neighborhood_rows; */
-    /*   const auto neighborhood_cols = m_drmgr_ptr->config.normal_neighborhood_cols; */
-    /*   const plane_fit_method_t fitting_method = (plane_fit_method_t)m_drmgr_ptr->config.normal_method; */
-    
-    /*   if (debugging) */
-    /*   { */
-    /*     const auto i = std::clamp(m_drmgr_ptr->config.normal_debug_col, 0, int(pc.width)-1); */
-    /*     const auto j = std::clamp(m_drmgr_ptr->config.normal_debug_row, 0, int(pc.height)-1); */
-    /*     const pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, neighborhood_rows, neighborhood_cols, fitting_method, debugging); */
-    /*     for (unsigned it = 0; it < pc.size(); it++) */
-    /*       normals.push_back(n); */
-    /*     normals.width = pc.width; */
-    /*     normals.height = pc.height; */
-    /*   } else */
-    /*   { */
-    /*     normals.resize(pc.size()); */
-    /*     normals.width = pc.width; */
-    /*     normals.height = pc.height; */
-    /*     for (unsigned i = 0; i < pc.width; i++) */
-    /*       for (unsigned j = 0; j < pc.height; j++) */
-    /*       { */
-    /*         const pcl::Normal n = estimate_normal(i, j, pc, unfiltered_pc, neighborhood_rows, neighborhood_cols, fitting_method, debugging); */
-    /*         normals.at(i, j) = n; */
-    /*       } */
-    /*   } */
-    
-    /*   normals.is_dense = pc.is_dense; */
-    /*   normals.header = pc.header; */
-    /*   return normals; */
-    /* } */
-
-    /* template <class Point_T> */
-    /* bool valid_pt(Point_T pt) */
-    /* { */
-    /*   return (std::isfinite(pt.x) && */
-    /*           std::isfinite(pt.y) && */
-    /*           std::isfinite(pt.z)); */
-    /* } */
-
-    /* using plane_params_t = Eigen::Vector4f; */
-    /* constexpr static float nan = std::numeric_limits<float>::quiet_NaN(); */
-    /* plane_params_t fit_plane(pc_XYZ_t::ConstPtr pcl) */
-    /* { */
-    /*   const static plane_params_t invalid_plane_params = plane_params_t(nan, nan, nan, nan); */
-    /*   if (pcl->size() < 3) */
-    /*     return invalid_plane_params; */
-
-    /*   Eigen::Matrix<float, 3, -1> points = pcl->getMatrixXfMap(3, 4, 0); */
-    /*   /1* cout << "Fitting plane to points:" << std::endl << points << std::endl; *1/ */
-    /*   const Eigen::Vector3f centroid = points.rowwise().mean(); */
-    /*   points.colwise() -= centroid; */
-    /*   const auto svd = points.jacobiSvd(Eigen::ComputeThinU | Eigen::ComputeThinV); */
-    /*   const Eigen::Vector3f normal = svd.matrixU().rightCols<1>().normalized(); */
-    /*   const double d = normal.dot(centroid); */
-    /*   const plane_params_t ret(normal.x(), normal.y(), normal.z(), d); */
-    /*   return ret; */
-    /* } */
-
-    /* plane_params_t fit_plane_RANSAC(pc_XYZ_t::ConstPtr pcl) */
-    /* { */
-    /*   const static plane_params_t invalid_plane_params = plane_params_t(nan, nan, nan, nan); */
-    /*   pcl::SampleConsensusModelPlane<pcl::PointXYZ>::Ptr model_p */
-    /*     = boost::make_shared<pcl::SampleConsensusModelPlane<pcl::PointXYZ>>(pcl, true); */
-    /*   if (pcl->size() < model_p->getSampleSize()) */
-    /*     return invalid_plane_params; */
-
-    /*   pcl::RandomSampleConsensus<pcl::PointXYZ> ransac(model_p); */
-    /*   ransac.setDistanceThreshold(m_drmgr_ptr->config.normal_threshold); */
-    /*   ransac.setMaxIterations(m_drmgr_ptr->config.normal_iterations); */
-    /*   ransac.setProbability(m_drmgr_ptr->config.normal_probability); */
-    /*   if (ransac.computeModel()) */
-    /*   { */
-    /*     Eigen::VectorXf coeffs; */
-    /*     ransac.getModelCoefficients(coeffs); */
-    /*     // normalize the normal (lel) */
-    /*     const double c = coeffs.block<3, 1>(0, 0).norm(); */
-    /*     coeffs = coeffs/c; */
-    /*     return coeffs; */
-    /*   } else */
-    /*   { */
-    /*     return invalid_plane_params; */
-    /*   } */
-    /* } */
-
-    /* pcl::Normal estimate_normal(const int col, const int row, pc_XYZ_t& pc, const pc_XYZ_t& unfiltered_pc, const int neighborhood_rows, const int neighborhood_cols, const plane_fit_method_t method, const bool debugging = false) */
-    /* { */
-    /*   /1* cout << "Using neighborhood: " << neighborhood << std::endl; *1/ */
-    /*   const static pcl::Normal invalid_normal(nan, nan, nan); */
-    /*   const auto pt = pc.at(col, row); */
-    /*   if (!valid_pt(pt) && !debugging) */
-    /*     return invalid_normal; */
-
-    /*   const int col_bot = std::max(col - neighborhood_cols, 0); */
-    /*   const int col_top = std::min(col + neighborhood_cols, (int)pc.width-1); */
-    /*   const int row_bot = std::max(row - neighborhood_rows, 0); */
-    /*   const int row_top = std::min(row + neighborhood_rows, (int)pc.height-1); */
-    /*   /1* cout << "bounds: [" << col_bot << ", " << col_top << "]; [" << row_bot << ", " << row_top << "]" << std::endl; *1/ */
-    /*   pc_XYZ_t::Ptr neig_pc = boost::make_shared<pc_XYZ_t>(); */
-    /*   neig_pc->reserve((2*neighborhood_cols+1)*(2*neighborhood_rows+1)); */
-    /*   for (int i = col_bot; i <= col_top; i++) */
-    /*     for (int j = row_bot; j <= row_top; j++) */
-    /*     { */
-    /*       const auto pt = unfiltered_pc.at(i, j); */
-    /*       if (valid_pt(pt)) */
-    /*         neig_pc->push_back(pt); */
-    /*     } */
-
-    /*   if (debugging) */
-    /*     pc = *neig_pc; */
-    /*   /1* cout << "Neighborhood points size: " << neig_pc->size() << std::endl; *1/ */
-    /*   plane_params_t plane_params; */
-    /*   switch (method) */
-    /*   { */
-    /*     case plane_fit_method_t::RANSAC: */
-    /*       plane_params = fit_plane_RANSAC(neig_pc); */
-    /*       break; */
-    /*     case plane_fit_method_t::SVD: */
-    /*       plane_params = fit_plane(neig_pc); */
-    /*       break; */
-    /*     default: */
-    /*       ROS_ERROR("[PCLDetector]: Unknown plane fitting method: %d! Skipping.", method); */
-    /*       plane_params = plane_params_t(nan, nan, nan, nan); */
-    /*       break; */
-    /*   } */
-    /*   Eigen::Vector3f normal_vec = plane_params.block<3, 1>(0, 0); */
-    /*   if (!normal_vec.array().isFinite().all()) */
-    /*     return invalid_normal; */
-
-    /*   const Eigen::Vector3f camera_vec = -Eigen::Vector3f(pt.x, pt.y, pt.z).normalized(); */
-    /*   /1* const Eigen::Vector3f camera_vec = -Eigen::Vector3f(0, 0, 1).normalized(); *1/ */
-    /*   const auto ancos = normal_vec.dot(camera_vec); */
-    /*   if (ancos < 0.0) */
-    /*   { */
-    /*     /1* cout << "do flipping normal " << coeffs << " to correspond to " << camera_vec << " (dot product is " << dprod << ")" << std::endl; *1/ */
-    /*     normal_vec = -normal_vec; */
-    /*   } */
-    /*   /1* else *1/ */
-    /*   /1* { *1/ */
-    /*   /1*   cout << "not flipping normal " << coeffs << " to correspond to " << camera_vec << " (dot product is " << dprod << ")" << std::endl; *1/ */
-    /*   /1* } *1/ */
-    /*   const pcl::Normal ret(normal_vec(0), normal_vec(1), normal_vec(2)); */
-    /*   /1* cout << "Camera: [" << std::endl << camera_vec.transpose() << std::endl << "]" << std::endl; *1/ */
-    /*   /1* cout << "Normal: [" << std::endl << normal_vec.transpose() << std::endl << "], acos: " << ancos << std::endl; *1/ */
-    /*   return ret; */
-    /* } */
-
-    /* //} */
+    template <class Point_T>
+    bool valid_pt(Point_T pt)
+    {
+      return (std::isfinite(pt.x) &&
+              std::isfinite(pt.y) &&
+              std::isfinite(pt.z));
+    }
 
     /* get_transform_to_world() method //{ */
     bool get_transform_to_world(const string& frame_id, ros::Time stamp, Eigen::Affine3d& tf_out) const
