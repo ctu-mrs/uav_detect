@@ -564,25 +564,48 @@ namespace uav_detect
       pc_XYZ_t mesh_cloud;
       auto mesh_polygons = mesh.polygons;
       pcl::fromPCLPointCloud2(mesh.cloud, mesh_cloud);
-      /* /1* stitch the bottom row //{ *1/ */
-      /* { */
-      /*   const int r_it = 0; */
-      /*   for (unsigned c_it1 = 0; c_it1 < pc_width-1; c_it1++) */
-      /*   { */
-      /*   } */
 
-      /*   auto idx0 = mesh_cloud.size(); */
-      /*   for (unsigned c_it1 = 0; c_it1 < pc_width-1; c_it1++) */
-      /*   { */
-      /*     const int c_it2 = c_it1+1; */
-      /*     mesh_cloud.push_back(pc->at(c_it1, r_it)); */
-      /*     mesh_cloud.push_back(pc->at(c_it2, r_it)); */
-      /*     mesh_cloud.push_back(pc->at(c_it2, r_it)); */
-      /*     add_triangle(idx0, idx0+1, idx0+2, mesh_polygons, mesh_cloud); */
-      /*     idx0 += 4; */
-      /*   } */
-      /* } */
-      /* //} */
+      /* stitch the bottom row //{ */
+      {
+        const int r_it = 0;
+        int acc = 0;
+        pt_XYZ_t centroid(0.0f, 0.0f, 0.0f);
+        for (unsigned c_it = 0; c_it < pc_width; c_it++)
+        {
+          const auto pt = pc->at(c_it, r_it);
+          if (!valid_pt(pt))
+            continue;
+          centroid.x += pt.x;
+          centroid.y += pt.y;
+          centroid.z += pt.z;
+          acc++;
+        }
+        if (acc > 0)
+        {
+          centroid.x /= acc;
+          centroid.y /= acc;
+          centroid.z /= acc;
+        }
+
+        auto idx0 = mesh_cloud.size();
+        const auto idxc = idx0;
+        mesh_cloud.push_back(centroid);
+        idx0++;
+        for (unsigned c_it1 = 0; c_it1 < pc_width-1; c_it1++)
+        {
+          const int c_it2 = c_it1+1;
+          const auto pt0 = pc->at(c_it1, r_it);
+          const auto pt1 = pc->at(c_it2, r_it);
+          if (!valid_pt(pt0)
+           || !valid_pt(pt1))
+            continue;
+          mesh_cloud.push_back(pt0);
+          mesh_cloud.push_back(pt1);
+          add_triangle(idx0, idx0+1, idxc, mesh_polygons);
+          idx0 += 2;
+        }
+      }
+      //}
       
       /* stitch the last and first columns //{ */
       {
