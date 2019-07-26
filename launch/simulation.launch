@@ -11,7 +11,7 @@
   <arg name="verbose" default="true"/>
   <arg name="vehicle" default="iris"/>
   <arg name="est" default="ekf2"/>
-  <arg name="world_name" default="$(find uav_detect)/gazebo/worlds/depth_detection.world"/> 
+  <arg name="world_name" default="$(find uav_detect)/gazebo/worlds/tmp.world"/> 
 
   <!-- set use_sim_time flag -->
   <group if="$(arg use_sim_time)">
