@@ -57,7 +57,7 @@ namespace uav_detect
       // Initialize subscribers
       mrs_lib::SubscribeMgr smgr(nh, m_node_name);
       const bool subs_time_consistent = false;
-      m_depthmap_sh = smgr.create_handler_threadsafe<sensor_msgs::ImageConstPtr, subs_time_consistent>("depthmap", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+      m_depthmap_sh = smgr.create_handler<sensor_msgs::ImageConstPtr, subs_time_consistent>("depthmap", ros::Duration(5.0));
       // Initialize publishers
       m_detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); 
       m_detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1);
