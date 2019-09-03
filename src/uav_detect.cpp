@@ -78,6 +78,12 @@ int main(int argc, char **argv)
   // Whether to use only subsquare from the image
   /* only_subsquare = pl.load_param2<bool>("only_subsquare", true); */
   double_detection = pl.load_param2<bool>("double_detection", true);
+  int ocl_platform_id = pl.load_param2<int>("ocl_platform_id", 0);
+  if (ocl_platform_id < 0)
+    ocl_platform_id = 0;
+  int ocl_device_id = pl.load_param2<int>("ocl_device_id", 0);
+  if (ocl_device_id < 0)
+    ocl_device_id = 0;
 
   sensor_msgs::RegionOfInterest roi;
   roi.x_offset = pl.load_param2<int>("roi_x_offset", 0);
@@ -113,8 +119,8 @@ int main(int argc, char **argv)
   MRS_Detector detector(data_file.c_str(), names_file.c_str(), cfg_file.c_str(), weights_file.c_str(), 0.2, 0.1, 1);
   int w_cnn = 416;
   int h_cnn = 416;
-  cout << "Initializing detector object\n";
-  detector.initialize();
+  cout << "Initializing detector object using platform id " << ocl_platform_id << " and device id " << ocl_device_id << "\n";
+  detector.initialize(ocl_platform_id, ocl_device_id);
 
   cout << "----------------------------------------------------------" << std::endl;
   ros::Time last_frame = ros::Time::now();

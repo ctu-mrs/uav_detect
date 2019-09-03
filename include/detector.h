@@ -41,7 +41,7 @@ public:
           int n_classes);
   ~MRS_Detector();
 
-  bool initialize();
+  bool initialize(const unsigned platform_id, const unsigned device_id);
 
   std::vector<cnn_detect::Detection> detect(const cv::Mat &image,
                                             float thresh,

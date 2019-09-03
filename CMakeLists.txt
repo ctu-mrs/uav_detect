@@ -25,9 +25,11 @@ find_package(catkin REQUIRED COMPONENTS
   mrs_lib
 )
 
-set(CMAKE_CXX_FLAGS "-std=c++11 -DGPU -DOPENCV -DOPENCL -Wall -O2")
+set(CMAKE_CXX_FLAGS "-std=c++11 -DGPU -DOPENCV -DOPENCL -Wall -O3")
+# set(CMAKE_CXX_FLAGS "-std=c++17 -DGPU -DOPENCV -DOPENCL -Wall -O0 -g")
 
 find_package(OpenCV REQUIRED)
+find_package(OpenCL REQUIRED)
 
 # include Eigen3
 find_package(Eigen3 REQUIRED)
@@ -58,6 +60,7 @@ catkin_package(
 include_directories(include
   ${catkin_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
+  ${OpenCL_INCLUDE_DIRS}
   ${Eigen_INCLUDE_DIRS}
   ~/git/darknet_ocl/src
 )
@@ -82,6 +85,7 @@ add_dependencies(uav_detect
 target_link_libraries(uav_detect
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
+  ${OpenCL_LIBRARIES}
   darknet-cpp-shared
 )
 

@@ -32,9 +32,62 @@ MRS_Detector::~MRS_Detector()
   opencl_deinit();
 }
 
-bool MRS_Detector::initialize()
+bool MRS_Detector::initialize(const unsigned platform_id, const unsigned device_id)
 {
-  opencl_init(NULL, NULL, NULL);
+  {
+    // Create OpenCL context from scratch.
+    cl_uint cl_num_platforms = 20;
+    cl_platform_id cl_platforms[cl_num_platforms];
+    cl_uint cl_num_devices = 20;
+    cl_device_id cl_devices[cl_num_devices];
+
+    cl_context_properties cl_props[3] = { CL_CONTEXT_PLATFORM, 0, 0 };
+    cl_context cl_context;
+    cl_command_queue cl_queue = 0;
+    cl_int cl_err;
+
+    cl_err = clGetPlatformIDs(cl_num_platforms, cl_platforms, &cl_num_platforms);
+    if (cl_err != CL_SUCCESS)
+    {
+      std::cerr << "opencl_init: Could not get platform IDs.\n";
+      return false;
+    }
+    if (platform_id >= cl_num_platforms)
+    {
+      std::cerr << "opencl_init: Invalid platform ID " << platform_id << " (max: " << cl_num_platforms << ".\n";
+      return false;
+    }
+
+    cl_err = clGetDeviceIDs(cl_platforms[platform_id], CL_DEVICE_TYPE_GPU, cl_num_devices, cl_devices, &cl_num_devices);
+    if (cl_err != CL_SUCCESS)
+    {
+      std::cerr << "opencl_init: Could not get device IDs.\n";
+      return false;
+    }
+    if (device_id >= cl_num_devices)
+    {
+      std::cerr << "opencl_init: Invalid device ID " << device_id << " (max: " << cl_num_devices << ".\n";
+      return false;
+    }
+
+    cl_props[1] = (cl_context_properties) cl_platforms[platform_id];
+
+    cl_context = clCreateContext(cl_props, CL_TRUE, cl_devices, NULL, NULL, &cl_err);
+    if (cl_err != CL_SUCCESS)
+    {
+      std::cerr << "opencl_init: Could not create context.\n";
+      return false;
+    }
+
+    cl_queue = clCreateCommandQueue(cl_context, cl_devices[device_id], CL_FALSE, &cl_err);
+    if (cl_err != CL_SUCCESS)
+    {
+      std::cerr << "opencl_init: Could not create queue.\n";
+      return false;
+    }
+   
+    opencl_init(cl_context, cl_queue, cl_devices[device_id]);
+  }
 
   //printf("MRS_Detector: Reading data file '%s'\n", _data_fname.c_str());
   //list *options = read_data_cfg((char*)_data_fname.c_str());

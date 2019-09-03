@@ -4,7 +4,7 @@
 
   <arg name="debug" default="false" />
   <arg unless="$(arg debug)" name="launch_prefix" value=""/>
-  <arg     if="$(arg debug)" name="launch_prefix" value="gdb -ex run --args"/>
+  <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch"/>
 
   <group ns="$(arg uav_name)">
     
