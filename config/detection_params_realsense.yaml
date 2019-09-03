@@ -9,7 +9,7 @@ roi/width: 0
 roi/height: 0
 
 unknown_pixel_value: 0
-structuring_element_a: 3
+structuring_element_a: 8
 structuring_element_b: 5
 dilate_iterations: 0
 erode_iterations: 0
@@ -21,29 +21,30 @@ medianblur_size: 0
 # filtration of detected blobs
 filter_by_area: true
 min_area: 100
-max_area: 10000
+max_area: 100000
+max_area_diff: 10000
 
-filter_by_circularity: true
+filter_by_circularity: false
 min_circularity: 0.3
 max_circularity: 0.9
 
-filter_by_orientation: true
+filter_by_orientation: false
 min_angle: 0.0
 max_angle: 0.4
 
-filter_by_inertia: true
+filter_by_inertia: false
 min_inertia_ratio: 0.01
 max_inertia_ratio: 0.8
 
-filter_by_convexity: true
+filter_by_convexity: false
 min_convexity: 0.75
 max_convexity: 1.0
 
-filter_by_color: true
+filter_by_color: false
 min_depth: 1000
-max_depth: 40000
+max_depth: 10000
 
-filter_by_known_pixels: true
+filter_by_known_pixels: false
 min_known_pixels_ratio: 0.5
 
 # further filtration

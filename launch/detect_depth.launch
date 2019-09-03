@@ -31,6 +31,8 @@
       <rosparam file="$(arg config_file)" />
     
       <remap from="~depthmap" to="$(arg depthmap_topic)" />
+      <!-- <remap from="~detections" to="~detections_" /> -->
+      <!-- <remap from="~blob_detections" to="~blob_detections_" /> -->
       <!-- <remap from="~depthmap" to="/nerian_stereo/disparity_map" /> -->
 
     </node>
