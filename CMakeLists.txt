@@ -89,12 +89,12 @@ target_link_libraries(uav_detect
   darknet-cpp-shared
 )
 
-# add_executable(filter_single src/filter_single.cpp src/rlcnn_util.cpp src/ocam_functions.cpp)
-# add_dependencies(filter_single
+# add_executable(project_detections src/project_detections.cpp)
+# add_dependencies(project_detections
 #   ${${PROJECT_NAME}_EXPORTED_TARGETS}
 #   ${catkin_EXPORTED_TARGETS}
 # )
-# target_link_libraries(filter_single
+# target_link_libraries(project_detections
 #   ${catkin_LIBRARIES}
 #   ${OpenCV_LIBRARIES}
 # )

@@ -19,34 +19,15 @@
 
 #include <list>
 
-#include <uav_detect/Detection.h>
-#include <uav_detect/Detections.h>
-
-#include "rlcnn_util.h"
-
-#include "ocam_functions.h"
+#include <cnn_detect/Detection.h>
+#include <cnn_detect/Detections.h>
+#include <mrs_lib/ParamLoader.h>
 
 #define cot(x) tan(M_PI_2 - x)
 
 using namespace cv;
 using namespace std;
-using namespace rlcnn;
-using namespace uav_detect;
-
-extern Eigen::Affine3d rlcnn::c2w_tf;
-extern int rlcnn::w_camera;
-extern int rlcnn::h_camera;
-extern int rlcnn::w_used;
-extern int rlcnn::h_used;
-
-bool new_detections = false;
-uav_detect::Detections latest_detections;
-
-void detections_callback(const uav_detect::Detections& dets_msg)
-{
-  latest_detections = dets_msg;
-  new_detections = true;
-}
+using namespace cnn_detect;
 
 /** Utility functions //{**/
 double *dist_filter;
@@ -91,7 +72,7 @@ int main(int argc, char **argv)
   double xy_covariance_coeff;
   double z_covariance_coeff;
 
-  ros::init(argc, argv, "uav_detect_localize");
+  ros::init(argc, argv, "cnn_project_detections");
   ROS_INFO ("Node initialized.");
 
   ros::NodeHandle nh = ros::NodeHandle("~");
@@ -234,7 +215,7 @@ int main(int argc, char **argv)
   /** Create publishers and subscribers //{**/
   tf2_ros::Buffer tf_buffer;
   // Initialize transform listener
-  tf2_ros::TransformListener *tf_listener = new tf2_ros::TransformListener(tf_buffer);
+  tf2_ros::TransformListener tf_listener(tf_buffer);
   // Initialize other subs and pubs
   ros::Subscriber detections_sub = nh.subscribe("detections", 1, detections_callback, ros::TransportHints().tcpNoDelay());
   ros::Publisher detected_UAV_pub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("detected_uav", 10);

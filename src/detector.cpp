@@ -54,11 +54,11 @@ bool MRS_Detector::initialize(const unsigned platform_id, const unsigned device_
     }
     if (platform_id >= cl_num_platforms)
     {
-      std::cerr << "opencl_init: Invalid platform ID " << platform_id << " (max: " << cl_num_platforms << ".\n";
+      std::cerr << "opencl_init: Invalid platform ID " << platform_id << " (max: " << cl_num_platforms-1 << ").\n";
       return false;
     }
 
-    cl_err = clGetDeviceIDs(cl_platforms[platform_id], CL_DEVICE_TYPE_GPU, cl_num_devices, cl_devices, &cl_num_devices);
+    cl_err = clGetDeviceIDs(cl_platforms[platform_id], CL_DEVICE_TYPE_ALL, cl_num_devices, cl_devices, &cl_num_devices);
     if (cl_err != CL_SUCCESS)
     {
       std::cerr << "opencl_init: Could not get device IDs.\n";

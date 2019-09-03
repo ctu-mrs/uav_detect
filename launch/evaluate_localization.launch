@@ -1,0 +1,40 @@
+<launch>
+
+  <arg name="uav_name" default="$(optenv UAV_NAME uav)"/>
+
+  <arg name="debug" default="false" />
+  <arg unless="$(arg debug)" name="launch_prefix" value=""/>
+  <arg     if="$(arg debug)" name="launch_prefix" value="pdb"/>
+
+  <arg name="bags_base_path" default="/home/$(env USER)/bag_files/uav_detect/icra2019"/>
+  <arg name="det_bag" default="_2019-09-03-15-03-02_detector.bag"/>
+  <arg name="det_topic" default="/uav42/cnn_detect/detections"/>
+
+  <arg name="gt_bag" default="_2019-09-03-14-58-47_target.bag"/>
+  <arg name="gt_topic" default="/uav42/odometry/odom_main"/>
+
+  <node name="localization_evaluation" pkg="cnn_detect" type="evaluator_det.py" output="screen" launch-prefix="$(arg launch_prefix)">
+    <param name="detection_bag_name" value="$(arg bags_base_path)/$(arg det_bag)" />
+    <param name="detection_topic_name" value="$(arg det_topic)" />
+
+    <param name="ground_truth_bag_name" value="$(arg bags_base_path)/$(arg gt_bag)" />
+    <param name="ground_truth_topic_name" value="$(arg gt_topic)" />
+
+    <param name="localization_out_fname2" value="$(find cnn_detect)/output/dataset1/loc_out.csv" />
+    <param name="ground_truth_out_fname2" value="$(find cnn_detect)/output/dataset1/gt_out.csv" />
+    <param name="localization_out_fname3" value="$(find cnn_detect)/output/loc_out.csv" />
+    <param name="ground_truth_out_fname3" value="$(find cnn_detect)/output/gt_out.csv" />
+    <param name="localization_out_fname" value="$(find cnn_detect)/output/cnn/loc_out.csv" />
+    <param name="ground_truth_out_fname" value="$(find cnn_detect)/output/cnn/gt_out.csv" />
+    <param name="tf_out_fname" value="$(find cnn_detect)/output/tf_out.csv" />
+    <param name="distance_error_out_fname" value="$(find cnn_detect)/output/dist_err_out.csv" />
+    <param name="TP_probability_out_fname" value="$(find cnn_detect)/output/TP_prob_out.csv" />
+    <!-- <remap from="~localization" to="$(arg localization_topic)" /> -->
+  </node>
+
+  <!-- <group ns="$(arg uav_name)"> -->
+  <!--   <node name="img_repub_depth" pkg="image_transport" type="republish" args="compressedDepth in:=/uav81/rs_d435/aligned_depth_to_color/image_raw raw out:=/uav81/rs_d435/aligned_depth_to_color/image_raw" /> -->
+  <!--   <node name="img_repub_image" pkg="image_transport" type="republish" args="compressed in:=/uav81/rs_d435/color/image_raw raw out:=/uav81/rs_d435/color/image_rect_color" /> -->
+  <!-- </group> -->
+
+</launch>

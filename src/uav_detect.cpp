@@ -120,7 +120,11 @@ int main(int argc, char **argv)
   int w_cnn = 416;
   int h_cnn = 416;
   cout << "Initializing detector object using platform id " << ocl_platform_id << " and device id " << ocl_device_id << "\n";
-  detector.initialize(ocl_platform_id, ocl_device_id);
+  if (!detector.initialize(ocl_platform_id, ocl_device_id))
+  {
+    cerr << "Failed to initialize detector, ending node" << std::endl;
+    return 1;
+  }
 
   cout << "----------------------------------------------------------" << std::endl;
   ros::Time last_frame = ros::Time::now();

@@ -11,7 +11,7 @@ namespace rlcnn
   ocam_model oc_model;// OCamCalib camera model
   int w_camera, h_camera, w_used, h_used;
 
-  void update_camera_info(const uav_detect::Detections& dets_msg)
+  void update_camera_info(const cnn_detect::Detections& dets_msg)
   {
     camera_model.fromCameraInfo(dets_msg.camera_info);
     w_camera = dets_msg.camera_info.width;

@@ -3,8 +3,8 @@
 
 #include <Eigen/Dense>
 
-#include <uav_detect/Detection.h>
-#include <uav_detect/Detections.h>
+#include <cnn_detect/Detection.h>
+#include <cnn_detect/Detections.h>
 
 #include <image_geometry/pinhole_camera_model.h>
 #include <tf2/LinearMath/Matrix3x3.h>
@@ -22,7 +22,7 @@ namespace rlcnn
   extern ocam_model oc_model;  // OCamCalib camera model
   extern int w_camera, h_camera, w_used, h_used;
 
-  void update_camera_info(const uav_detect::Detections& dets_msg);
+  void update_camera_info(const cnn_detect::Detections& dets_msg);
 
   /* calculate_direction_pinhole - Calculates a direction vector of the detection in camera coordinates using pinhole camera model */
   Eigen::Vector3d calculate_direction_pinhole(double px_x, double px_y);
