@@ -7,29 +7,31 @@
   <arg     if="$(arg debug)" name="launch_prefix" value="pdb"/>
 
   <arg name="bags_base_path" default="/home/$(env USER)/bag_files/uav_detect/icra2019"/>
-  <arg name="det_bag" default="_2019-09-03-15-03-02_detector.bag"/>
+  <arg name="det_bag" default="out/cnn_detections.bag"/>
   <arg name="det_topic" default="/uav42/cnn_detect/detections"/>
 
-  <arg name="gt_bag" default="_2019-09-03-14-58-47_target.bag"/>
-  <arg name="gt_topic" default="/uav42/odometry/odom_main"/>
+  <arg name="cinfo_bag" default="out/camera_info.bag"/>
+  <arg name="cinfo_topic" default="/uav42/rs_d435/color/camera_info"/>
+
+  <arg name="gt_bag1" default="_2019-09-03-15-03-02_detector.bag"/>
+  <arg name="gt_topic1" default="/uav42/odometry/odom_main"/>
+
+  <arg name="gt_bag2" default="_2019-09-03-14-58-47_target.bag"/>
+  <arg name="gt_topic2" default="/uav4/odometry/odom_main"/>
 
   <node name="localization_evaluation" pkg="cnn_detect" type="evaluator_det.py" output="screen" launch-prefix="$(arg launch_prefix)">
     <param name="detection_bag_name" value="$(arg bags_base_path)/$(arg det_bag)" />
     <param name="detection_topic_name" value="$(arg det_topic)" />
 
-    <param name="ground_truth_bag_name" value="$(arg bags_base_path)/$(arg gt_bag)" />
-    <param name="ground_truth_topic_name" value="$(arg gt_topic)" />
+    <param name="cinfo_bag_name" value="$(arg bags_base_path)/$(arg cinfo_bag)" />
+    <param name="cinfo_topic_name" value="$(arg cinfo_topic)" />
 
-    <param name="localization_out_fname2" value="$(find cnn_detect)/output/dataset1/loc_out.csv" />
-    <param name="ground_truth_out_fname2" value="$(find cnn_detect)/output/dataset1/gt_out.csv" />
-    <param name="localization_out_fname3" value="$(find cnn_detect)/output/loc_out.csv" />
-    <param name="ground_truth_out_fname3" value="$(find cnn_detect)/output/gt_out.csv" />
-    <param name="localization_out_fname" value="$(find cnn_detect)/output/cnn/loc_out.csv" />
+    <param name="ground_truth_bag_name1" value="$(arg bags_base_path)/$(arg gt_bag1)" />
+    <param name="ground_truth_topic_name1" value="$(arg gt_topic1)" />
+    <param name="ground_truth_bag_name2" value="$(arg bags_base_path)/$(arg gt_bag2)" />
+    <param name="ground_truth_topic_name2" value="$(arg gt_topic2)" />
+
     <param name="ground_truth_out_fname" value="$(find cnn_detect)/output/cnn/gt_out.csv" />
-    <param name="tf_out_fname" value="$(find cnn_detect)/output/tf_out.csv" />
-    <param name="distance_error_out_fname" value="$(find cnn_detect)/output/dist_err_out.csv" />
-    <param name="TP_probability_out_fname" value="$(find cnn_detect)/output/TP_prob_out.csv" />
-    <!-- <remap from="~localization" to="$(arg localization_topic)" /> -->
   </node>
 
   <!-- <group ns="$(arg uav_name)"> -->
