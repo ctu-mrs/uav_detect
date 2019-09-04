@@ -19,6 +19,8 @@ from scipy.spatial.transform import Rotation as R
 tfBuffer = None
 cmodel = PinholeCameraModel()
 last_img = None
+last_img_ready_cnn = False
+last_img_ready_depth = False
 bridge = None
 last_odom = None
 last_rtk1 = None
@@ -39,76 +41,108 @@ def rtk2_callback(data):
 def get_tf():
     global last_rtk1
     global last_rtk2
+    offset = np.array([0, 0, 0.5])
     pt1 = np.array([last_rtk1.pose.pose.position.x, last_rtk1.pose.pose.position.y, last_rtk1.pose.pose.position.z])
     pt2 = np.array([last_rtk2.pose.pose.position.x, last_rtk2.pose.pose.position.y, last_rtk2.pose.pose.position.z])
-    trans = pt2 - pt1
-    # trans = pt1 - pt2
+    trans = pt2 - pt1 + offset
     rot = R.from_quat((last_odom.pose.pose.orientation.x, last_odom.pose.pose.orientation.y, last_odom.pose.pose.orientation.z, last_odom.pose.pose.orientation.w)).inv()
-    # rot = Quaternion(w=last_odom.pose.pose.orientation.w, x=last_odom.pose.pose.orientation.x, y=last_odom.pose.pose.orientation.y, z=last_odom.pose.pose.orientation.z)
     ret = rot.apply(trans)
-    print(trans)
-    print(ret)
+    # print(trans)
+    # print(ret)
     rot = R.from_euler('ZYX', (1.57, 3.14, 1.57)).inv()
     ret = rot.apply(ret)
-    # tmpy = Quaternion(axis=[0, 0, 1], angle=1.57)
-    # tmpp = Quaternion(axis=[0, 1, 0], angle=3.14)
-    # tmpr = Quaternion(axis=[1, 0, 0], angle=1.57)
-    # tmpf = Quaternion(axis=[0, 1, 0], angle=3.14)
-    # rot2 = to_quaternion(1.57, 3.14, 1.57)
-    # rot2 = tmpr.rotate(tmpp.rotate(tmpy))
-    # rot2 = rot2.inverse
-    # ret = rot2.rotate(ret)
-    # ret = tmpf.rotate(tmpr.rotate(tmpp.rotate(tmpy.rotate(ret))))
-    # ret = tmpy.rotate(tmpp.rotate(tmpr.rotate(ret)))
-    # ret = rot2.rotate(ret)
-    print(ret)
+    # print(ret)
     return ret
-    # trans = None
-    # try:
-    #     trans = tfBuffer.lookup_transform("fcu_uav4", "rs_d435_color_optical_frame", rospy.Time())
-    # except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-    #     rospy.logwarn("could not find TF!")
-    # return trans
 
 def img_callback(data):
     global last_img
-    rospy.loginfo("I heard IMAGE")
+    # rospy.loginfo("I heard IMAGE")
     try:
       last_img = bridge.imgmsg_to_cv2(data, "bgr8")
     except CvBridgeError as e:
       print(e)
 
+TPs = 0
+FPs = 0
+FNs = 0
+FP_dist = 150
 def cnn_callback(data):
-    global last_img
-    rospy.loginfo("I heard CNN: %s", data)
+    global last_img, TPs, FPs, FNs, last_img_ready_cnn
+    # rospy.loginfo("I heard CNN: %s", data)
 
     if last_img is None:
         rospy.logwarn("Waiting for images")
         return
 
-    # pt3 = geometry_msgs.msg.PointStamped()
-    # pt3.header.stamp = data.header.stamp
-    # pt3.header.frame_id = "fcu_uav4"
-    # pt3.point.x = 0
-    # pt3.point.y = 0
-    # pt3.point.z = 0
-    # pt3 = tfBuffer.transform(pt3, data.header.frame_id)
-    # pt3 = [pt3.point.x, pt3.point.y, pt3.point.z]
+    detected = False
     pt3 = get_tf()
-    print("pt3: ", pt3)
+    # print("pt3: ", pt3)
     pt = cmodel.project3dToPixel(pt3)
-    cur_img = np.copy(last_img)
-    cv2.circle(cur_img, (int(pt[0]), int(pt[1])), 20, (255, 0, 0))
-    cv2.imshow("window", cur_img)
-    cv2.waitKey(1)
+
+    # cur_img = np.copy(last_img)
+    cur_img = last_img
+    cv2.circle(cur_img, (int(pt[0]), int(pt[1])), FP_dist, (255, 0, 0))
+    for det in data.detections:
+        w = det.roi.width
+        h = det.roi.height
+        pxx = w*det.x
+        pxy = h*det.y
+        pxw = w*det.width
+        pxh = h*det.height
+        cv2.rectangle(cur_img, (int(pxx - pxw/2.0), int(pxy - pxh/2.0)), (int(pxx + pxw/2.0), int(pxy + pxh/2.0)), (0, 0, 255))
+        ptdet = np.array([pxx, pxy])
+        if np.linalg.norm(pt - ptdet) < FP_dist:
+            detected = True
+            TPs += 1
+        else:
+            FPs += 1
+    last_img_ready_cnn = True
+
+    if not detected:
+        FNs += 1
+    rospy.loginfo("TPs: {:d}, FPs: {:d}, FNs: {:d}".format(TPs, FPs, FNs))
+    # cv2.imshow("window", cur_img)
+    # cv2.waitKey(1)
 
 def depth_callback(data):
-    rospy.loginfo("I heard DEPTH: %s", data)
-    trans = get_tf()
-    print(trans)
+    global last_img, TPs, FPs, FNs, last_img_ready_depth
+    # rospy.loginfo("I heard DEPTH: %s", data)
+
+    if last_img is None:
+        rospy.logwarn("Waiting for images")
+        return
+
+    detected = False
+    pt3 = get_tf()
+    # print("pt3: ", pt3)
+    pt = cmodel.project3dToPixel(pt3)
+
+    # cur_img = np.copy(last_img)
+    cur_img = last_img
+    cv2.circle(cur_img, (int(pt[0]), int(pt[1])), FP_dist, (255, 0, 0))
+    for det in data.detections:
+        w = det.roi.width
+        h = det.roi.height
+        pxx = w*det.x
+        pxy = h*det.y
+        pxr = 200/det.depth
+        cv2.circle(cur_img, (int(pxx), int(pxy)), int(pxr), (0, 255, 0))
+        ptdet = np.array([pxx, pxy])
+        if np.linalg.norm(pt - ptdet) < FP_dist:
+            detected = True
+            TPs += 1
+        else:
+            FPs += 1
+    last_img_ready_depth = True
+
+    if not detected:
+        FNs += 1
+    rospy.loginfo("TPs: {:d}, FPs: {:d}, FNs: {:d}".format(TPs, FPs, FNs))
+    # cv2.imshow("window", cur_img)
+    # cv2.waitKey(1)
 
 def cinfo_callback(data):
-    rospy.loginfo("I heard CINFO: %s", data)
+    # rospy.loginfo("I heard CINFO: %s", data)
     cmodel.fromCameraInfo(data)
 
 if __name__ == '__main__':
@@ -129,4 +163,10 @@ if __name__ == '__main__':
     rospy.Subscriber("/uav42/rs_d435/color/image_rect_color", sensor_msgs.msg.Image, img_callback)
 
     rospy.loginfo("Spinning")
-    rospy.spin()
+    while not rospy.is_shutdown():
+        if last_img is not None and last_img_ready_cnn and last_img_ready_depth:
+            cv2.imshow("window", last_img)
+            cv2.waitKey(1)
+            last_img = None
+            last_img_ready_cnn = False
+            last_img_ready_depth = False
