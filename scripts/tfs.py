@@ -15,6 +15,8 @@ import numpy as np
 import tf2_geometry_msgs
 # from pyquaternion import Quaternion
 from scipy.spatial.transform import Rotation as R
+import os
+import pickle
 
 tfBuffer = None
 cmodel = PinholeCameraModel()
@@ -25,6 +27,16 @@ bridge = None
 last_odom = None
 last_rtk1 = None
 last_rtk2 = None
+detected_cnn = False
+detected_depth = False
+gts_loaded = False
+gt = np.array([0, 0])
+gts = [None]
+
+TPs = [0, 0, 0]
+FPs = [0, 0, 0]
+FNs = [0, 0, 0]
+FP_dist = 100
 
 def odom_callback(data):
     global last_odom
@@ -54,30 +66,37 @@ def get_tf():
     # print(ret)
     return ret
 
+gt_it = 0
 def img_callback(data):
-    global last_img
+    global last_img, gt, gts, gts_loaded, gt_it, detected_cnn, detected_depth
     # rospy.loginfo("I heard IMAGE")
     try:
       last_img = bridge.imgmsg_to_cv2(data, "bgr8")
     except CvBridgeError as e:
       print(e)
+    if gts_loaded:
+        gt = gts[gt_it]
+        gt_it += 1
+    else:
+        gts.append(gt)
+    detected_cnn = False
+    detected_depth = False
 
-TPs = 0
-FPs = 0
-FNs = 0
-FP_dist = 150
+
+
 def cnn_callback(data):
-    global last_img, TPs, FPs, FNs, last_img_ready_cnn
+    global gt
+    global last_img, TPs, FPs, FNs, last_img_ready_cnn, detected_cnn
     # rospy.loginfo("I heard CNN: %s", data)
 
-    if last_img is None:
+    if last_img is None and not last_img_ready_cnn and gt is not None:
         rospy.logwarn("Waiting for images")
         return
 
-    detected = False
-    pt3 = get_tf()
+    # pt3 = get_tf()
     # print("pt3: ", pt3)
-    pt = cmodel.project3dToPixel(pt3)
+    # pt = cmodel.project3dToPixel(pt3)
+    pt = gt
 
     # cur_img = np.copy(last_img)
     cur_img = last_img
@@ -92,30 +111,26 @@ def cnn_callback(data):
         cv2.rectangle(cur_img, (int(pxx - pxw/2.0), int(pxy - pxh/2.0)), (int(pxx + pxw/2.0), int(pxy + pxh/2.0)), (0, 0, 255))
         ptdet = np.array([pxx, pxy])
         if np.linalg.norm(pt - ptdet) < FP_dist:
-            detected = True
-            TPs += 1
+            detected_cnn = True
         else:
-            FPs += 1
+            FPs[0] += 1
     last_img_ready_cnn = True
-
-    if not detected:
-        FNs += 1
-    rospy.loginfo("TPs: {:d}, FPs: {:d}, FNs: {:d}".format(TPs, FPs, FNs))
     # cv2.imshow("window", cur_img)
     # cv2.waitKey(1)
 
 def depth_callback(data):
-    global last_img, TPs, FPs, FNs, last_img_ready_depth
+    global gt
+    global last_img, TPs, FPs, FNs, last_img_ready_depth, detected_depth
     # rospy.loginfo("I heard DEPTH: %s", data)
 
-    if last_img is None:
+    if last_img is None and not last_img_ready_depth and gt is not None:
         rospy.logwarn("Waiting for images")
         return
 
-    detected = False
-    pt3 = get_tf()
+    # pt3 = get_tf()
     # print("pt3: ", pt3)
-    pt = cmodel.project3dToPixel(pt3)
+    # pt = cmodel.project3dToPixel(pt3)
+    pt = gt
 
     # cur_img = np.copy(last_img)
     cur_img = last_img
@@ -129,15 +144,10 @@ def depth_callback(data):
         cv2.circle(cur_img, (int(pxx), int(pxy)), int(pxr), (0, 255, 0))
         ptdet = np.array([pxx, pxy])
         if np.linalg.norm(pt - ptdet) < FP_dist:
-            detected = True
-            TPs += 1
+            detected_depth = True
         else:
-            FPs += 1
+            FPs[1] += 1
     last_img_ready_depth = True
-
-    if not detected:
-        FNs += 1
-    rospy.loginfo("TPs: {:d}, FPs: {:d}, FNs: {:d}".format(TPs, FPs, FNs))
     # cv2.imshow("window", cur_img)
     # cv2.waitKey(1)
 
@@ -145,8 +155,17 @@ def cinfo_callback(data):
     # rospy.loginfo("I heard CINFO: %s", data)
     cmodel.fromCameraInfo(data)
 
+def mouse_callback(event, x, y, flags, param):
+    global gt
+    gt = np.array((x, y))
+
 if __name__ == '__main__':
     rospy.init_node('tf2_listener')
+
+    if os.path.isfile("gts.pkl"):
+        with open("gts.pkl", "rb") as ifile:
+            gts = pickle.load(ifile)
+            gts_loaded = True
 
     tfBuffer = tf2_ros.Buffer()
     listener = tf2_ros.TransformListener(tfBuffer)
@@ -162,11 +181,40 @@ if __name__ == '__main__':
     rospy.Subscriber("/uav42/rs_d435/color/camera_info", sensor_msgs.msg.CameraInfo, cinfo_callback)
     rospy.Subscriber("/uav42/rs_d435/color/image_rect_color", sensor_msgs.msg.Image, img_callback)
 
+    cv2.namedWindow("MAV detection")
+    if not gts_loaded:
+        cv2.setMouseCallback("MAV detection", mouse_callback)
+
     rospy.loginfo("Spinning")
     while not rospy.is_shutdown():
         if last_img is not None and last_img_ready_cnn and last_img_ready_depth:
-            cv2.imshow("window", last_img)
+
+            if detected_cnn:
+                TPs[0] += 1
+            else:
+                FNs[0] += 1
+
+            if detected_depth:
+                TPs[1] += 1
+            else:
+                FNs[1] += 1
+
+            if detected_depth or detected_cnn:
+                TPs[2] += 1
+            else:
+                FNs[2] += 1
+            FPs[2] = FPs[0] + FPs[1]
+
+            rospy.loginfo("type\tTPs\tFPs\tFNs")
+            rospy.loginfo("cnn\t{:d}\t{:d}\t{:d}".format(TPs[0], FPs[0], FNs[0]))
+            rospy.loginfo("depth\t{:d}\t{:d}\t{:d}".format(TPs[1], FPs[1], FNs[1]))
+            rospy.loginfo("both\t{:d}\t{:d}\t{:d}".format(TPs[2], FPs[2], FNs[2]))
+            cv2.imshow("MAV detection", last_img)
             cv2.waitKey(1)
             last_img = None
             last_img_ready_cnn = False
             last_img_ready_depth = False
+    if not gts_loaded:
+        with open("gts.pkl", "wb") as ofile:
+            pickle.dump(gts, ofile)
+        rospy.loginfo("Dumped ground-truth positions to gts.pkl")
