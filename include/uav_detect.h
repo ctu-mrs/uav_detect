@@ -8,6 +8,7 @@
 #include <sensor_msgs/image_encodings.h>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
+#include <image_geometry/pinhole_camera_model.h>
 
 #include <cnn_detect/Detection.h>
 #include <cnn_detect/Detections.h>

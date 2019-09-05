@@ -7,3 +7,5 @@ roi_y_offset: 0
 
 ocl_platform_id: 2
 ocl_device_id: 0
+
+MAV_width: 0.55 # metres

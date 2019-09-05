@@ -1,5 +1,7 @@
 #include "uav_detect.h"
 
+#define cot(x) tan(M_PI_2 - x)
+
 using namespace cv;
 using namespace std;
 
@@ -7,12 +9,22 @@ bool new_cam_image = false;
 cv_bridge::CvImageConstPtr last_cam_image_ptr;
 bool got_cam_info = false;
 sensor_msgs::CameraInfo last_cam_info;
+image_geometry::PinholeCameraModel camera_model;
 
 void camera_image_callback(const sensor_msgs::ImageConstPtr& image_msg)
 {
   cout << "Camera image callback OK" << std::endl;
   last_cam_image_ptr = cv_bridge::toCvShare(image_msg, sensor_msgs::image_encodings::BGR8);
   new_cam_image = true;
+}
+
+Eigen::Vector3d calculate_direction_pinhole(double px_x, double px_y)
+{
+  // Calculate pixel position of the detection
+  cv::Point2d det_pt(px_x, px_y);
+  det_pt = camera_model.rectifyPoint(det_pt);  // do not forget to rectify the points!
+  cv::Point3d cv_vec = camera_model.projectPixelTo3dRay(det_pt);
+  return Eigen::Vector3d(cv_vec.x, cv_vec.y, cv_vec.z).normalized(); 
 }
 
 string preset_calib_name;
@@ -42,6 +54,7 @@ void camera_info_callback(sensor_msgs::CameraInfo info_msg)
     cout << "Camera info callback OK" << std::endl;
   }
   last_cam_info = info_msg;
+  camera_model.fromCameraInfo(last_cam_info);
   got_cam_info = true;
 }
 
@@ -84,6 +97,8 @@ int main(int argc, char **argv)
   int ocl_device_id = pl.load_param2<int>("ocl_device_id", 0);
   if (ocl_device_id < 0)
     ocl_device_id = 0;
+
+  const double MAV_width = pl.load_param2<double>("MAV_width");;
 
   sensor_msgs::RegionOfInterest roi;
   roi.x_offset = pl.load_param2<int>("roi_x_offset", 0);
@@ -214,6 +229,34 @@ int main(int argc, char **argv)
           }
         }
         det.roi = roi;
+
+        {
+          /** Calculate the estimated distance using pinhole camera model projection and using camera rectification //{**/
+          const double c_px = det.x*roi.width + roi.x_offset;
+          const double l_px = (det.x-det.width/2.0)*roi.width + roi.x_offset;
+          const double r_px = (det.x+det.width/2.0)*roi.width + roi.x_offset;
+          const double y_px = (det.y)*roi.height + roi.y_offset;
+          const Eigen::Vector3d l_vec = calculate_direction_pinhole(l_px, y_px);
+          const Eigen::Vector3d r_vec = calculate_direction_pinhole(r_px, y_px);
+          
+          // now calculate the estimated distance
+          const double alpha = acos(l_vec.dot(r_vec))/2.0;
+          /* double est_dist = dist_corr_p0 + dist_corr_p1*MAV_width/(2.0*tan(ray_angle/2.0)); */
+          double est_dist = MAV_width*sin(M_PI_2 - alpha)*(tan(alpha) + cot(alpha));
+          cout << "Estimated distance: " << est_dist << std::endl;
+          if (isnan(est_dist) || est_dist < 0.0)
+          {
+            est_dist = 0.0;
+            cout << "Invalid estimated distance, cropping to " << est_dist << "m" << std::endl;
+          }
+          const cv::Point3d cv_vec = camera_model.projectPixelTo3dRay({c_px, y_px});
+          const Eigen::Vector3d c_vec(cv_vec.x, cv_vec.y, cv_vec.z);
+          const double est_depth = est_dist/c_vec.norm();
+          det.depth = est_depth;
+          /* est_dist = do_filter(est_dist); */
+          //}
+        }
+
         cout << "\t" << detector.get_class_name(det.class_ID) << ", p=" << det.confidence << std::endl;
         cout << "\t[" << det.x << "; " << det.y << "]" << std::endl;
         cout << "\tw=" << det.width << ", h=" << det.height << std::endl;
