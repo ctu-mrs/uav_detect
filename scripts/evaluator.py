@@ -154,7 +154,7 @@ if __name__ == '__main__':
 
     bridge = CvBridge()
 
-    show_imgs = False
+    show_imgs = True
 
     # skip_time = 70
     # skip_time_end = 90
@@ -202,7 +202,7 @@ if __name__ == '__main__':
         # tf_static_pub.publish(msg)
 
     if show_imgs:
-        cv2.namedWindow("MAV detection")
+        cv2.namedWindow("MAV detection", cv2.WINDOW_GUI_EXPANDED)
         if not gts_loaded:
             cv2.setMouseCallback("MAV detection", mouse_callback)
 
@@ -237,9 +237,12 @@ if __name__ == '__main__':
     FNs = [0]*N
     precision = [0]*N
     recall = [0]*N
+    t_start = None
 
     for topic, img_msg, cur_stamp in bag.read_messages(topics="/uav42/rs_d435/color/image_rect_color", start_time=start_time, end_time=end_time):
         cur_t = img_msg.header.stamp.to_sec()
+        if t_start is None:
+            t_start = cur_t
 
         # (tf_msg, tf_it) = find_msg_tf(tf_msgs, img_msg.header.stamp, tf_it)
         (depth_msg, depth_it, depth_updated) = find_msg(depth_msgs, img_msg.header.stamp, depth_it)
@@ -313,8 +316,8 @@ if __name__ == '__main__':
         # #{ evaluate dloc
         if dloc_updated:
             dloc = loc_to_pxpt(dloc_msg, tf_buffer, cmodel)
-            if show_imgs:
-                cv2.circle(img, (int(dloc[0]), int(dloc[1])), 40, (0, 255, 0), 2)
+            # if show_imgs:
+            #     cv2.circle(img, (int(dloc[0]), int(dloc[1])), 40, (0, 255, 0), 2)
             if np.linalg.norm(gt - dloc) < FP_dist:
                 detected[3] = True
             else:
@@ -324,8 +327,8 @@ if __name__ == '__main__':
         # #{ evaluate cloc
         if cloc_updated:
             cloc = loc_to_pxpt(cloc_msg, tf_buffer, cmodel)
-            if show_imgs:
-                cv2.circle(img, (int(cloc[0]), int(cloc[1])), 40, (0, 0, 255), 2)
+            # if show_imgs:
+            #     cv2.circle(img, (int(cloc[0]), int(cloc[1])), 40, (0, 0, 255), 2)
             if np.linalg.norm(gt - cloc) < FP_dist:
                 detected[4] = True
             else:
@@ -335,8 +338,8 @@ if __name__ == '__main__':
         # #{ evaluate bloc
         if bloc_updated:
             bloc = loc_to_pxpt(bloc_msg, tf_buffer, cmodel)
-            if show_imgs:
-                cv2.circle(img, (int(bloc[0]), int(bloc[1])), 40, (255, 0, 0), 2)
+            # if show_imgs:
+            #     cv2.circle(img, (int(bloc[0]), int(bloc[1])), 40, (255, 0, 0), 2)
             if np.linalg.norm(gt - bloc) < FP_dist:
                 detected[5] = True
             else:
@@ -344,30 +347,32 @@ if __name__ == '__main__':
         # #} end of evaluate bloc
 
         pxx = 30
-        cv2.putText(img, "TPs\tFPs\tFNs", (pxx, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0))
+        # if show_imgs:
+        #     cv2.putText(img, "TPs\tFPs\tFNs", (pxx, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0))
         for it in range(0, N):
             pxx = 30
             pxy = 60 + it*30
-            if show_imgs:
-                cv2.putText(img, "{:d}\t{:d}\t{:d}".format(TPs[it], FPs[it], FNs[it]), (pxx, pxy), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0))
+            # if show_imgs:
+            #     cv2.putText(img, "{:d}\t{:d}\t{:d}".format(TPs[it], FPs[it], FNs[it]), (pxx, pxy), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0))
             pxx = 400
             if detected[it]:
                 if should_detect:
-                    if show_imgs:
-                        cv2.putText(img, "TP", (pxx, pxy), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0))
+                    # if show_imgs:
+                    #     cv2.putText(img, "TP", (pxx, pxy), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0))
                     TPs[it] += 1
                 else:
-                    if show_imgs:
-                        cv2.putText(img, "FP!!", (pxx, pxy), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255))
+                    # if show_imgs:
+                    #     cv2.putText(img, "FP!!", (pxx, pxy), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255))
                     FPs[it] += 1
             elif should_detect:
                 FNs[it] += 1
-                if show_imgs:
-                    cv2.putText(img, "FN!!!!!", (pxx, pxy), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255))
+                # if show_imgs:
+                #     cv2.putText(img, "FN!!!!!", (pxx, pxy), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255))
 
             precision[it] = calc_precision(TPs[it], FPs[it])
             recall[it] = calc_recall(TPs[it], FNs[it])
 
+        rospy.loginfo("time {:f}".format(cur_t - t_start))
         rospy.loginfo("type \tTPs\tFPs\tFNs\tprec\t\trec")
         rospy.loginfo("depth\t{:d}\t{:d}\t{:d}\t{:f}\t{:f}".format(TPs[0], FPs[0], FNs[0], precision[0], recall[0]))
         rospy.loginfo("cnn  \t{:d}\t{:d}\t{:d}\t{:f}\t{:f}".format(TPs[1], FPs[1], FNs[1], precision[1], recall[1]))
@@ -377,9 +382,16 @@ if __name__ == '__main__':
         rospy.loginfo("bloc \t{:d}\t{:d}\t{:d}\t{:f}\t{:f}".format(TPs[5], FPs[5], FNs[5], precision[5], recall[5]))
 
         if show_imgs:
-            cv2.circle(img, (int(gt[0]), int(gt[1])), FP_dist, (0, 0, 0))
+            # cv2.circle(img, (int(gt[0]), int(gt[1])), FP_dist, (0, 0, 0))
             cv2.imshow("MAV detection", img)
-            cv2.waitKey(1)
+            key = cv2.waitKey(1)
+            if key == ord('p'):
+                waiting = True
+                while waiting:
+                    cv2.imshow("MAV detection", img)
+                    key = cv2.waitKey(100)
+                    if key == ord('r'):
+                        waiting = False
 
         if rospy.is_shutdown():
             break
