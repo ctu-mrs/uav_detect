@@ -41,6 +41,27 @@ def loc_to_pxpt(loc_msg, tf_buffer, cmodel):
 
 # #{ 
 
+def print_det_times(det_times):
+    for it in range(3, N):
+        cur_dts = det_times[it]
+        print("{:d} -------------------------------------------------------------------".format(it))
+        print("FN start,\tFN end")
+        # print(cur_dts)
+        t0 = cur_dts[0][0]
+        prev_state = not cur_dts[0][1]
+        for it2 in range(0, len(cur_dts)-1):
+            cur_dt1 = cur_dts[it2]
+            cur_dt2 = cur_dts[it2+1]
+            start_t = cur_dt1[0] - t0
+            end_t = cur_dt2[0] - t0
+            if cur_dt1[1] == prev_state:
+                rospy.logerr("Unexpected value at index {} - expecting {}, got {}!".format(it2, not prev_state, cur_dt1[1]))
+            if cur_dt2[1] != prev_state:
+                rospy.logerr("Unexpected value at index {} - expecting {}, got {}!".format(it2, prev_state, cur_dt2[1]))
+            prev_state = cur_dts[it2][1]
+            if not prev_state:
+                print("{:f},\t{:f}".format(start_t, end_t))
+
 def load_rosbag_msgs(bag_fname, topic, skip_time=0, skip_time_end=0):
     rospy.loginfo("Using rosbag {:s}".format(bag_fname))
     bag = rosbag.Bag(bag_fname)
@@ -78,19 +99,19 @@ def load_rosbag_msg(bag_fname, topic, skip_time=0, skip_time_end=0):
     rospy.logerr("No messages from topic {:s} in bag".format(topic))
     return None
 
-def find_msg(msgs, stamp, prev_it):
+def find_msg(msgs, stamp, prev_it, max_diff=0.3):
     it = prev_it
-    if it >= len(msgs):
+    if it is None or it >= len(msgs):
         rospy.logerr("no more messages!")
-        return (None, None)
+        return (None, None, None)
     msg = msgs[it]
     while msg.header.stamp < stamp:
         it += 1
         if it >= len(msgs):
             rospy.logerr("no more messages!")
-            return (None, None)
+            return (None, None, None)
         msg = msgs[it]
-    return (msg, it, it != prev_it)
+    return (msg, it, np.abs((msg.header.stamp - stamp).to_sec()) < max_diff)
 
 def find_msg_tf(msgs, stamp, prev_it):
     it = prev_it
@@ -167,9 +188,9 @@ if __name__ == '__main__':
     # cloc      1224    16      1241    0.987097        0.496552
     # bloc      1797    12      668     0.993367        0.729006
 
-    skip_time = 70
+    skip_time = 50
     skip_time_end = 90
-    FP_dist = 100
+    FP_dist = 150
     # type      TPs     FPs     FNs     prec            re
     # depth     1500    35      965     0.977199        0.60851
     # cnn       1096    450     1369    0.708926        0.44462
@@ -190,11 +211,11 @@ if __name__ == '__main__':
     cinfo_msg = load_rosbag_msg(cinfo_bag, "/uav42/rs_d435/color/camera_info", skip_time=0)
     # tf_static_msgs = load_rosbag_msgs(tf_bag, "/tf_static", skip_time=0)
     # tf_msgs = load_rosbag_msgs(tf_bag, "/tf", skip_time=skip_time, skip_time_end=skip_time_end)
-    depth_msgs = load_rosbag_msgs(depth_bag, "/uav42/uav_detection/detections", skip_time=skip_time, skip_time_end=skip_time_end)
-    cnn_msgs = load_rosbag_msgs(cnn_bag, "/uav42/cnn_detect/detections", skip_time=skip_time, skip_time_end=skip_time_end)
-    dloc_msgs = load_rosbag_msgs(dloc_bag, "/uav42/uav_localization/localized_uav/tfd", skip_time=skip_time, skip_time_end=skip_time_end)
-    cloc_msgs = load_rosbag_msgs(cloc_bag, "/uav42/uav_localization/localized_uav/tfd", skip_time=skip_time, skip_time_end=skip_time_end)
-    bloc_msgs = load_rosbag_msgs(bloc_bag, "/uav42/uav_localization/localized_uav/tfd", skip_time=skip_time, skip_time_end=skip_time_end)
+    depth_msgs = load_rosbag_msgs(depth_bag, "/uav42/uav_detection/detections")
+    cnn_msgs = load_rosbag_msgs(cnn_bag, "/uav42/cnn_detect/detections")
+    dloc_msgs = load_rosbag_msgs(dloc_bag, "/uav42/uav_localization/localized_uav/tfd")
+    cloc_msgs = load_rosbag_msgs(cloc_bag, "/uav42/uav_localization/localized_uav/tfd")
+    bloc_msgs = load_rosbag_msgs(bloc_bag, "/uav42/uav_localization/localized_uav/tfd")
 
     # tf_pub = rospy.Publisher("/tf", TFMessage, queue_size=10)
     # tf_static_pub = rospy.Publisher("/tf_static", TFMessage, queue_size=10)
@@ -237,12 +258,21 @@ if __name__ == '__main__':
     FNs = [0]*N
     precision = [0]*N
     recall = [0]*N
+    last_state = [False]*N
+    det_times = [None]*N
+    for it in range(3, N):
+        det_times[it] = list()
     t_start = None
+    cur_t = None
 
     for topic, img_msg, cur_stamp in bag.read_messages(topics="/uav42/rs_d435/color/image_rect_color", start_time=start_time, end_time=end_time):
         cur_t = img_msg.header.stamp.to_sec()
         if t_start is None:
             t_start = cur_t
+            for it in range(3, N):
+                # rospy.logwarn("Adding {}, {} to {}".format(cur_t, last_state[it], it))
+                det_times[it].append((cur_t, last_state[it]))
+                # print(det_times)
 
         # (tf_msg, tf_it) = find_msg_tf(tf_msgs, img_msg.header.stamp, tf_it)
         (depth_msg, depth_it, depth_updated) = find_msg(depth_msgs, img_msg.header.stamp, depth_it)
@@ -252,6 +282,9 @@ if __name__ == '__main__':
         (bloc_msg, bloc_it, bloc_updated) = find_msg(bloc_msgs, img_msg.header.stamp, bloc_it)
         (gt, gt_it) = find_msg_t(gts, cur_t, gt_it)
         gt = np.array(gt)
+
+        # if depth_msg is None or cnn_msg is None or dloc_msg is None or cloc_msg is None or bloc_msg is None:
+        #     break
 
         # tf_pub.publish(tf_msg)
 
@@ -316,8 +349,8 @@ if __name__ == '__main__':
         # #{ evaluate dloc
         if dloc_updated:
             dloc = loc_to_pxpt(dloc_msg, tf_buffer, cmodel)
-            # if show_imgs:
-            #     cv2.circle(img, (int(dloc[0]), int(dloc[1])), 40, (0, 255, 0), 2)
+            if show_imgs:
+                cv2.circle(img, (int(dloc[0]), int(dloc[1])), 40, (0, 255, 0), 2)
             if np.linalg.norm(gt - dloc) < FP_dist:
                 detected[3] = True
             else:
@@ -327,8 +360,8 @@ if __name__ == '__main__':
         # #{ evaluate cloc
         if cloc_updated:
             cloc = loc_to_pxpt(cloc_msg, tf_buffer, cmodel)
-            # if show_imgs:
-            #     cv2.circle(img, (int(cloc[0]), int(cloc[1])), 40, (0, 0, 255), 2)
+            if show_imgs:
+                cv2.circle(img, (int(cloc[0]), int(cloc[1])), 40, (0, 0, 255), 2)
             if np.linalg.norm(gt - cloc) < FP_dist:
                 detected[4] = True
             else:
@@ -338,8 +371,8 @@ if __name__ == '__main__':
         # #{ evaluate bloc
         if bloc_updated:
             bloc = loc_to_pxpt(bloc_msg, tf_buffer, cmodel)
-            # if show_imgs:
-            #     cv2.circle(img, (int(bloc[0]), int(bloc[1])), 40, (255, 0, 0), 2)
+            if show_imgs:
+                cv2.circle(img, (int(bloc[0]), int(bloc[1])), 40, (255, 0, 0), 2)
             if np.linalg.norm(gt - bloc) < FP_dist:
                 detected[5] = True
             else:
@@ -355,19 +388,29 @@ if __name__ == '__main__':
             # if show_imgs:
             #     cv2.putText(img, "{:d}\t{:d}\t{:d}".format(TPs[it], FPs[it], FNs[it]), (pxx, pxy), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0))
             pxx = 400
+            cur_state = last_state[it]
             if detected[it]:
                 if should_detect:
                     # if show_imgs:
                     #     cv2.putText(img, "TP", (pxx, pxy), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0))
                     TPs[it] += 1
+                    cur_state = True
                 else:
                     # if show_imgs:
                     #     cv2.putText(img, "FP!!", (pxx, pxy), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255))
                     FPs[it] += 1
             elif should_detect:
                 FNs[it] += 1
+                cur_state = False
                 # if show_imgs:
                 #     cv2.putText(img, "FN!!!!!", (pxx, pxy), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255))
+
+            if it > 2 and last_state[it] != cur_state:
+                # rospy.logwarn("Adding {}, {} to {}".format(cur_t, cur_state, it))
+                det_times[it].append((cur_t, cur_state))
+                # print(det_times)
+
+            last_state[it] = cur_state
 
             precision[it] = calc_precision(TPs[it], FPs[it])
             recall[it] = calc_recall(TPs[it], FNs[it])
@@ -380,6 +423,7 @@ if __name__ == '__main__':
         rospy.loginfo("dloc \t{:d}\t{:d}\t{:d}\t{:f}\t{:f}".format(TPs[3], FPs[3], FNs[3], precision[3], recall[3]))
         rospy.loginfo("cloc \t{:d}\t{:d}\t{:d}\t{:f}\t{:f}".format(TPs[4], FPs[4], FNs[4], precision[4], recall[4]))
         rospy.loginfo("bloc \t{:d}\t{:d}\t{:d}\t{:f}\t{:f}".format(TPs[5], FPs[5], FNs[5], precision[5], recall[5]))
+        rospy.loginfo("---------------------------------------------------------------------------")
 
         if show_imgs:
             # cv2.circle(img, (int(gt[0]), int(gt[1])), FP_dist, (0, 0, 0))
@@ -433,3 +477,10 @@ if __name__ == '__main__':
     #     with open("gts.pkl", "wb") as ofile:
     #         pickle.dump(gts, ofile)
     #     rospy.loginfo("Dumped ground-truth positions to gts.pkl")
+    for it in range(3, N):
+        if last_state[it] == False:
+            t_start = cur_t
+            # rospy.logwarn("Adding {}, {} to {}".format(cur_t, last_state[it], it))
+            det_times[it].append((cur_t, True))
+            # print(det_times)
+    print_det_times(det_times)
