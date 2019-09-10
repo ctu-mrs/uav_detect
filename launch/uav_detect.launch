@@ -18,8 +18,8 @@
       <param name="weights_file" value="$(find cnn_detect)/mrs/tiny-yolo-mrs_for_experiments.weights" />
       <param name="uav_name" value="$(arg uav_name)" />
 
-      <remap from="~camera_input" to="rs_d435/color/image_rect_color" />
-      <remap from="~camera_info" to="rs_d435/color/camera_info" />
+      <remap from="~camera_input" to="/image_publisher_1568128640265449966/image_raw" />
+      <remap from="~camera_info" to="/image_publisher_1568128640265449966/camera_info" />
     
     </node>
   

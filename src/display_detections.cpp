@@ -123,14 +123,15 @@ int main(int argc, char **argv)
   cout << "\tprob. threshold:\t" << prob_threshold << std::endl;
 
   /** Create publishers and subscribers **/
+  image_transport::ImageTransport it(nh);
   ros::Subscriber camera_sub = nh.subscribe("camera_input", 1, camera_callback, ros::TransportHints().tcpNoDelay());
   ros::Subscriber cinfo_sub = nh.subscribe("camera_info", 1, cinfo_callback, ros::TransportHints().tcpNoDelay());
   ros::Subscriber detections_sub = nh.subscribe("detections", 1, detections_callback, ros::TransportHints().tcpNoDelay());
-  ros::Publisher det_imgs_pub = nh.advertise<sensor_msgs::Image>("det_imgs", 1);
+  image_transport::Publisher det_imgs_pub = it.advertise("det_imgs", 1);
 
   cout << "----------------------------------------------------------" << std::endl;
 
-  int window_flags = WINDOW_NORMAL | WINDOW_KEEPRATIO | WINDOW_GUI_NORMAL;
+  int window_flags = WINDOW_NORMAL | WINDOW_KEEPRATIO | WINDOW_GUI_EXPANDED;
   string det_winname = "CNN_detections";
   cv::namedWindow(det_winname, window_flags);
 
@@ -177,23 +178,25 @@ int main(int argc, char **argv)
                   y_lt,
                   w,
                   h);
-        cv::rectangle(det_image, det_rect, Scalar(0, 0, 255), round(det.confidence*10));
-        char buffer[255];
-        sprintf(buffer, "mrs_mav, %.2f", det.confidence);
-        cv::putText(det_image, buffer, Point(x_lt, y_lt-16), cv::FONT_HERSHEY_COMPLEX_SMALL, 1, Scalar(0, 0, 255), 2);
+        cv::rectangle(det_image, det_rect, Scalar(0, 0, 255), 15);
+        /* char buffer[255]; */
+        /* sprintf(buffer, "mrs_mav, %.2f", det.confidence); */
+        /* cv::putText(det_image, buffer, Point(x_lt, y_lt-16), cv::FONT_HERSHEY_COMPLEX_SMALL, 3, Scalar(0, 0, 255), 4); */
       }
 
       cout << last_roi << endl;
       cv::Rect roi(last_roi.x_offset-1, last_roi.y_offset-1, last_roi.width+2, last_roi.height+2);
       cv::rectangle(det_image, roi, Scalar(255, 0, 0), 1);
 
-      /* cv_bridge::CvImage img_bridge; */
-      /* sensor_msgs::Image img_msg; // >> message to be sent */
-      /* std_msgs::Header header; // empty header */
-      /* header.stamp = ros::Time::now(); // time */
-      /* img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::BGR8, det_image); */
-      /* img_bridge.toImageMsg(img_msg); // from cv_bridge to sensor_msgs::Image */
-      /* det_imgs_pub.publish(img_msg); // ros::Publisher pub_img = node.advertise<senso */
+      if (det_imgs_pub.getNumSubscribers() > 0)
+      {
+        cv_bridge::CvImage img_bridge;
+        sensor_msgs::Image out_msg; // >> message to be sent
+        out_msg.header = image_msg->header ; // time
+        img_bridge = cv_bridge::CvImage(out_msg.header, sensor_msgs::image_encodings::BGR8, det_image);
+        img_bridge.toImageMsg(out_msg); // from cv_bridge to sensor_msgs::Image
+        det_imgs_pub.publish(out_msg); // ros::Publisher pub_img = node.advertise<senso
+      }
 
       imshow(det_winname, det_image);
       waitKey(3);

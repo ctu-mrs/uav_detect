@@ -41,6 +41,8 @@ def loc_to_pxpt(loc_msg, tf_buffer, cmodel):
 
 # #{ 
 
+gt = None
+
 def print_det_times(det_times):
     for it in range(3, N):
         cur_dts = det_times[it]
@@ -169,6 +171,8 @@ if __name__ == '__main__':
             gts = pickle.load(ifile)
             gts_loaded = True
             rospy.loginfo("gts loaded")
+    else:
+        rospy.logerr("GTS NOT LOADED")
 
     tf_buffer = tf2_ros.Buffer()
     listener = tf2_ros.TransformListener(tf_buffer)
@@ -188,8 +192,8 @@ if __name__ == '__main__':
     # cloc      1224    16      1241    0.987097        0.496552
     # bloc      1797    12      668     0.993367        0.729006
 
-    skip_time = 50
-    skip_time_end = 90
+    skip_time = 35
+    skip_time_end = 65
     FP_dist = 150
     # type      TPs     FPs     FNs     prec            re
     # depth     1500    35      965     0.977199        0.60851
@@ -269,6 +273,8 @@ if __name__ == '__main__':
         cur_t = img_msg.header.stamp.to_sec()
         if t_start is None:
             t_start = cur_t
+            # rospy.logerr("T start: {:f}".format(t_start))
+            # exit(0)
             for it in range(3, N):
                 # rospy.logwarn("Adding {}, {} to {}".format(cur_t, last_state[it], it))
                 det_times[it].append((cur_t, last_state[it]))
@@ -280,7 +286,23 @@ if __name__ == '__main__':
         (dloc_msg, dloc_it, dloc_updated) = find_msg(dloc_msgs, img_msg.header.stamp, dloc_it)
         (cloc_msg, cloc_it, cloc_updated) = find_msg(cloc_msgs, img_msg.header.stamp, cloc_it)
         (bloc_msg, bloc_it, bloc_updated) = find_msg(bloc_msgs, img_msg.header.stamp, bloc_it)
-        (gt, gt_it) = find_msg_t(gts, cur_t, gt_it)
+        if gts_loaded:
+            (gt, gt_it) = find_msg_t(gts, cur_t, gt_it)
+
+        img = None
+        if show_imgs:
+            try:
+              img = bridge.imgmsg_to_cv2(img_msg, "bgr8")
+            except CvBridgeError as e:
+              print(e)
+
+        if show_imgs and not gts_loaded:
+            print(gt)
+            while gt is None:
+                # cv2.circle(img, (int(gt[0]), int(gt[1])), FP_dist, (0, 0, 0))
+                cv2.imshow("MAV detection", img)
+                cv2.waitKey(1)
+            print(gt)
         gt = np.array(gt)
 
         # if depth_msg is None or cnn_msg is None or dloc_msg is None or cloc_msg is None or bloc_msg is None:
@@ -294,13 +316,6 @@ if __name__ == '__main__':
                 should_detect = False
 
         detected = [False]*N
-
-        img = None
-        if show_imgs:
-            try:
-              img = bridge.imgmsg_to_cv2(img_msg, "bgr8")
-            except CvBridgeError as e:
-              print(e)
 
         # #{ evaluate depth
         if depth_updated:
@@ -473,10 +488,10 @@ if __name__ == '__main__':
     #         last_img_ready_cnn = False
     #         last_img_ready_depth = False
     #         last_img_ready_loc = False
-    # if not gts_loaded:
-    #     with open("gts.pkl", "wb") as ofile:
-    #         pickle.dump(gts, ofile)
-    #     rospy.loginfo("Dumped ground-truth positions to gts.pkl")
+    if not gts_loaded:
+        with open("gts.pkl", "wb") as ofile:
+            pickle.dump(gts, ofile)
+        rospy.loginfo("Dumped ground-truth positions to gts.pkl")
     for it in range(3, N):
         if last_state[it] == False:
             t_start = cur_t
