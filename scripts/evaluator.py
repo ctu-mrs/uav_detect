@@ -365,7 +365,7 @@ if __name__ == '__main__':
         if dloc_updated:
             dloc = loc_to_pxpt(dloc_msg, tf_buffer, cmodel)
             if show_imgs:
-                cv2.circle(img, (int(dloc[0]), int(dloc[1])), 40, (0, 255, 0), 2)
+                # cv2.circle(img, (int(dloc[0]), int(dloc[1])), 40, (0, 255, 0), 2)
             if np.linalg.norm(gt - dloc) < FP_dist:
                 detected[3] = True
             else:
@@ -376,7 +376,7 @@ if __name__ == '__main__':
         if cloc_updated:
             cloc = loc_to_pxpt(cloc_msg, tf_buffer, cmodel)
             if show_imgs:
-                cv2.circle(img, (int(cloc[0]), int(cloc[1])), 40, (0, 0, 255), 2)
+                # cv2.circle(img, (int(cloc[0]), int(cloc[1])), 40, (0, 0, 255), 2)
             if np.linalg.norm(gt - cloc) < FP_dist:
                 detected[4] = True
             else:
@@ -387,7 +387,7 @@ if __name__ == '__main__':
         if bloc_updated:
             bloc = loc_to_pxpt(bloc_msg, tf_buffer, cmodel)
             if show_imgs:
-                cv2.circle(img, (int(bloc[0]), int(bloc[1])), 40, (255, 0, 0), 2)
+                # cv2.circle(img, (int(bloc[0]), int(bloc[1])), 40, (255, 0, 0), 2)
             if np.linalg.norm(gt - bloc) < FP_dist:
                 detected[5] = True
             else:
@@ -456,38 +456,6 @@ if __name__ == '__main__':
             break
             # rospy.loginfo("loc  \t{:d}\t{:d}\t{:d}\t{:f}\t{:f}\t{:f}".format(TPs[3], FPs[3], FNs[3], precision[3], recall[3], max_range_loc))
 
-    # while not rospy.is_shutdown():
-    #     if last_img_ready_cnn and last_img_ready_depth:
-
-    #         pt3 = get_tf()
-    #         dist = np.linalg.norm(pt3)
-
-
-    #         precision = [0, 0, 0, 0]
-    #         recall = [0, 0, 0, 0]
-    #         precision[0] = calc_precision(TPs[0], FPs[0])
-    #         recall[0] = calc_recall(TPs[0], FNs[0])
-    #         precision[1] = calc_precision(TPs[1], FPs[1])
-    #         recall[1] = calc_recall(TPs[1], FNs[1])
-    #         precision[2] = calc_precision(TPs[2], FPs[2])
-    #         recall[2] = calc_recall(TPs[2], FNs[2])
-    #         precision[3] = calc_precision(TPs[3], FPs[3])
-    #         recall[3] = calc_recall(TPs[3], FNs[3])
-
-    #         rospy.loginfo("type \tTPs\tFPs\tFNs\tprec\t\trec\t\trange")
-    #         rospy.loginfo("cnn  \t{:d}\t{:d}\t{:d}\t{:f}\t{:f}\t{:f}".format(TPs[0], FPs[0], FNs[0], precision[0], recall[0], max_range_cnn))
-    #         rospy.loginfo("depth\t{:d}\t{:d}\t{:d}\t{:f}\t{:f}\t{:f}".format(TPs[1], FPs[1], FNs[1], precision[1], recall[1], max_range_depth))
-    #         rospy.loginfo("both \t{:d}\t{:d}\t{:d}\t{:f}\t{:f}\t{:f}".format(TPs[2], FPs[2], FNs[2], precision[2], recall[2], np.max((max_range_cnn, max_range_depth))))
-    #         rospy.loginfo("loc  \t{:d}\t{:d}\t{:d}\t{:f}\t{:f}\t{:f}".format(TPs[3], FPs[3], FNs[3], precision[3], recall[3], max_range_loc))
-
-    #         if show_imgs:
-    #             cv2.circle(last_img, (int(gt[0]), int(gt[1])), FP_dist, (255, 0, 0))
-    #             cv2.imshow("MAV detection", last_img)
-    #             cv2.waitKey(1)
-    #         last_img = None
-    #         last_img_ready_cnn = False
-    #         last_img_ready_depth = False
-    #         last_img_ready_loc = False
     if not gts_loaded:
         with open("gts.pkl", "wb") as ofile:
             pickle.dump(gts, ofile)
