@@ -104,6 +104,6 @@ if __name__ == '__main__':
     pcl_pub = rospy.Publisher(pcl_topic_name + "/tfd", PointCloud, queue_size=10)
 
     rospy.loginfo("Ready")
-    r = rospy.Rate(100)
+    r = rospy.Rate(100, reset=True)
     while not rospy.is_shutdown():
         r.sleep()
