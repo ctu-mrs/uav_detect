@@ -232,25 +232,27 @@ int main(int argc, char **argv)
 
         {
           /** Calculate the estimated distance using pinhole camera model projection and using camera rectification //{**/
-          const double c_px = det.x*roi.width + roi.x_offset;
+          /* const double c_px = det.x*roi.width + roi.x_offset; */
           const double l_px = (det.x-det.width/2.0)*roi.width + roi.x_offset;
           const double r_px = (det.x+det.width/2.0)*roi.width + roi.x_offset;
           const double y_px = (det.y)*roi.height + roi.y_offset;
           const Eigen::Vector3d l_vec = calculate_direction_pinhole(l_px, y_px);
           const Eigen::Vector3d r_vec = calculate_direction_pinhole(r_px, y_px);
+          const Eigen::Vector3d c_vec = (l_vec + r_vec)/2.0;
           
           // now calculate the estimated distance
-          const double alpha = acos(l_vec.dot(r_vec))/2.0;
           /* double est_dist = dist_corr_p0 + dist_corr_p1*MAV_width/(2.0*tan(ray_angle/2.0)); */
-          double est_dist = MAV_width*sin(M_PI_2 - alpha)*(tan(alpha) + cot(alpha));
-          cout << "Estimated distance: " << est_dist << std::endl;
+          /* cout << l_vec.norm(); */
+          /* cout << r_vec.norm(); */
+          const double angle_cos = l_vec.dot(c_vec);
+          double est_dist = (MAV_width/2.0)/sqrt(1.0 - angle_cos*angle_cos);
+          cout << "Estimated distance: " << est_dist << "m" << std::endl;
           if (isnan(est_dist) || est_dist < 0.0)
           {
             est_dist = 0.0;
             cout << "Invalid estimated distance, cropping to " << est_dist << "m" << std::endl;
           }
-          const cv::Point3d cv_vec = camera_model.projectPixelTo3dRay({c_px, y_px});
-          const Eigen::Vector3d c_vec(cv_vec.x, cv_vec.y, cv_vec.z);
+          /* const cv::Point3d cv_vec = camera_model.projectPixelTo3dRay({c_px, y_px}); */
           const double est_depth = est_dist/c_vec.norm();
           det.depth = est_depth;
           /* est_dist = do_filter(est_dist); */
