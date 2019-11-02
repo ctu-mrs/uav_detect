@@ -47,24 +47,18 @@ int main(int argc, char** argv)
 
   /** Create publishers and subscribers //{**/
   // Initialize other subs and pubs
-  mrs_lib::SubscribeHandlerPtr<sensor_msgs::ImageConstPtr> sh_dm;
-  mrs_lib::SubscribeHandlerPtr<sensor_msgs::ImageConstPtr> sh_dmp;
-  mrs_lib::SubscribeHandlerPtr<sensor_msgs::ImageConstPtr> sh_img;
+  mrs_lib::SubscribeHandlerPtr<sensor_msgs::Image> sh_dm;
+  mrs_lib::SubscribeHandlerPtr<sensor_msgs::Image> sh_dmp;
+  mrs_lib::SubscribeHandlerPtr<sensor_msgs::Image> sh_img;
   mrs_lib::SubscribeHandlerPtr<uav_detect::BlobDetections> sh_blobs;
 
   mrs_lib::SubscribeMgr smgr(nh);
   const bool subs_time_consistent = false;
 
-  sh_dm = smgr.create_handler<sensor_msgs::ImageConstPtr, subs_time_consistent>("depthmap", ros::Duration(5.0));
-  sh_dmp = smgr.create_handler<sensor_msgs::ImageConstPtr, subs_time_consistent>("processed_depthmap", ros::Duration(5.0));
-  sh_img = smgr.create_handler<sensor_msgs::ImageConstPtr, subs_time_consistent>("rgb_img", ros::Duration(5.0));
+  sh_dm = smgr.create_handler<sensor_msgs::Image, subs_time_consistent>("depthmap", ros::Duration(5.0));
+  sh_dmp = smgr.create_handler<sensor_msgs::Image, subs_time_consistent>("processed_depthmap", ros::Duration(5.0));
+  sh_img = smgr.create_handler<sensor_msgs::Image, subs_time_consistent>("rgb_img", ros::Duration(5.0));
   sh_blobs = smgr.create_handler<uav_detect::BlobDetections, subs_time_consistent>("blob_detections", ros::Duration(5.0));
-
-  if (!smgr.loaded_successfully())
-  {
-    ROS_ERROR("[%s]: Failed to subscribe some nodes", ros::this_node::getName().c_str());
-    ros::shutdown();
-  }
 
   //}
 
@@ -111,7 +105,7 @@ int main(int argc, char** argv)
     {
       if (!paused || !cur_detections_initialized)
       {
-        cur_detections = sh_blobs->get_data();
+        cur_detections = *(sh_blobs->get_data());
         cur_detections_initialized = true;
       }
 
@@ -253,16 +247,16 @@ int main(int argc, char** argv)
 
               }
 
-              if (!cnt_detail_info.empty())
-              {
-                double area = cv::contourArea(cnt_detail_info);
-                cv::putText(processed_im_copy, string("|   ") + to_string(area), Point(300, 50), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 2);
-              }
+              /* if (!cnt_detail_info.empty()) */
+              /* { */
+              /*   double area = cv::contourArea(cnt_detail_info); */
+              /*   cv::putText(processed_im_copy, string("|   ") + to_string(area), Point(300, 50), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 65535), 1); */
+              /* } */
             } else
             {
-              cv::circle(processed_im_copy, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 65535), 2);
+              cv::circle(processed_im_copy, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 65535), 1);
             }
-            cv::putText(processed_im_copy, id_txt, Point(blob.x + blob.radius + 5, blob.y), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 0, 65535), 2);
+            /* cv::putText(processed_im_copy, id_txt, Point(blob.x + blob.radius + 5, blob.y), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 0, 65535), 1); */
           }
           //}
 
@@ -319,12 +313,12 @@ int main(int argc, char** argv)
         }
       }
 
-      if (show_proc && !processed_img.empty())
-      {
-        cv::putText(processed_im_copy, string("found: ") + to_string(sure), Point(0, 30), FONT_HERSHEY_SIMPLEX, 1.1, Scalar(0, 0, 65535), 2);
-        uint16_t depth = processed_img_raw.at<uint16_t>(cursor_pos);
-        cv::putText(processed_im_copy, string("depth: ") + to_string(depth), Point(200, 30), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 0, 65535), 2);
-      }
+      /* if (show_proc && !processed_img.empty()) */
+      /* { */
+      /*   cv::putText(processed_im_copy, string("found: ") + to_string(sure), Point(0, 30), FONT_HERSHEY_SIMPLEX, 1.1, Scalar(0, 0, 65535), 2); */
+      /*   uint16_t depth = processed_img_raw.at<uint16_t>(cursor_pos); */
+      /*   cv::putText(processed_im_copy, string("depth: ") + to_string(depth), Point(200, 30), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 0, 65535), 2); */
+      /* } */
 
       /* highlight masked-out area //{ */
       if (draw_mask && !mask_im_inv.empty())

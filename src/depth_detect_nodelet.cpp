@@ -57,7 +57,7 @@ namespace uav_detect
       // Initialize subscribers
       mrs_lib::SubscribeMgr smgr(nh, m_node_name);
       const bool subs_time_consistent = false;
-      m_depthmap_sh = smgr.create_handler<sensor_msgs::ImageConstPtr, subs_time_consistent>("depthmap", ros::Duration(5.0));
+      m_depthmap_sh = smgr.create_handler<sensor_msgs::Image, subs_time_consistent>("depthmap", ros::Duration(5.0));
       // Initialize publishers
       m_detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); 
       m_detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1);
@@ -146,8 +146,8 @@ namespace uav_detect
           const int elem_a = m_drmgr_ptr->config.structuring_element_a;
           const int elem_b = m_drmgr_ptr->config.structuring_element_b;
           cv::Mat element = cv::getStructuringElement(MORPH_ELLIPSE, Size(elem_a, elem_b), Point(-1, -1));
-          cv::dilate(detect_im, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.dilate_iterations);
           cv::erode(detect_im, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.erode_iterations);
+          cv::dilate(detect_im, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.dilate_iterations);
 
           // erode without using zero (unknown) pixels
           if (m_drmgr_ptr->config.erode_ignore_empty_iterations > 0)
@@ -313,7 +313,7 @@ namespace uav_detect
 
     /* ROS related variables (subscribers, timers etc.) //{ */
     std::unique_ptr<drmgr_t> m_drmgr_ptr;
-    mrs_lib::SubscribeHandlerPtr<sensor_msgs::ImageConstPtr> m_depthmap_sh;
+    mrs_lib::SubscribeHandlerPtr<sensor_msgs::Image> m_depthmap_sh;
     ros::Publisher m_detections_pub;
     ros::Publisher m_detected_blobs_pub;
     ros::Publisher m_processed_depthmap_pub;
