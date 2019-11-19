@@ -254,7 +254,7 @@ int main(int argc, char** argv)
               /* } */
             } else
             {
-              cv::circle(processed_im_copy, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 65535), 1);
+              cv::circle(processed_im_copy, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 65535), 3);
             }
             /* cv::putText(processed_im_copy, id_txt, Point(blob.x + blob.radius + 5, blob.y), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 0, 65535), 1); */
           }
@@ -279,9 +279,9 @@ int main(int argc, char** argv)
               }
             } else
             {
-              cv::circle(rgb_im, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 255), 2);
+              cv::circle(rgb_im, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 255), 3);
             }
-            cv::putText(rgb_im, id_txt, Point(blob.x + blob.radius + 5, blob.y), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 0, 255), 2);
+            /* cv::putText(rgb_im, id_txt, Point(blob.x + blob.radius + 5, blob.y), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 0, 255), 2); */
           }
           //}
 
@@ -304,9 +304,9 @@ int main(int argc, char** argv)
               }
             } else
             {
-              cv::circle(dm_im_colormapped, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 255), 2);
+              cv::circle(dm_im_colormapped, Point(blob.x, blob.y), blob.radius, Scalar(0, 0, 255), 3);
             }
-            cv::putText(dm_im_colormapped, id_txt, Point(blob.x + blob.radius + 5, blob.y), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 0, 255), 2);
+            /* cv::putText(dm_im_colormapped, id_txt, Point(blob.x + blob.radius + 5, blob.y), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0, 0, 255), 2); */
           }
           //}
 
