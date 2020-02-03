@@ -160,6 +160,8 @@ namespace uav_detect
             }
             cv::erode(unknown_as_max, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.erode_ignore_empty_iterations);
           }
+
+          cv::dilate(detect_im, detect_im, element, Point(-1, -1), m_drmgr_ptr->config.dilate_after_iterations);
         }
 
         // blur it if requested
