@@ -21,6 +21,7 @@
 
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/crop_box.h>
+#include <pcl/filters/extract_indices.h>
 
 #include <pcl/features/normal_3d_omp.h>
 #include <pcl/features/integral_image_normal.h>
@@ -51,6 +52,12 @@ namespace uav_detect
   using pt_XYZ_t = pcl::PointXYZ;
   using pc_XYZ_t = pcl::PointCloud<pt_XYZ_t>;
 
+  using point = boost::geometry::model::d2::point_xy<double>;
+  using ring = boost::geometry::model::ring<point>;
+  using polygon = boost::geometry::model::polygon<point>;
+  using mpolygon = boost::geometry::model::multi_polygon<polygon>;
+  using box = boost::geometry::model::box<point>;
+    
   /* helper functions //{ */
   
   float distsq_from_origin(const pcl::PointXYZ& point)
@@ -88,9 +95,11 @@ namespace uav_detect
       mrs_lib::ParamLoader pl(nh, m_node_name);
       // LOAD STATIC PARAMETERS
       NODELET_INFO("Loading static parameters:");
-      pl.load_param("world_frame", m_world_frame);
+      const auto uav_name = pl.load_param2<std::string>("uav_name");
+      pl.load_param("world_frame_id", m_world_frame_id);
       pl.load_param("filtering_leaf_size", m_drmgr_ptr->config.filtering_leaf_size);
       pl.load_param("active_box_size", m_drmgr_ptr->config.active_box_size);
+
       pl.load_param("exclude_box/offset/x", m_exclude_box_offset_x);
       pl.load_param("exclude_box/offset/y", m_exclude_box_offset_y);
       pl.load_param("exclude_box/offset/z", m_exclude_box_offset_z);
@@ -98,12 +107,16 @@ namespace uav_detect
       pl.load_param("exclude_box/size/y", m_exclude_box_size_y);
       pl.load_param("exclude_box/size/z", m_exclude_box_size_z);
 
-      pl.load_param("arena_box/offset/x", m_arena_box_offset_x);
-      pl.load_param("arena_box/offset/y", m_arena_box_offset_y);
-      pl.load_param("arena_box/offset/z", m_arena_box_offset_z);
-      pl.load_param("arena_box/size/x", m_arena_box_size_x);
-      pl.load_param("arena_box/size/y", m_arena_box_size_y);
-      pl.load_param("arena_box/size/z", m_arena_box_size_z);
+      /* load safety area //{ */
+      
+      pl.load_param("safety_area/deflation", m_safety_area_deflation);
+      pl.load_param("safety_area/height/min", m_safety_area_min_z);
+      pl.load_param("safety_area/height/max", m_safety_area_max_z);
+      m_safety_area_frame = pl.load_param2<std::string>("safety_area/frame_name");
+      m_safety_area_border_points = pl.load_matrix_dynamic2("safety_area/safety_area", -1, 2);
+      m_safety_area_init_timer = nh.createTimer(ros::Duration(1.0), &PCLDetector::init_safety_area, this);
+      
+      //}
 
       pl.load_param("keep_pc_organized", m_keep_pc_organized, false);
 
@@ -126,11 +139,16 @@ namespace uav_detect
       // Initialize publishers
       /* m_detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); */ 
       /* m_detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1); */
-      m_global_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("global_pc", 1);
-      m_resampled_global_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("resampled_global_pc", 1);
-      m_filtered_input_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("filtered_input_pc", 1);
-      m_resampled_input_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("resampled_input_pc", 1);
-      m_clusters_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("clusters_pc", 1);
+      m_pub_filtered_input_pc = nh.advertise<sensor_msgs::PointCloud2>("filtered_input_pc", 1);
+      m_pub_filtered_input_pc2 = nh.advertise<sensor_msgs::PointCloud2>("filtered_input_pc2", 1);
+      m_pub_map3d = nh.advertise<visualization_msgs::Marker>("map3d", 1);
+      m_pub_oparea = nh.advertise<visualization_msgs::Marker>("operation_area", 1, true);
+      //}
+
+      /* initialize transformer //{ */
+      
+      m_transformer = mrs_lib::Transformer(m_node_name, uav_name);
+      
       //}
 
       m_last_detection_id = 0;
@@ -145,20 +163,21 @@ namespace uav_detect
       m_main_loop_timer = nh.createTimer(ros::Rate(1000), &PCLDetector::main_loop, this);
       /* m_info_loop_timer = nh.createTimer(ros::Rate(1), &PCLDetector::info_loop, this); */
 
-      m_cloud_global = boost::make_shared<pc_XYZNormal_t>();
-      m_cloud_global->header.frame_id = m_world_frame;
-
       cout << "----------------------------------------------------------" << std::endl;
 
     }
     //}
 
   private:
-    pc_XYZNormal_t::Ptr m_cloud_global;
-
     /* main_loop() method //{ */
     void main_loop([[maybe_unused]] const ros::TimerEvent& evt)
     {
+      if (!m_safety_area_initialized)
+      {
+        NODELET_WARN_STREAM_THROTTLE(1.0, "[PCLDetector]: Safety area not initialized, skipping. ");
+        return;
+      }
+
       if (m_pc_sh->new_data())
       {
         /* ros::Time start_t = ros::Time::now(); */
@@ -212,19 +231,24 @@ namespace uav_detect
           }
           tf_trans = s2w_tf.translation();
           pcl::transformPointCloud(*cloud_filtered, *cloud_filtered, s2w_tf.cast<float>());
-          cloud_filtered->header.frame_id = m_world_frame;
+          cloud_filtered->header.frame_id = m_world_frame_id;
+
+          filter_points(cloud_filtered);
+          NODELET_INFO_STREAM("[PCLDetector]: Input PC after arena filtering: " << cloud_filtered->size() << " points");
+          if (m_pub_filtered_input_pc2.getNumSubscribers() > 0)
+            m_pub_filtered_input_pc2.publish(cloud_filtered);
 
           /* filter by cropping points outside a box, representing the arena //{ */
           {
             const Eigen::Vector4f box_point1(
-                m_arena_box_offset_x + m_arena_box_size_x/2,
-                m_arena_box_offset_y + m_arena_box_size_y/2,
-                m_arena_box_offset_z + m_arena_box_size_z,
+                m_arena_bbox_offset_x + m_arena_bbox_size_x/2,
+                m_arena_bbox_offset_y + m_arena_bbox_size_y/2,
+                m_arena_bbox_offset_z + m_arena_bbox_size_z,
                 1);
             const Eigen::Vector4f box_point2(
-                m_arena_box_offset_x - m_arena_box_size_x/2,
-                m_arena_box_offset_y - m_arena_box_size_y/2,
-                m_arena_box_offset_z,
+                m_arena_bbox_offset_x - m_arena_bbox_size_x/2,
+                m_arena_bbox_offset_y - m_arena_bbox_size_y/2,
+                m_arena_bbox_offset_z,
                 1);
             pcl::CropBox<pcl::PointXYZ> cb;
             cb.setMax(box_point1);
@@ -237,53 +261,61 @@ namespace uav_detect
             /* cb.filter(indices_filtered->indices); */
           }
           //}
-          NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 2: " << cloud_filtered->size() << " points");
+          NODELET_INFO_STREAM("[PCLDetector]: Input PC after arena CropBox 2: " << cloud_filtered->size() << " points");
           
           NODELET_INFO_STREAM("[PCLDetector]: Filtered input PC has " << cloud_filtered->size() << " points");
         }
         
         //}
 
-        pcl::PointCloud<pcl::PointXYZL> cloud_clusters;
-        /* extract euclidean clusters //{ */
+        /* pcl::PointCloud<pcl::PointXYZL> cloud_clusters; */
+        /* /1* extract euclidean clusters //{ *1/ */
+        /* { */
+        /*   std::vector<pcl::PointIndices> cluster_indices; */
+        /*   pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec; */
+        /*   ec.setClusterTolerance(0.5); */
+        /*   ec.setMinClusterSize(1); */
+        /*   ec.setMaxClusterSize(25000); */
+        /*   ec.setInputCloud(cloud_filtered); */
+        /*   ec.extract(cluster_indices); */
+        /*   cloud_clusters.reserve(cloud_filtered->size()); */
+        /*   int label = 0; */
+        /*   for (const auto& idxs : cluster_indices) */
+        /*   { */
+        /*     for (const auto idx : idxs.indices) */
+        /*     { */
+        /*       const auto pt_orig = cloud_filtered->at(idx); */
+        /*       pcl::PointXYZL pt; */
+        /*       pt.x = pt_orig.x; */
+        /*       pt.y = pt_orig.y; */
+        /*       pt.z = pt_orig.z; */
+        /*       pt.label = label; */
+        /*       cloud_clusters.push_back(pt); */
+        /*     } */
+        /*     label++; */
+        /*   } */
+        /* } */
+        /* //} */
+
+        for (const auto& pt : *cloud_filtered)
         {
-          std::vector<pcl::PointIndices> cluster_indices;
-          pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
-          ec.setClusterTolerance(0.5);
-          ec.setMinClusterSize(1);
-          ec.setMaxClusterSize(25000);
-          ec.setInputCloud(cloud_filtered);
-          ec.extract(cluster_indices);
-          cloud_clusters.reserve(cloud_filtered->size());
-          int label = 0;
-          for (const auto& idxs : cluster_indices)
-          {
-            for (const auto idx : idxs.indices)
-            {
-              const auto pt_orig = cloud_filtered->at(idx);
-              pcl::PointXYZL pt;
-              pt.x = pt_orig.x;
-              pt.y = pt_orig.y;
-              pt.z = pt_orig.z;
-              pt.label = label;
-              cloud_clusters.push_back(pt);
-            }
-            label++;
-          }
+          const int pt_arena_x = std::round(pt.x - m_arena_bbox_offset_x + m_arena_bbox_size_x/2);
+          const int pt_arena_y = std::round(pt.y - m_arena_bbox_offset_y + m_arena_bbox_size_y/2);
+          const int pt_arena_z = std::round(pt.z - m_arena_bbox_offset_z);
+          map_at_coords(pt_arena_x, pt_arena_y, pt_arena_z) += 1.0;
         }
-        //}
 
-        m_cloud_global->header.stamp = cloud->header.stamp;
-        m_cloud_global->header.frame_id = m_world_frame;
-        cloud_clusters.header = m_cloud_global->header;
+        if (m_pub_filtered_input_pc.getNumSubscribers() > 0)
+          m_pub_filtered_input_pc.publish(cloud_filtered);
 
-        if (m_filtered_input_pc_pub.getNumSubscribers() > 0)
-          m_filtered_input_pc_pub.publish(cloud_filtered);
+        std_msgs::Header header;
+        header.frame_id = m_world_frame_id;
+        header.stamp = msg_stamp;
+        if (m_pub_map3d.getNumSubscribers() > 0)
+          m_pub_map3d.publish(map3d_visualization(header));
 
-        if (m_clusters_pc_pub.getNumSubscribers() > 0)
-          m_clusters_pc_pub.publish(cloud_clusters);
-
-        NODELET_INFO_STREAM("[PCLDetector]: Done processing data --------------------------------------------------------- ");
+        const double delay = (ros::Time::now() - msg_stamp).toSec();
+        NODELET_INFO_STREAM("[PCLDetector]: Done processing data with delay " << delay <<  "s ---------------------------------------------- ");
   }
   }
     //}
@@ -301,7 +333,133 @@ namespace uav_detect
     /* } */
     /* //} */
 
+    /* init_safety_area() method //{ */
+    void init_safety_area([[maybe_unused]] const ros::TimerEvent& evt)
+    {
+      assert(m_safety_area_border_points.cols() == 2);
+      const auto tf_opt = m_transformer.getTransform(m_safety_area_frame, m_world_frame_id);
+      if (!tf_opt.has_value())
+      {
+        ROS_ERROR("Safety area could not be transformed!");
+        return;
+      }
+
+      const auto tf = tf_opt.value();
+      /* transform border_points //{ */
+
+      {
+        for (int it = 0; it < m_safety_area_border_points.rows(); it++)
+        {
+          Eigen::Vector2d vec = m_safety_area_border_points.row(it);
+          geometry_msgs::Point pt;
+          pt.x = vec.x();
+          pt.y = vec.y();
+          pt.z = 0.0;
+          auto tfd = m_transformer.transformHeaderless(tf, pt);
+          if (!tfd.has_value())
+          {
+            ROS_ERROR("Safety area could not be transformed!");
+            return;
+          }
+          else
+          {
+            m_safety_area_border_points.row(it).x() = tfd.value().x;
+            m_safety_area_border_points.row(it).y() = tfd.value().y;
+          }
+        }
+      }
+
+      //}
+
+      std::vector<point> boost_area_pts;
+      boost_area_pts.reserve(m_safety_area_border_points.rows());
+      for (int it = 0; it < m_safety_area_border_points.rows(); it++)
+      {
+        const Eigen::RowVector2d row = m_safety_area_border_points.row(it);
+        boost_area_pts.push_back({row.x(), row.y()});
+      }
+      if (!boost_area_pts.empty())
+        boost_area_pts.push_back({m_safety_area_border_points.row(0).x(), m_safety_area_border_points.row(0).y()});
+      m_safety_area_ring = ring(std::begin(boost_area_pts), std::end(boost_area_pts));
+
+      // Declare strategies
+      const int points_per_circle = 36;
+      boost::geometry::strategy::buffer::distance_symmetric distance_strategy(-m_safety_area_deflation);
+      boost::geometry::strategy::buffer::join_round join_strategy(points_per_circle);
+      boost::geometry::strategy::buffer::end_round end_strategy(points_per_circle);
+      boost::geometry::strategy::buffer::point_circle circle_strategy(points_per_circle);
+      boost::geometry::strategy::buffer::side_straight side_strategy;
+
+      mpolygon result;
+      // Create the buffer of a multi polygon
+      boost::geometry::buffer(m_safety_area_ring, result,
+                  distance_strategy, side_strategy,
+                  join_strategy, end_strategy, circle_strategy);
+      if (result.empty())
+      {
+        m_safety_area_ring = ring();
+        ROS_ERROR("[PCLDetector]: Deflated safety area is empty! This probably shouldn't happen!");
+        return;
+      }
+
+      if (result.size() > 1)
+        ROS_WARN("[PCLDetector]: Deflated safety area breaks into multiple pieces! This probably shouldn't happen! Using the first piece...");
+
+      polygon poly = result.at(0);
+      m_safety_area_ring = poly.outer();
+
+      box bbox;
+      boost::geometry::envelope(m_safety_area_ring, bbox);
+      m_arena_bbox_size_x = std::abs(bbox.max_corner().x() - bbox.min_corner().x());
+      m_arena_bbox_size_y = std::abs(bbox.max_corner().y() - bbox.min_corner().y());
+      m_arena_bbox_size_z = std::abs(m_safety_area_max_z - m_safety_area_min_z);
+      m_arena_bbox_offset_x = (bbox.max_corner().x() + bbox.min_corner().x())/2.0;
+      m_arena_bbox_offset_y = (bbox.max_corner().y() + bbox.min_corner().y())/2.0;
+      m_arena_bbox_offset_z = std::min(m_safety_area_max_z, m_safety_area_min_z);
+
+      m_map_size = std::ceil(m_arena_bbox_size_x)*std::ceil(m_arena_bbox_size_y)*std::ceil(m_arena_bbox_size_z);
+      m_map3d.resize(m_map_size);
+      for (int it = 0; it < m_map_size; it++)
+        m_map3d.at(it) = 0;
+
+      m_safety_area_init_timer.stop();
+      m_safety_area_initialized = true;
+
+      std_msgs::Header header;
+      header.frame_id = m_world_frame_id;
+      header.stamp = ros::Time::now();
+      auto msg = oparea_visualization(header);
+      m_pub_oparea.publish(msg);
+    }
+    //}
+
   private:
+
+    /* in_safety_area() method //{ */
+    inline bool in_safety_area(const pcl::PointXYZ& pt)
+    {
+      /* const bool in_poly = boost::geometry::covered_by(point(pt.x, pt.y), m_safety_area_ring); */
+      const bool in_poly = boost::geometry::within(point(pt.x, pt.y), m_safety_area_ring);
+      const bool height_ok = pt.z > m_safety_area_min_z && pt.z < m_safety_area_max_z;
+      return in_poly && height_ok;
+    }
+    //}
+
+    /* filter_points() method //{ */
+    void filter_points(pc_XYZ_t::Ptr cloud)
+    {
+      pc_XYZ_t::Ptr cloud_out = boost::make_shared<pc_XYZ_t>();
+      cloud_out->reserve(cloud->size()/100);
+      for (size_t it = 0; it < cloud->size(); it++)
+      {
+        if (in_safety_area(cloud->points[it]))
+        {
+          cloud_out->push_back(cloud->points[it]);
+        }
+      }
+      cloud_out->swap(*cloud);
+    }
+    //}
 
     /* ray_triangle_intersect() method //{ */
     // implemented according to https://www.scratchapixel.com/code.php?id=11&origin=/lessons/3d-basic-rendering/ray-tracing-polygon-mesh
@@ -681,18 +839,139 @@ namespace uav_detect
         const ros::Duration timeout(1.0 / 100.0);
         // Obtain transform from sensor into world frame
         geometry_msgs::TransformStamped transform;
-        transform = m_tf_buffer.lookupTransform(m_world_frame, frame_id, stamp, timeout);
+        transform = m_tf_buffer.lookupTransform(m_world_frame_id, frame_id, stamp, timeout);
         tf_out = tf2::transformToEigen(transform.transform);
       }
       catch (tf2::TransformException& ex)
       {
         NODELET_WARN_THROTTLE(1.0, "[%s]: Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", m_node_name.c_str(), frame_id.c_str(),
-                          m_world_frame.c_str(), ex.what());
+                          m_world_frame_id.c_str(), ex.what());
         return false;
       }
       return true;
     }
     //}
+
+    /* map_at_coords() method //{ */
+    
+    float& map_at_coords(int coord_x, int coord_y, int coord_z)
+    {
+      return m_map3d.at(coord_x*m_arena_bbox_size_y*m_arena_bbox_size_z + coord_y*m_arena_bbox_size_z + coord_z);
+    }
+    
+    //}
+
+    /* map3d_visualization() method //{ */
+    visualization_msgs::Marker map3d_visualization(const std_msgs::Header header)
+    {
+      visualization_msgs::Marker ret;
+      ret.header = header;
+      ret.points.reserve(m_map3d.size()/1000);
+      ret.pose.position.x = m_arena_bbox_offset_x - m_arena_bbox_size_x/2.0 ;
+      ret.pose.position.y = m_arena_bbox_offset_y - m_arena_bbox_size_y/2.0 ;
+      ret.pose.position.z = m_arena_bbox_offset_z;
+      ret.pose.orientation.w = 1.0;
+      ret.scale.x = ret.scale.y = ret.scale.z = 1.0;
+      ret.color.a = 1.0;
+      ret.color.r = 0.0;
+      ret.type = visualization_msgs::Marker::CUBE_LIST;
+    
+      float maxval = 0.0;
+      for (const auto val : m_map3d)
+        if (val > maxval)
+          maxval = val;
+    
+      for (int x_it = 0; x_it < m_arena_bbox_size_x; x_it++)
+      {
+        for (int y_it = 0; y_it < m_arena_bbox_size_y; y_it++)
+        {
+          for (int z_it = 0; z_it < m_arena_bbox_size_z; z_it++)
+          {
+            const float mapval = map_at_coords(x_it, y_it, z_it);
+            if (mapval <= 0.0)
+              continue;
+    
+            geometry_msgs::Point pt;
+            pt.x = x_it;
+            pt.y = y_it;
+            pt.z = z_it;
+            ret.points.push_back(pt);
+    
+            std_msgs::ColorRGBA color;
+            color.a = mapval/maxval;
+            color.r = 1.0;
+            ret.colors.push_back(color);
+          }
+        }
+      }
+      return ret;
+    }
+    //}
+
+  /* oparea_visualization() method //{ */
+
+  geometry_msgs::Point boost2gmsgs(const point& bpt, const double height)
+  {
+    geometry_msgs::Point pt;
+    pt.x = bpt.x();
+    pt.y = bpt.y();
+    pt.z = height;
+    return pt;
+  }
+
+  visualization_msgs::Marker oparea_visualization(const std_msgs::Header header)
+  {
+    visualization_msgs::Marker safety_area_marker;
+    safety_area_marker.header = header;
+
+    safety_area_marker.type            = visualization_msgs::Marker::LINE_LIST;
+    safety_area_marker.color.a         = 0.15;
+    safety_area_marker.scale.x         = 0.2;
+    safety_area_marker.color.r         = 0;
+    safety_area_marker.color.g         = 0;
+    safety_area_marker.color.b         = 1;
+  
+    safety_area_marker.pose.orientation.x = 0;
+    safety_area_marker.pose.orientation.y = 0;
+    safety_area_marker.pose.orientation.z = 0;
+    safety_area_marker.pose.orientation.w = 1;
+
+  
+    /* adding safety area points //{ */
+  
+    // bottom border
+    for (size_t i = 0; i < m_safety_area_ring.size()-1; i++)
+    {
+      const auto pt1 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_min_z);
+      const auto pt2 = boost2gmsgs(m_safety_area_ring.at(i+1), m_safety_area_min_z);
+      safety_area_marker.points.push_back(pt1);
+      safety_area_marker.points.push_back(pt2);
+    }
+
+    // top border
+    for (size_t i = 0; i < m_safety_area_ring.size()-1; i++)
+    {
+      const auto pt1 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_max_z);
+      const auto pt2 = boost2gmsgs(m_safety_area_ring.at(i+1), m_safety_area_max_z);
+      safety_area_marker.points.push_back(pt1);
+      safety_area_marker.points.push_back(pt2);
+    }
+
+    // top/bot edges
+    for (size_t i = 0; i < m_safety_area_ring.size()-1; i++)
+    {
+      const auto pt1 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_min_z);
+      const auto pt2 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_max_z);
+      safety_area_marker.points.push_back(pt1);
+      safety_area_marker.points.push_back(pt2);
+    }
+  
+    //}
+  
+    return safety_area_marker;
+  }
+  
+  //}
 
   private:
 
@@ -706,16 +985,16 @@ namespace uav_detect
     std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
     mrs_lib::SubscribeHandlerPtr<pc_XYZ_t> m_pc_sh;
     /* ros::Publisher m_detections_pub; */
-    ros::Publisher m_global_pc_pub;
-    ros::Publisher m_resampled_global_pc_pub;
-    ros::Publisher m_mesh_pub;
-    ros::Publisher m_global_mesh_pub;
-    ros::Publisher m_clusters_pc_pub;
-    ros::Publisher m_filtered_input_pc_pub;
-    ros::Publisher m_resampled_input_pc_pub;
+    ros::Publisher m_pub_filtered_input_pc;
+    ros::Publisher m_pub_filtered_input_pc2;
+    ros::Publisher m_pub_map3d;
+    ros::Publisher m_pub_oparea;
     ros::Timer m_main_loop_timer;
     ros::Timer m_info_loop_timer;
+    ros::Timer m_safety_area_init_timer;
     std::string m_node_name;
+
+    mrs_lib::Transformer m_transformer;
     //}
 
   private:
@@ -726,7 +1005,7 @@ namespace uav_detect
 
     /* Parameters, loaded from ROS //{ */
     
-    std::string m_world_frame;
+    std::string m_world_frame_id;
     double m_exclude_box_offset_x;
     double m_exclude_box_offset_y;
     double m_exclude_box_offset_z;
@@ -734,12 +1013,12 @@ namespace uav_detect
     double m_exclude_box_size_y;
     double m_exclude_box_size_z;
 
-    double m_arena_box_offset_x;
-    double m_arena_box_offset_y;
-    double m_arena_box_offset_z;
-    double m_arena_box_size_x;
-    double m_arena_box_size_y;
-    double m_arena_box_size_z;
+    std::string m_safety_area_frame;
+    Eigen::MatrixXd m_safety_area_border_points;
+    double m_safety_area_deflation;
+    ring m_safety_area_ring;
+    double m_safety_area_min_z;
+    double m_safety_area_max_z;
 
     bool m_keep_pc_organized;
     
@@ -751,7 +1030,17 @@ namespace uav_detect
     // |                   Other member variables                   |
     // --------------------------------------------------------------
 
+    bool m_safety_area_initialized;
     uint32_t m_last_detection_id;
+    std::vector<float> m_map3d;
+    double m_arena_bbox_offset_x; // x-center of the 3D bounding box
+    double m_arena_bbox_offset_y; // y-center of the 3D bounding box
+    double m_arena_bbox_offset_z; // z-bottom of the 3D bounding box
+    double m_arena_bbox_size_x;
+    double m_arena_bbox_size_y;
+    double m_arena_bbox_size_z;
+
+    int m_map_size;
     
     /* Statistics variables //{ */
     std::mutex m_stat_mtx;

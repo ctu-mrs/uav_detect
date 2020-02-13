@@ -1,17 +1,11 @@
-world_frame: "world"
-
 # points of the input pointcloud, closer than this size, are discarded
 filtering_leaf_size: 0.5 # meters
 
-arena_box:
-  offset: # offset of the box center relative to the world origin
-    x: 0 # meters
-    y: 0 # meters
-    z: 5 # meters
-  size:
-    x: 100 # meters
-    y: 60 # meters
-    z: 10 # meters
+safety_area:
+  deflation: 13 # metres
+  height:
+    min: 5 # metres
+    max: 15 # metres
 
 # points inside the box, defined by *uav_exclude_box*, relative to the sensor, are discarded
 # this is used to filter out the MAV itself from the pointcloud
@@ -19,7 +13,7 @@ exclude_box:
   offset: # offset of the box center relative to the sensor origin
     x: 0 # meters
     y: 0 # meters
-    z: -0.3 # meters
+    z: -0.5 # meters
   size:
     x: 1 # meters
     y: 1 # meters

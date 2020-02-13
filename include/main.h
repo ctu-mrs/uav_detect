@@ -23,6 +23,10 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point_xy.hpp>
+#include <boost/geometry/geometries/geometries.hpp>
+
 #include <list>
 
 #include <uav_detect/Detection.h>
@@ -31,5 +35,6 @@
 #include <mrs_lib/ParamLoader.h>
 #include <mrs_lib/DynamicReconfigureMgr.h>
 #include <mrs_lib/subscribe_handler.h>
+#include <mrs_lib/transformer.h>
 
 #endif //  MAIN_H

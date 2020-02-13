@@ -1,10 +1,16 @@
 <launch>
 
   <arg name="uav_name" default="$(optenv UAV_NAME uav)"/>
+  <arg name="WORLD_FILE" default="$(optenv WORLD_FILE)" />
+  <arg name="WORLD_NAME" default="$(optenv WORLD_NAME)" />
 
   <arg name="debug" default="false" />
   <arg unless="$(arg debug)" name="launch_prefix" value=""/>
   <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch"/>
+
+  <arg if="$(eval arg('WORLD_FILE') == '' and arg('WORLD_NAME') != '')" name="world_file" value="$(find mrs_general)/config/world_$(env WORLD_NAME).yaml" />
+  <arg if="$(eval arg('WORLD_FILE') == '' and arg('WORLD_NAME') == '' and arg('RUN_TYPE') == 'simulation')" name="world_file" value="$(find mrs_general)/config/world_simulation.yaml" />
+  <arg if="$(eval arg('WORLD_FILE') != '')" name="world_file" value="$(arg WORLD_FILE)" />
 
   <arg name="ignore_mask" default="$(optenv IGNORE_MASK false)" />
   <arg unless="$(arg ignore_mask)" name="mask_filename" value="$(find uav_detect)/masks/nerian_eagleone_mask.bmp"/>
@@ -22,7 +28,9 @@
       
       <param name="uav_name" value="$(arg uav_name)" />
       <param name="path_to_mask" value="$(arg mask_filename)" />
+      <param name="world_frame_id" value="$(arg uav_name)/gps_origin" />
       <rosparam file="$(find uav_detect)/config/detection_params_sim.yaml" />
+      <rosparam file="$(arg world_file)" command="load" />
     
       <remap from="~pc" to="/os1_cloud_node/points" />
 
