@@ -97,6 +97,14 @@ namespace uav_detect
       pl.load_param("exclude_box/size/x", m_exclude_box_size_x);
       pl.load_param("exclude_box/size/y", m_exclude_box_size_y);
       pl.load_param("exclude_box/size/z", m_exclude_box_size_z);
+
+      pl.load_param("arena_box/offset/x", m_arena_box_offset_x);
+      pl.load_param("arena_box/offset/y", m_arena_box_offset_y);
+      pl.load_param("arena_box/offset/z", m_arena_box_offset_z);
+      pl.load_param("arena_box/size/x", m_arena_box_size_x);
+      pl.load_param("arena_box/size/y", m_arena_box_size_y);
+      pl.load_param("arena_box/size/z", m_arena_box_size_z);
+
       pl.load_param("keep_pc_organized", m_keep_pc_organized, false);
 
       // LOAD DYNAMIC PARAMETERS
@@ -114,7 +122,7 @@ namespace uav_detect
       // Initialize subscribers
       mrs_lib::SubscribeMgr smgr(nh, m_node_name);
       const bool subs_time_consistent = false;
-      m_pc_sh = smgr.create_handler_threadsafe<pc_XYZ_t::ConstPtr, subs_time_consistent>("pc", 1, ros::TransportHints().tcpNoDelay(), ros::Duration(5.0));
+      m_pc_sh = smgr.create_handler<pc_XYZ_t, subs_time_consistent>("pc", ros::Duration(5.0));
       // Initialize publishers
       /* m_detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); */ 
       /* m_detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1); */
@@ -122,8 +130,6 @@ namespace uav_detect
       m_resampled_global_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("resampled_global_pc", 1);
       m_filtered_input_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("filtered_input_pc", 1);
       m_resampled_input_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("resampled_input_pc", 1);
-      m_mesh_pub = nh.advertise<visualization_msgs::Marker>("mesh", 1);
-      m_global_mesh_pub = nh.advertise<visualization_msgs::Marker>("global_mesh", 1);
       m_clusters_pc_pub = nh.advertise<sensor_msgs::PointCloud2>("clusters_pc", 1);
       //}
 
@@ -162,32 +168,14 @@ namespace uav_detect
         pc_XYZ_t::ConstPtr cloud = m_pc_sh->get_data();
         ros::Time msg_stamp;
         pcl_conversions::fromPCL(cloud->header.stamp, msg_stamp);
+        std::string cloud_frame_id = cloud->header.frame_id.substr(1); //cut off the first forward slash
         NODELET_INFO_STREAM("[PCLDetector]: Input PC has " << cloud->size() << " points");
-        const auto leaf_size = m_drmgr_ptr->config.filtering_leaf_size;
 
         /* filter input cloud and transform it to world //{ */
         
         pc_XYZ_t::Ptr cloud_filtered = boost::make_shared<pc_XYZ_t>(*cloud);
         Eigen::Vector3d tf_trans;
         {
-          /* filter by cropping points outside a box, relative to the sensor //{ */
-          {
-            const auto box_size = m_drmgr_ptr->config.active_box_size;
-            const Eigen::Vector4f box_point1(box_size/2, box_size/2, box_size/2, 1);
-            const Eigen::Vector4f box_point2(-box_size/2, -box_size/2, -box_size/2, 1);
-            pcl::CropBox<pcl::PointXYZ> cb;
-            cb.setMax(box_point1);
-            cb.setMin(box_point2);
-            cb.setInputCloud(cloud_filtered);
-            cb.setNegative(false);
-            cb.setKeepOrganized(m_keep_pc_organized);
-            cb.filter(*cloud_filtered);
-            /* cb.setNegative(false); */
-            /* cb.filter(indices_filtered->indices); */
-          }
-          //}
-          NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 1: " << cloud_filtered->size() << " points");
-          
           /* filter by cropping points inside a box, relative to the sensor //{ */
           {
             const Eigen::Vector4f box_point1(
@@ -205,7 +193,7 @@ namespace uav_detect
             cb.setMin(box_point2);
             cb.setInputCloud(cloud_filtered);
             cb.setNegative(true);
-            cb.setKeepOrganized(m_keep_pc_organized);
+            /* cb.setKeepOrganized(m_keep_pc_organized); */
             cb.filter(*cloud_filtered);
             /* cb.setInputCloud(cloud); */
             /* cb.setIndices(indices_filtered); */
@@ -213,10 +201,10 @@ namespace uav_detect
             /* cb.filter(indices_filtered->indices); */
           }
           //}
-          NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 2: " << cloud_filtered->size() << " points");
+          NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 1: " << cloud_filtered->size() << " points");
 
           Eigen::Affine3d s2w_tf;
-          bool tf_ok = get_transform_to_world(cloud->header.frame_id, msg_stamp, s2w_tf);
+          bool tf_ok = get_transform_to_world(cloud_frame_id, msg_stamp, s2w_tf);
           if (!tf_ok)
           {
             NODELET_ERROR("[PCLDetector]: Could not transform pointcloud to global, skipping.");
@@ -226,119 +214,64 @@ namespace uav_detect
           pcl::transformPointCloud(*cloud_filtered, *cloud_filtered, s2w_tf.cast<float>());
           cloud_filtered->header.frame_id = m_world_frame;
 
+          /* filter by cropping points outside a box, representing the arena //{ */
+          {
+            const Eigen::Vector4f box_point1(
+                m_arena_box_offset_x + m_arena_box_size_x/2,
+                m_arena_box_offset_y + m_arena_box_size_y/2,
+                m_arena_box_offset_z + m_arena_box_size_z,
+                1);
+            const Eigen::Vector4f box_point2(
+                m_arena_box_offset_x - m_arena_box_size_x/2,
+                m_arena_box_offset_y - m_arena_box_size_y/2,
+                m_arena_box_offset_z,
+                1);
+            pcl::CropBox<pcl::PointXYZ> cb;
+            cb.setMax(box_point1);
+            cb.setMin(box_point2);
+            cb.setInputCloud(cloud_filtered);
+            cb.setNegative(false);
+            /* cb.setKeepOrganized(m_keep_pc_organized); */
+            cb.filter(*cloud_filtered);
+            /* cb.setNegative(false); */
+            /* cb.filter(indices_filtered->indices); */
+          }
+          //}
+          NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 2: " << cloud_filtered->size() << " points");
+          
           NODELET_INFO_STREAM("[PCLDetector]: Filtered input PC has " << cloud_filtered->size() << " points");
         }
         
         //}
 
-        pcl::PolygonMesh mesh;
-        /* fit a surface to the filtered (still organized) cloud //{ */
+        pcl::PointCloud<pcl::PointXYZL> cloud_clusters;
+        /* extract euclidean clusters //{ */
         {
-          mesh = reconstruct_mesh_organized(cloud_filtered);
-          if (mesh.polygons.empty())
-            ROS_ERROR("[PCLDetector]: Failed to reconstruct mesh using input pointcloud - is it organized?");
+          std::vector<pcl::PointIndices> cluster_indices;
+          pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+          ec.setClusterTolerance(0.5);
+          ec.setMinClusterSize(1);
+          ec.setMaxClusterSize(25000);
+          ec.setInputCloud(cloud_filtered);
+          ec.extract(cluster_indices);
+          cloud_clusters.reserve(cloud_filtered->size());
+          int label = 0;
+          for (const auto& idxs : cluster_indices)
+          {
+            for (const auto idx : idxs.indices)
+            {
+              const auto pt_orig = cloud_filtered->at(idx);
+              pcl::PointXYZL pt;
+              pt.x = pt_orig.x;
+              pt.y = pt_orig.y;
+              pt.z = pt_orig.z;
+              pt.label = label;
+              cloud_clusters.push_back(pt);
+            }
+            label++;
+          }
         }
         //}
-
-        pcl::PointCloud<pcl::PointNormal> cloud_with_normals = uniform_mesh_sampling(mesh, m_drmgr_ptr->config.mesh_resample_points);
-
-        //TODO: filter old points in global pointcloud (change point type to some custom one with stamp)
-
-        /* add filtered input cloud to global cloud and filter it //{ */
-        
-        {
-          /* *m_cloud_global += cloud_add_time(cloud_with_normals, msg_stamp); */
-          *m_cloud_global += cloud_with_normals;
-
-          /* filter by mutual point distance (voxel grid) //{ */
-          pcl::VoxelGrid<pt_XYZNormal_t> vg;
-          vg.setLeafSize(leaf_size, leaf_size, leaf_size);
-          vg.setInputCloud(m_cloud_global);
-          vg.filter(*m_cloud_global);
-          //}
-
-          /* filter by cropping points outside a box, relative to the sensor //{ */
-          const auto box_size = m_drmgr_ptr->config.active_box_size;
-          const Eigen::Vector4f sensor_origin(tf_trans.x(), tf_trans.y(), tf_trans.z(), 1.0f);
-          const Eigen::Vector4f box_point1 = sensor_origin - Eigen::Vector4f(box_size/2, box_size/2, box_size/2, 0);
-          const Eigen::Vector4f box_point2 = sensor_origin + Eigen::Vector4f(box_size/2, box_size/2, box_size/2, 0);
-          pcl::CropBox<pt_XYZNormal_t> cb;
-          cb.setMin(box_point1);
-          cb.setMax(box_point2);
-          cb.setInputCloud(m_cloud_global);
-          cb.filter(*m_cloud_global);
-          //}
-
-          /* filter_by_age(*m_cloud_global, uint32_t(m_drmgr_ptr->config.point_decay_time)); */
-
-          NODELET_INFO_STREAM("[PCLDetector]: Global pointcloud has " << m_cloud_global->size() << " points");
-        }
-        
-        //}
-
-        pcl::PolygonMesh global_mesh;
-        /* fit a surface to the filtered cloud //{ */
-        {
-          /* pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_hull (new pcl::PointCloud<pcl::PointXYZ>); */
-          /* pcl::ConcaveHull<pcl::PointNormal> chull; */
-          /* chull.setInputCloud(m_cloud_global); */
-          /* chull.setAlpha(1.0); */
-          /* chull.reconstruct(global_mesh); */
-
-          pcl::Poisson<pt_XYZNormal_t> mesher;
-          /* pcl::GreedyProjectionTriangulation<pt_XYZNormal_t> mesher; */
-          mesher.setInputCloud(m_cloud_global);
-          /* mesher.setMaximumNearestNeighbors(m_drmgr_ptr->config.meshing_MaximumNearestNeighbors); */
-          /* mesher.setMu(m_drmgr_ptr->config.meshing_Mu); */
-          /* mesher.setSearchRadius(m_drmgr_ptr->config.meshing_SearchRadius); */
-          /* mesher.setMaximumSurfaceAngle(m_drmgr_ptr->config.meshing_MaximumSurfaceAngle); */
-          mesher.reconstruct(global_mesh);
-          NODELET_INFO_STREAM("[PCLDetector]: Global mesh has " << global_mesh.polygons.size() << " polygons");
-        }
-        //}
-
-        /* filter the fitted mesh surface by raytracing the input pointcloud //{ */
-        {
-          filter_mesh_raytrace(global_mesh, *cloud);
-          NODELET_INFO_STREAM("[PCLDetector]: Filtered global mesh has " << global_mesh.polygons.size() << " polygons");
-        }
-        //}
-
-        if (m_global_pc_pub.getNumSubscribers() > 0)
-          m_global_pc_pub.publish(m_cloud_global);
-
-        /* pcl::fromPCLPointCloud2(global_mesh.cloud, *m_cloud_global); */
-        *m_cloud_global = uniform_mesh_sampling(global_mesh, m_drmgr_ptr->config.global_mesh_resample_points);
-        NODELET_INFO_STREAM("[PCLDetector]: Resampled global pointcloud has " << m_cloud_global->size() << " points");
-
-        pcl::PointCloud<pcl::PointXYZL> cloud_clusters = segment_meshes(global_mesh);
-        /* /1* extract euclidean clusters //{ *1/ */
-        /* { */
-        /*   std::vector<pcl::PointIndices> cluster_indices; */
-        /*   pcl::EuclideanClusterExtraction<pcl::PointNormal> ec; */
-        /*   ec.setClusterTolerance(0.5); */
-        /*   ec.setMinClusterSize(1); */
-        /*   ec.setMaxClusterSize(25000); */
-        /*   ec.setInputCloud(m_cloud_global); */
-        /*   ec.extract(cluster_indices); */
-        /*   cloud_clusters.reserve(m_cloud_global->size()); */
-        /*   int label = 0; */
-        /*   for (const auto& idxs : cluster_indices) */
-        /*   { */
-        /*     for (const auto idx : idxs.indices) */
-        /*     { */
-        /*       const auto pt_orig = m_cloud_global->at(idx); */
-        /*       pcl::PointXYZL pt; */
-        /*       pt.x = pt_orig.x; */
-        /*       pt.y = pt_orig.y; */
-        /*       pt.z = pt_orig.z; */
-        /*       pt.label = label; */
-        /*       cloud_clusters.push_back(pt); */
-        /*     } */
-        /*     label++; */
-        /*   } */
-        /* } */
-        /* //} */
 
         m_cloud_global->header.stamp = cloud->header.stamp;
         m_cloud_global->header.frame_id = m_world_frame;
@@ -346,18 +279,6 @@ namespace uav_detect
 
         if (m_filtered_input_pc_pub.getNumSubscribers() > 0)
           m_filtered_input_pc_pub.publish(cloud_filtered);
-
-        if (m_resampled_input_pc_pub.getNumSubscribers() > 0)
-          m_resampled_input_pc_pub.publish(cloud_with_normals);
-
-        if (m_resampled_global_pc_pub.getNumSubscribers() > 0)
-          m_resampled_global_pc_pub.publish(m_cloud_global);
-
-        if (m_mesh_pub.getNumSubscribers() > 0)
-          m_mesh_pub.publish(to_marker_list_msg(mesh));
-
-        if (m_global_mesh_pub.getNumSubscribers() > 0)
-          m_global_mesh_pub.publish(to_marker_list_msg(global_mesh));
 
         if (m_clusters_pc_pub.getNumSubscribers() > 0)
           m_clusters_pc_pub.publish(cloud_clusters);
@@ -783,7 +704,7 @@ namespace uav_detect
     std::unique_ptr<drmgr_t> m_drmgr_ptr;
     tf2_ros::Buffer m_tf_buffer;
     std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
-    mrs_lib::SubscribeHandlerPtr<pc_XYZ_t::ConstPtr> m_pc_sh;
+    mrs_lib::SubscribeHandlerPtr<pc_XYZ_t> m_pc_sh;
     /* ros::Publisher m_detections_pub; */
     ros::Publisher m_global_pc_pub;
     ros::Publisher m_resampled_global_pc_pub;
@@ -812,6 +733,14 @@ namespace uav_detect
     double m_exclude_box_size_x;
     double m_exclude_box_size_y;
     double m_exclude_box_size_z;
+
+    double m_arena_box_offset_x;
+    double m_arena_box_offset_y;
+    double m_arena_box_offset_z;
+    double m_arena_box_size_x;
+    double m_arena_box_size_y;
+    double m_arena_box_size_z;
+
     bool m_keep_pc_organized;
     
     //}

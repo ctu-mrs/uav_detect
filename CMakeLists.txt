@@ -33,12 +33,14 @@ find_package(catkin REQUIRED COMPONENTS
 set(CMAKE_CXX_FLAGS "-g -Og -DEIGEN_INITIALIZE_MATRICES_BY_NAN -DDISABLE_PARALLELIZATION -DDEBUG_PARAMS")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -Og -DEIGEN_INITIALIZE_MATRICES_BY_NAN -DDISABLE_PARALLELIZATION -DDEBUG_PARAMS")
 set(CMAKE_CXX_FLAGS_RELEASE "-g -Og -DEIGEN_INITIALIZE_MATRICES_BY_NAN -DDISABLE_PARALLELIZATION -DDEBUG_PARAMS")
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-g -Og -DEIGEN_INITIALIZE_MATRICES_BY_NAN -DDISABLE_PARALLELIZATION -DDEBUG_PARAMS")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_compile_options("-Wall")
+add_compile_options("-Wextra")
 
 FIND_PACKAGE(OpenMP)
 IF(OPENMP_FOUND)
@@ -113,22 +115,22 @@ target_link_libraries(PCLDetector
 )
 target_include_directories(PCLDetector SYSTEM PRIVATE ${PCL_INCLUDE_DIRS})
 
-add_library(DepthmapPreprocessor src/depthmap_preprocessing.cpp)
-add_dependencies(DepthmapPreprocessor
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
-)
-target_link_libraries(DepthmapPreprocessor
-  ${catkin_LIBRARIES}
-  ${OpenCV_LIBRARIES}
-)
+# add_library(DepthmapPreprocessor src/depthmap_preprocessing.cpp)
+# add_dependencies(DepthmapPreprocessor
+#   ${${PROJECT_NAME}_EXPORTED_TARGETS}
+#   ${catkin_EXPORTED_TARGETS}
+# )
+# target_link_libraries(DepthmapPreprocessor
+#   ${catkin_LIBRARIES}
+#   ${OpenCV_LIBRARIES}
+# )
 
-add_executable(dbg_display_node src/dbg_display_node.cpp)
-add_dependencies(dbg_display_node
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS}
-)
-target_link_libraries(dbg_display_node
-  ${catkin_LIBRARIES}
-  ${OpenCV_LIBRARIES}
-)
+# add_executable(dbg_display_node src/dbg_display_node.cpp)
+# add_dependencies(dbg_display_node
+#   ${${PROJECT_NAME}_EXPORTED_TARGETS}
+#   ${catkin_EXPORTED_TARGETS}
+# )
+# target_link_libraries(dbg_display_node
+#   ${catkin_LIBRARIES}
+#   ${OpenCV_LIBRARIES}
+# )

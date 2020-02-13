@@ -6,15 +6,6 @@
   <arg unless="$(arg debug)" name="launch_prefix" value=""/>
   <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch"/>
 
-  <arg name="simulation" default="$(optenv SIMULATION false)" />
-  <arg unless="$(arg simulation)" name="config_file" value="$(find uav_detect)/config/detection_params_nerian.yaml"/>
-  <arg     if="$(arg simulation)" name="config_file" value="$(find uav_detect)/config/detection_params_sim.yaml"/>
-  <arg unless="$(arg simulation)" name="cinfo_topic" value="/$(arg uav_name)/rs_d435/aligned_depth_to_color/camera_info"/>
-  <arg     if="$(arg simulation)" name="cinfo_topic" value="/$(arg uav_name)/rs_d435/aligned_depth_to_color/camera_info"/>
-  <!-- <arg unless="$(arg simulation)" name="pc_topic" value="/smoke/velodyne_point_cloud"/> -->
-  <arg unless="$(arg simulation)" name="pc_topic" value="/$(arg uav_name)/velodyne/scan"/>
-  <arg     if="$(arg simulation)" name="pc_topic" value="/$(arg uav_name)/velodyne/scan"/>
-
   <arg name="ignore_mask" default="$(optenv IGNORE_MASK false)" />
   <arg unless="$(arg ignore_mask)" name="mask_filename" value="$(find uav_detect)/masks/nerian_eagleone_mask.bmp"/>
   <arg     if="$(arg ignore_mask)" name="mask_filename" value=""/>
@@ -26,28 +17,14 @@
   <arg     if="$(arg standalone)" name="nodelet_load" value="standalone $(arg det_nodelet)"/>
 
   <group ns="$(arg uav_name)">
-    
-    <!-- <node pkg="nodelet" type="nodelet" name="depthmap_preproc" args="standalone uav_detect/DepthmapPreprocessor" output="screen"> -->
-    <!--   <remap from="~camera_info" to="$(arg cinfo_topic)" /> -->
-    <!--   <remap from="~depthmap" to="$(arg depthmap_topic)" /> -->
-    <!--   <remap from="~processed_depthmap" to="processed_depthmap" /> -->
-    <!--   <remap from="~points" to="$(arg pc_topic)" /> -->
-    <!-- </node> -->
-    
-    <node pkg="nodelet" type="nodelet" name="point_cloud_xyz" args="standalone depth_image_proc/point_cloud_xyz" output="screen">
-      <remap from="camera_info" to="$(arg cinfo_topic)" />
-      <remap from="image_rect" to="processed_depthmap" />
-      <!-- <remap from="~points" to="$(arg pc_topic)" /> -->
-    </node>
 
     <node pkg="nodelet" type="nodelet" name="uav_detection" args="$(arg nodelet_load)" output="screen" launch-prefix="$(arg launch_prefix)">
       
       <param name="uav_name" value="$(arg uav_name)" />
       <param name="path_to_mask" value="$(arg mask_filename)" />
-      <rosparam file="$(arg config_file)" />
+      <rosparam file="$(find uav_detect)/config/detection_params_sim.yaml" />
     
-      <remap from="~pc" to="$(arg pc_topic)" />
-      <!-- <remap from="~depthmap" to="/nerian_stereo/disparity_map" /> -->
+      <remap from="~pc" to="/os1_cloud_node/points" />
 
     </node>
   
