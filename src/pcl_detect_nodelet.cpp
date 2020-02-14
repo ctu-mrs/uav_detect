@@ -577,6 +577,7 @@ namespace uav_detect
         {
           prev_dt_pt = dt_pt;
           prev_dt_pt_initialized = true;
+          prev_dt_pt_weight = 1;
           continue;
         }
 
