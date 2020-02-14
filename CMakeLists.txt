@@ -103,7 +103,7 @@ add_definitions(
   ${PCL_DEFINITIONS}
   )
 
-add_library(PCLDetector src/pcl_detect_nodelet.cpp src/mesh_sampling.cpp)
+add_library(PCLDetector src/pcl_detect_nodelet.cpp)
 add_dependencies(PCLDetector
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS}

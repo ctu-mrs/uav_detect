@@ -28,11 +28,11 @@
       
       <param name="uav_name" value="$(arg uav_name)" />
       <param name="path_to_mask" value="$(arg mask_filename)" />
-      <param name="world_frame_id" value="$(arg uav_name)/gps_origin" />
-      <rosparam file="$(find uav_detect)/config/detection_params_sim.yaml" />
+      <param name="world_frame_id" value="$(arg uav_name)/utm_origin" />
+      <rosparam file="$(find uav_detect)/config/detection_params_pcl.yaml" />
       <rosparam file="$(arg world_file)" command="load" />
     
-      <remap from="~pc" to="/os1_cloud_node/points" />
+      <remap from="~pc" to="/ouster/os1_cloud_node/points" />
 
     </node>
   

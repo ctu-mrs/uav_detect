@@ -140,8 +140,8 @@ namespace uav_detect
       /* m_detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); */ 
       /* m_detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1); */
       m_pub_filtered_input_pc = nh.advertise<sensor_msgs::PointCloud2>("filtered_input_pc", 1);
-      m_pub_filtered_input_pc2 = nh.advertise<sensor_msgs::PointCloud2>("filtered_input_pc2", 1);
       m_pub_map3d = nh.advertise<visualization_msgs::Marker>("map3d", 1);
+      m_pub_map3d_bounds = nh.advertise<visualization_msgs::Marker>("map3d_bounds", 1, true);
       m_pub_oparea = nh.advertise<visualization_msgs::Marker>("operation_area", 1, true);
       //}
 
@@ -158,10 +158,7 @@ namespace uav_detect
       m_avg_fps = 0.0f;
       m_avg_delay = 0.0f;
 
-      /* m_detector = dbd::PCLBlobDetector(m_drmgr_ptr->config, m_unknown_pixel_value); */
-
       m_main_loop_timer = nh.createTimer(ros::Rate(1000), &PCLDetector::main_loop, this);
-      /* m_info_loop_timer = nh.createTimer(ros::Rate(1), &PCLDetector::info_loop, this); */
 
       cout << "----------------------------------------------------------" << std::endl;
 
@@ -187,7 +184,9 @@ namespace uav_detect
         pc_XYZ_t::ConstPtr cloud = m_pc_sh->get_data();
         ros::Time msg_stamp;
         pcl_conversions::fromPCL(cloud->header.stamp, msg_stamp);
-        std::string cloud_frame_id = cloud->header.frame_id.substr(1); //cut off the first forward slash
+        std::string cloud_frame_id = cloud->header.frame_id; //cut off the first forward slash
+        if (cloud_frame_id.at(0) == '/')
+          cloud_frame_id = cloud_frame_id.substr(1); //cut off the first forward slash
         NODELET_INFO_STREAM("[PCLDetector]: Input PC has " << cloud->size() << " points");
 
         /* filter input cloud and transform it to world //{ */
@@ -233,12 +232,7 @@ namespace uav_detect
           pcl::transformPointCloud(*cloud_filtered, *cloud_filtered, s2w_tf.cast<float>());
           cloud_filtered->header.frame_id = m_world_frame_id;
 
-          filter_points(cloud_filtered);
-          NODELET_INFO_STREAM("[PCLDetector]: Input PC after arena filtering: " << cloud_filtered->size() << " points");
-          if (m_pub_filtered_input_pc2.getNumSubscribers() > 0)
-            m_pub_filtered_input_pc2.publish(cloud_filtered);
-
-          /* filter by cropping points outside a box, representing the arena //{ */
+          /* filter by cropping points outside a bounding box of the arena //{ */
           {
             const Eigen::Vector4f box_point1(
                 m_arena_bbox_offset_x + m_arena_bbox_size_x/2,
@@ -262,6 +256,10 @@ namespace uav_detect
           }
           //}
           NODELET_INFO_STREAM("[PCLDetector]: Input PC after arena CropBox 2: " << cloud_filtered->size() << " points");
+
+          // Filter by cropping points outside the safety area
+          filter_points(cloud_filtered);
+          NODELET_INFO_STREAM("[PCLDetector]: Input PC after arena filtering: " << cloud_filtered->size() << " points");
           
           NODELET_INFO_STREAM("[PCLDetector]: Filtered input PC has " << cloud_filtered->size() << " points");
         }
@@ -299,9 +297,9 @@ namespace uav_detect
 
         for (const auto& pt : *cloud_filtered)
         {
-          const int pt_arena_x = std::round(pt.x - m_arena_bbox_offset_x + m_arena_bbox_size_x/2);
-          const int pt_arena_y = std::round(pt.y - m_arena_bbox_offset_y + m_arena_bbox_size_y/2);
-          const int pt_arena_z = std::round(pt.z - m_arena_bbox_offset_z);
+          const int pt_arena_x = std::floor(pt.x - m_arena_bbox_offset_x + m_arena_bbox_size_x/2);
+          const int pt_arena_y = std::floor(pt.y - m_arena_bbox_offset_y + m_arena_bbox_size_y/2);
+          const int pt_arena_z = std::floor(pt.z - m_arena_bbox_offset_z);
           map_at_coords(pt_arena_x, pt_arena_y, pt_arena_z) += 1.0;
         }
 
@@ -428,8 +426,16 @@ namespace uav_detect
       std_msgs::Header header;
       header.frame_id = m_world_frame_id;
       header.stamp = ros::Time::now();
-      auto msg = oparea_visualization(header);
-      m_pub_oparea.publish(msg);
+
+      {
+        auto msg = oparea_visualization(header);
+        m_pub_oparea.publish(msg);
+      }
+
+      {
+        auto msg = map3d_bounds_visualization(header);
+        m_pub_map3d_bounds.publish(msg);
+      }
     }
     //}
 
@@ -892,9 +898,9 @@ namespace uav_detect
               continue;
     
             geometry_msgs::Point pt;
-            pt.x = x_it;
-            pt.y = y_it;
-            pt.z = z_it;
+            pt.x = x_it + 0.5;
+            pt.y = y_it + 0.5;
+            pt.z = z_it + 0.5;
             ret.points.push_back(pt);
     
             std_msgs::ColorRGBA color;
@@ -903,6 +909,12 @@ namespace uav_detect
             ret.colors.push_back(color);
           }
         }
+      }
+
+      if (ret.points.empty())
+      {
+        ret.points.push_back({});
+        ret.color.a = 0.0;
       }
       return ret;
     }
@@ -924,6 +936,8 @@ namespace uav_detect
     visualization_msgs::Marker safety_area_marker;
     safety_area_marker.header = header;
 
+    safety_area_marker.id            = 333;
+    safety_area_marker.ns            = "oparea";
     safety_area_marker.type            = visualization_msgs::Marker::LINE_LIST;
     safety_area_marker.color.a         = 0.15;
     safety_area_marker.scale.x         = 0.2;
@@ -936,7 +950,6 @@ namespace uav_detect
     safety_area_marker.pose.orientation.z = 0;
     safety_area_marker.pose.orientation.w = 1;
 
-  
     /* adding safety area points //{ */
   
     // bottom border
@@ -973,6 +986,41 @@ namespace uav_detect
   
   //}
 
+  /* map3d_bounds_visualization() method //{ */
+
+  visualization_msgs::Marker map3d_bounds_visualization(const std_msgs::Header header)
+  {
+    visualization_msgs::Marker safety_area_marker;
+    safety_area_marker.header = header;
+
+    safety_area_marker.id            = 666;
+    safety_area_marker.ns            = "map3d_bounds";
+    safety_area_marker.type            = visualization_msgs::Marker::CUBE;
+    safety_area_marker.color.a         = 0.15;
+    safety_area_marker.color.r         = 0;
+    safety_area_marker.color.g         = 0;
+    safety_area_marker.color.b         = 1;
+  
+    safety_area_marker.pose.orientation.x = 0;
+    safety_area_marker.pose.orientation.y = 0;
+    safety_area_marker.pose.orientation.z = 0;
+    safety_area_marker.pose.orientation.w = 1;
+
+    geometry_msgs::Point pt;
+    pt.x = m_arena_bbox_offset_x;
+    pt.y = m_arena_bbox_offset_y;
+    pt.z = m_arena_bbox_offset_z + m_arena_bbox_size_z/2.0;
+    safety_area_marker.pose.position = pt;
+
+    safety_area_marker.scale.x = m_arena_bbox_size_x;
+    safety_area_marker.scale.y = m_arena_bbox_size_y;
+    safety_area_marker.scale.z = m_arena_bbox_size_z;
+  
+    return safety_area_marker;
+  }
+  
+  //}
+
   private:
 
     // --------------------------------------------------------------
@@ -986,8 +1034,8 @@ namespace uav_detect
     mrs_lib::SubscribeHandlerPtr<pc_XYZ_t> m_pc_sh;
     /* ros::Publisher m_detections_pub; */
     ros::Publisher m_pub_filtered_input_pc;
-    ros::Publisher m_pub_filtered_input_pc2;
     ros::Publisher m_pub_map3d;
+    ros::Publisher m_pub_map3d_bounds;
     ros::Publisher m_pub_oparea;
     ros::Timer m_main_loop_timer;
     ros::Timer m_info_loop_timer;
