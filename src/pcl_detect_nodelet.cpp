@@ -27,8 +27,9 @@
 #include <pcl/features/integral_image_normal.h>
 #include <pcl/surface/poisson.h>
 
-#include <pcl/sample_consensus/ransac.h>
+#include <pcl/sample_consensus/lmeds.h>
 #include <pcl/sample_consensus/sac_model_plane.h>
+#include <pcl/sample_consensus/sac_model_line.h>
 
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/RegionOfInterest.h>
@@ -45,42 +46,41 @@ namespace uav_detect
 {
   // shortcut type to the dynamic reconfigure manager template instance
   using drmgr_t = mrs_lib::DynamicReconfigureMgr<uav_detect::DetectionParamsConfig>;
-  using pt_XYZNormal_t = pcl::PointNormal;
-  using pc_XYZNormal_t = pcl::PointCloud<pt_XYZNormal_t>;
-  using pt_XYZNormalt_t = pcl::PointXYZLNormal;
-  using pc_XYZNormalt_t = pcl::PointCloud<pt_XYZNormalt_t>;
   using pt_XYZ_t = pcl::PointXYZ;
   using pc_XYZ_t = pcl::PointCloud<pt_XYZ_t>;
+  using pt_XYZt_t = pcl::PointXYZI;
+  using pc_XYZt_t = pcl::PointCloud<pt_XYZt_t>;
 
   using point = boost::geometry::model::d2::point_xy<double>;
   using ring = boost::geometry::model::ring<point>;
   using polygon = boost::geometry::model::polygon<point>;
   using mpolygon = boost::geometry::model::multi_polygon<polygon>;
   using box = boost::geometry::model::box<point>;
-    
+
+  using vec3_t = Eigen::Vector3f;
+
   /* helper functions //{ */
-  
+
   float distsq_from_origin(const pcl::PointXYZ& point)
   {
-    return point.x*point.x + point.y*point.y + point.z*point.z;
+    return point.x * point.x + point.y * point.y + point.z * point.z;
   }
-  
+
   bool scaled_dist_thresholding(const pcl::PointXYZ& point_a, const pcl::PointXYZ& point_b, float squared_distance)
   {
-    static const float thresh = 0.25*0.25; // metres squared
+    static const float thresh = 0.25 * 0.25;  // metres squared
     const float d_a = distsq_from_origin(point_a);
     const float d_b = distsq_from_origin(point_b);
     const float d_max = std::max(d_a, d_b);
-    const float scaled_thresh = thresh*sqrt(d_max);
+    const float scaled_thresh = thresh * sqrt(d_max);
     return squared_distance < scaled_thresh;
   }
-  
+
   //}
 
   class PCLDetector : public nodelet::Nodelet
   {
   public:
-
     /* onInit() method //{ */
     void onInit()
     {
@@ -108,14 +108,14 @@ namespace uav_detect
       pl.load_param("exclude_box/size/z", m_exclude_box_size_z);
 
       /* load safety area //{ */
-      
+
       pl.load_param("safety_area/deflation", m_safety_area_deflation);
       pl.load_param("safety_area/height/min", m_safety_area_min_z);
       pl.load_param("safety_area/height/max", m_safety_area_max_z);
       m_safety_area_frame = pl.load_param2<std::string>("safety_area/frame_name");
       m_safety_area_border_points = pl.load_matrix_dynamic2("safety_area/safety_area", -1, 2);
       m_safety_area_init_timer = nh.createTimer(ros::Duration(1.0), &PCLDetector::init_safety_area, this);
-      
+
       //}
 
       pl.load_param("keep_pc_organized", m_keep_pc_organized, false);
@@ -137,18 +137,20 @@ namespace uav_detect
       const bool subs_time_consistent = false;
       m_pc_sh = smgr.create_handler<pc_XYZ_t, subs_time_consistent>("pc", ros::Duration(5.0));
       // Initialize publishers
-      /* m_detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); */ 
+      /* m_detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); */
       /* m_detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1); */
       m_pub_filtered_input_pc = nh.advertise<sensor_msgs::PointCloud2>("filtered_input_pc", 1);
       m_pub_map3d = nh.advertise<visualization_msgs::Marker>("map3d", 1);
       m_pub_map3d_bounds = nh.advertise<visualization_msgs::Marker>("map3d_bounds", 1, true);
       m_pub_oparea = nh.advertise<visualization_msgs::Marker>("operation_area", 1, true);
+      m_pub_chosen_position = nh.advertise<geometry_msgs::PoseStamped>("passthrough_position", 1, true);
+      m_pub_chosen_neighborhood = nh.advertise<sensor_msgs::PointCloud2>("passthrough_neighborhood", 1, true);
       //}
 
       /* initialize transformer //{ */
-      
+
       m_transformer = mrs_lib::Transformer(m_node_name, uav_name);
-      
+
       //}
 
       m_last_detection_id = 0;
@@ -161,7 +163,6 @@ namespace uav_detect
       m_main_loop_timer = nh.createTimer(ros::Rate(1000), &PCLDetector::main_loop, this);
 
       cout << "----------------------------------------------------------" << std::endl;
-
     }
     //}
 
@@ -184,28 +185,22 @@ namespace uav_detect
         pc_XYZ_t::ConstPtr cloud = m_pc_sh->get_data();
         ros::Time msg_stamp;
         pcl_conversions::fromPCL(cloud->header.stamp, msg_stamp);
-        std::string cloud_frame_id = cloud->header.frame_id; //cut off the first forward slash
+        std::string cloud_frame_id = cloud->header.frame_id;  // cut off the first forward slash
         if (cloud_frame_id.at(0) == '/')
-          cloud_frame_id = cloud_frame_id.substr(1); //cut off the first forward slash
+          cloud_frame_id = cloud_frame_id.substr(1);  // cut off the first forward slash
         NODELET_INFO_STREAM("[PCLDetector]: Input PC has " << cloud->size() << " points");
 
         /* filter input cloud and transform it to world //{ */
-        
+
         pc_XYZ_t::Ptr cloud_filtered = boost::make_shared<pc_XYZ_t>(*cloud);
         Eigen::Vector3d tf_trans;
         {
           /* filter by cropping points inside a box, relative to the sensor //{ */
           {
-            const Eigen::Vector4f box_point1(
-                m_exclude_box_offset_x + m_exclude_box_size_x/2,
-                m_exclude_box_offset_y + m_exclude_box_size_y/2,
-                m_exclude_box_offset_z + m_exclude_box_size_z/2,
-                1);
-            const Eigen::Vector4f box_point2(
-                m_exclude_box_offset_x - m_exclude_box_size_x/2,
-                m_exclude_box_offset_y - m_exclude_box_size_y/2,
-                m_exclude_box_offset_z - m_exclude_box_size_z/2,
-                1);
+            const Eigen::Vector4f box_point1(m_exclude_box_offset_x + m_exclude_box_size_x / 2, m_exclude_box_offset_y + m_exclude_box_size_y / 2,
+                                             m_exclude_box_offset_z + m_exclude_box_size_z / 2, 1);
+            const Eigen::Vector4f box_point2(m_exclude_box_offset_x - m_exclude_box_size_x / 2, m_exclude_box_offset_y - m_exclude_box_size_y / 2,
+                                             m_exclude_box_offset_z - m_exclude_box_size_z / 2, 1);
             pcl::CropBox<pcl::PointXYZ> cb;
             cb.setMax(box_point1);
             cb.setMin(box_point2);
@@ -234,16 +229,10 @@ namespace uav_detect
 
           /* filter by cropping points outside a bounding box of the arena //{ */
           {
-            const Eigen::Vector4f box_point1(
-                m_arena_bbox_offset_x + m_arena_bbox_size_x/2,
-                m_arena_bbox_offset_y + m_arena_bbox_size_y/2,
-                m_arena_bbox_offset_z + m_arena_bbox_size_z,
-                1);
-            const Eigen::Vector4f box_point2(
-                m_arena_bbox_offset_x - m_arena_bbox_size_x/2,
-                m_arena_bbox_offset_y - m_arena_bbox_size_y/2,
-                m_arena_bbox_offset_z,
-                1);
+            const Eigen::Vector4f box_point1(m_arena_bbox_offset_x + m_arena_bbox_size_x / 2.0, m_arena_bbox_offset_y + m_arena_bbox_size_y / 2.0,
+                                             m_arena_bbox_offset_z + m_arena_bbox_size_z, 1);
+            const Eigen::Vector4f box_point2(m_arena_bbox_offset_x - m_arena_bbox_size_x / 2.0, m_arena_bbox_offset_y - m_arena_bbox_size_y / 2.0,
+                                             m_arena_bbox_offset_z, 1);
             pcl::CropBox<pcl::PointXYZ> cb;
             cb.setMax(box_point1);
             cb.setMin(box_point2);
@@ -260,10 +249,10 @@ namespace uav_detect
           // Filter by cropping points outside the safety area
           filter_points(cloud_filtered);
           NODELET_INFO_STREAM("[PCLDetector]: Input PC after arena filtering: " << cloud_filtered->size() << " points");
-          
+
           NODELET_INFO_STREAM("[PCLDetector]: Filtered input PC has " << cloud_filtered->size() << " points");
         }
-        
+
         //}
 
         /* pcl::PointCloud<pcl::PointXYZL> cloud_clusters; */
@@ -297,25 +286,30 @@ namespace uav_detect
 
         for (const auto& pt : *cloud_filtered)
         {
-          const int pt_arena_x = std::floor(pt.x - m_arena_bbox_offset_x + m_arena_bbox_size_x/2);
-          const int pt_arena_y = std::floor(pt.y - m_arena_bbox_offset_y + m_arena_bbox_size_y/2);
+          const int pt_arena_x = std::floor(pt.x - m_arena_bbox_offset_x + m_arena_bbox_size_x / 2.0);
+          const int pt_arena_y = std::floor(pt.y - m_arena_bbox_offset_y + m_arena_bbox_size_y / 2.0);
           const int pt_arena_z = std::floor(pt.z - m_arena_bbox_offset_z);
-          map_at_coords(pt_arena_x, pt_arena_y, pt_arena_z) += 1.0;
+          map_at_coords(m_map3d, pt_arena_x, pt_arena_y, pt_arena_z) += 1.0;
+          map_at_coords(m_map3d_last_update, pt_arena_x, pt_arena_y, pt_arena_z) = msg_stamp;
         }
-
-        if (m_pub_filtered_input_pc.getNumSubscribers() > 0)
-          m_pub_filtered_input_pc.publish(cloud_filtered);
 
         std_msgs::Header header;
         header.frame_id = m_world_frame_id;
         header.stamp = msg_stamp;
+
+        const auto most_probable_passthrough_opt = find_most_probable_passthrough(header);
+        if (most_probable_passthrough_opt.has_value())
+          m_pub_chosen_position.publish(most_probable_passthrough_opt.value());
+
+        if (m_pub_filtered_input_pc.getNumSubscribers() > 0)
+          m_pub_filtered_input_pc.publish(cloud_filtered);
         if (m_pub_map3d.getNumSubscribers() > 0)
           m_pub_map3d.publish(map3d_visualization(header));
 
         const double delay = (ros::Time::now() - msg_stamp).toSec();
-        NODELET_INFO_STREAM("[PCLDetector]: Done processing data with delay " << delay <<  "s ---------------------------------------------- ");
-  }
-  }
+        NODELET_INFO_STREAM("[PCLDetector]: Done processing data with delay " << delay << "s ---------------------------------------------- ");
+      }
+    }
     //}
 
     /* /1* info_loop() method //{ *1/ */
@@ -325,7 +319,8 @@ namespace uav_detect
     /*   std::lock_guard<std::mutex> lck(m_stat_mtx); */
     /*   const float blobs_per_image = m_det_blobs/float(m_images_processed); */
     /*   const float input_fps = m_images_processed/dt; */
-    /*   NODELET_INFO_STREAM("[" << m_node_name << "]: det. blobs/image: " << blobs_per_image << " | inp. FPS: " << round(input_fps) << " | proc. FPS: " << round(m_avg_fps) << " | delay: " << round(1000.0f*m_avg_delay) << "ms"); */
+    /*   NODELET_INFO_STREAM("[" << m_node_name << "]: det. blobs/image: " << blobs_per_image << " | inp. FPS: " << round(input_fps) << " | proc. FPS: " <<
+     * round(m_avg_fps) << " | delay: " << round(1000.0f*m_avg_delay) << "ms"); */
     /*   m_det_blobs = 0; */
     /*   m_images_processed = 0; */
     /* } */
@@ -358,8 +353,7 @@ namespace uav_detect
           {
             ROS_ERROR("Safety area could not be transformed!");
             return;
-          }
-          else
+          } else
           {
             m_safety_area_border_points.row(it).x() = tfd.value().x;
             m_safety_area_border_points.row(it).y() = tfd.value().y;
@@ -390,9 +384,7 @@ namespace uav_detect
 
       mpolygon result;
       // Create the buffer of a multi polygon
-      boost::geometry::buffer(m_safety_area_ring, result,
-                  distance_strategy, side_strategy,
-                  join_strategy, end_strategy, circle_strategy);
+      boost::geometry::buffer(m_safety_area_ring, result, distance_strategy, side_strategy, join_strategy, end_strategy, circle_strategy);
       if (result.empty())
       {
         m_safety_area_ring = ring();
@@ -408,17 +400,26 @@ namespace uav_detect
 
       box bbox;
       boost::geometry::envelope(m_safety_area_ring, bbox);
-      m_arena_bbox_size_x = std::abs(bbox.max_corner().x() - bbox.min_corner().x());
-      m_arena_bbox_size_y = std::abs(bbox.max_corner().y() - bbox.min_corner().y());
-      m_arena_bbox_size_z = std::abs(m_safety_area_max_z - m_safety_area_min_z);
-      m_arena_bbox_offset_x = (bbox.max_corner().x() + bbox.min_corner().x())/2.0;
-      m_arena_bbox_offset_y = (bbox.max_corner().y() + bbox.min_corner().y())/2.0;
+      m_arena_bbox_size_x = std::ceil(std::abs(bbox.max_corner().x() - bbox.min_corner().x()));
+      m_arena_bbox_size_y = std::ceil(std::abs(bbox.max_corner().y() - bbox.min_corner().y()));
+      m_arena_bbox_size_z = std::ceil(std::abs(m_safety_area_max_z - m_safety_area_min_z));
+      m_arena_bbox_offset_x = (bbox.max_corner().x() + bbox.min_corner().x()) / 2.0;
+      m_arena_bbox_offset_y = (bbox.max_corner().y() + bbox.min_corner().y()) / 2.0;
       m_arena_bbox_offset_z = std::min(m_safety_area_max_z, m_safety_area_min_z);
 
-      m_map_size = std::ceil(m_arena_bbox_size_x)*std::ceil(m_arena_bbox_size_y)*std::ceil(m_arena_bbox_size_z);
+      m_map_size = m_arena_bbox_size_x * m_arena_bbox_size_y * m_arena_bbox_size_z;
+      ROS_INFO("[PCLDetector]: Arena initialized with bounding box size [%d, %d, %d] (%d voxels).", m_arena_bbox_size_x, m_arena_bbox_size_y,
+               m_arena_bbox_size_z, m_map_size);
+
+      // initialize the frequency map
       m_map3d.resize(m_map_size);
       for (int it = 0; it < m_map_size; it++)
         m_map3d.at(it) = 0;
+
+      // initialize the stamp map
+      m_map3d_last_update.resize(m_map_size);
+      for (int it = 0; it < m_map_size; it++)
+        m_map3d_last_update.at(it) = ros::Time(0);
 
       m_safety_area_init_timer.stop();
       m_safety_area_initialized = true;
@@ -441,6 +442,222 @@ namespace uav_detect
 
   private:
 
+    /* arena_to_global() method //{ */
+    template <class T>
+    T arena_to_global(int x, int y, int z)
+    {
+      T ret;
+      ret.x = x + m_arena_bbox_offset_x - m_arena_bbox_size_x / 2.0 + 0.5;
+      ret.y = y + m_arena_bbox_offset_y - m_arena_bbox_size_y / 2.0 + 0.5;
+      ret.z = z + m_arena_bbox_offset_z + 0.5;
+      return ret;
+    }
+    //}
+
+    /* to_eigen() method //{ */
+    vec3_t to_eigen(const pt_XYZ_t& pt)
+    {
+      return {pt.x, pt.y, pt.z};
+    }
+    //}
+
+    /* find_most_probable_passthrough() method //{ */
+    std::optional<geometry_msgs::PoseStamped> find_most_probable_passthrough(const std_msgs::Header& header)
+    {
+      geometry_msgs::PoseStamped ret;
+      ret.header = header;
+
+      float maxval = 0.0;
+      int max_x = 0, max_y = 0, max_z = 0;
+      ros::Time max_stamp = ros::Time(0);
+      /* find the maximal index and its value //{ */
+      
+      for (int x_it = 0; x_it < m_arena_bbox_size_x; x_it++)
+      {
+        for (int y_it = 0; y_it < m_arena_bbox_size_y; y_it++)
+        {
+          for (int z_it = 0; z_it < m_arena_bbox_size_z; z_it++)
+          {
+            const float mapval = map_at_coords(m_map3d, x_it, y_it, z_it);
+            if (mapval > maxval)
+            {
+              maxval = mapval;
+              max_x = x_it;
+              max_y = y_it;
+              max_z = z_it;
+              max_stamp = map_at_coords(m_map3d_last_update, x_it, y_it, z_it);
+            }
+          }
+        }
+      }
+      
+      //}
+
+      if (maxval == 0.0)
+        return std::nullopt;
+
+      // find neighborhood points and their stamps
+      // note that per one voxel, N points are added, where N is the weight of the voxel (its value in the map)
+      // TODO: parametrize this shit
+      const int m_neighborhood = 3;
+      int n_unique_poits = 0;
+      pc_XYZ_t::Ptr line_pts = boost::make_shared<pc_XYZ_t>();
+      line_pts->reserve(maxval*m_neighborhood*m_neighborhood*m_neighborhood);
+      std::vector<float> line_dts;
+      line_dts.reserve(maxval*m_neighborhood*m_neighborhood*m_neighborhood);
+      for (int x_it = std::max(max_x-m_neighborhood, 0); x_it < std::min(max_x+m_neighborhood, m_arena_bbox_size_x-1); x_it++)
+      {
+        for (int y_it = std::max(max_y-m_neighborhood, 0); y_it < std::min(max_y+m_neighborhood, m_arena_bbox_size_y-1); y_it++)
+        {
+          for (int z_it = std::max(max_z-m_neighborhood, 0); z_it < std::min(max_z+m_neighborhood, m_arena_bbox_size_z-1); z_it++)
+          {
+            const int mapval = std::ceil(map_at_coords(m_map3d, x_it, y_it, z_it));
+            const float dt = (map_at_coords(m_map3d_last_update, x_it, y_it, z_it) - max_stamp).toSec();
+            const pt_XYZ_t pt {float(x_it), float(y_it), float(z_it)};
+            for (int it = 0; it < mapval; it++)
+            {
+              line_pts->push_back(pt);
+              line_dts.push_back(dt);
+            }
+            if (mapval > 0)
+              n_unique_poits++;
+          }
+        }
+      }
+
+      // TODO: parametrize this shit
+      const int m_min_linefit_points = 3;
+      if (n_unique_poits < m_min_linefit_points)
+      {
+        ROS_WARN("[PCLDetector]: Not enough points to fit line, skipping (got %d/%d)", n_unique_poits, m_min_linefit_points);
+        return std::nullopt;
+      }
+
+      // fit a line to the neighborhood points
+      auto model_l = boost::make_shared<pcl::SampleConsensusModelLine<pt_XYZ_t>>(line_pts);
+      pcl::LeastMedianSquares<pt_XYZ_t> fitter(model_l);
+      fitter.setDistanceThreshold(1);
+      fitter.computeModel();
+      std::vector<int> inliers;
+      fitter.getInliers(inliers);
+
+      // get the inlier dts and points
+      using dt_pt_t = std::pair<float, vec3_t>;
+      // TODO: parametrize this shit
+      const float m_linefit_max_point_age_coeff = 2.0;
+      const float max_point_age = m_neighborhood*m_linefit_max_point_age_coeff; // seconds
+      std::vector<dt_pt_t> in_dt_pts;
+      for (const auto idx : inliers)
+      {
+        const float dt = line_dts.at(idx);
+        // ignore too old points
+        if (dt < -max_point_age)
+          continue;
+        in_dt_pts.push_back({dt, to_eigen(line_pts->at(idx))});
+      }
+      // sort the inliers by relative time to the main point
+      std::sort(std::begin(in_dt_pts), std::end(in_dt_pts),
+          // comparison lambda function
+            [](const dt_pt_t& a, 
+               const dt_pt_t& b)
+            {
+              return a.first < b.first;
+            }
+          );
+
+      // find the mean velocity between the points
+      vec3_t mean_vel(0, 0, 0);
+      size_t mean_vel_weight = 0;
+      dt_pt_t prev_dt_pt;
+      size_t prev_dt_pt_weight = 0;
+      bool prev_dt_pt_initialized = false;
+      for (const auto& dt_pt : in_dt_pts)
+      {
+        if (!prev_dt_pt_initialized)
+        {
+          prev_dt_pt = dt_pt;
+          prev_dt_pt_initialized = true;
+          continue;
+        }
+
+        const float cur_dt = dt_pt.first - prev_dt_pt.first;
+        const auto cur_pt = dt_pt.second;
+        // points from the same time don't give us any information about speed - average them
+        if (cur_dt == 0.0)
+        {
+          prev_dt_pt.second += cur_pt;
+          prev_dt_pt_weight += 1;
+          continue;
+        }
+        // in case of weighting, calculate the average
+        prev_dt_pt.second /= prev_dt_pt_weight;
+
+        const vec3_t cur_vel = (dt_pt.second - prev_dt_pt.second)/cur_dt;
+        mean_vel += cur_vel;
+        mean_vel_weight += 1;
+        prev_dt_pt.second = dt_pt.second;
+        prev_dt_pt_weight = 1;
+      }
+
+      // if no velocity estimate could be obtained from the inliers, get at least some velocity estimation even if it might be wrong sign
+      if (mean_vel.isZero() || mean_vel_weight == 0.0f)
+      {
+        Eigen::VectorXf model;
+        fitter.getModelCoefficients(model);
+        if (model.rows() < 6)
+        {
+          ROS_ERROR("[PCLDetector]: Line fit failed!");
+          return std::nullopt;
+        }
+        mean_vel = model.block<3, 1>(3, 0);
+        ROS_WARN("[PCLDetector]: Unable to estimate speed direction from inliers! Using line fit estimate, which may have a wrong sign (opposite direction).");
+        /* ROS_WARN_THROTTLE(0.5, "[PCLDetector]: Unable to estimate speed direction from inliers! Using line fit estimate, which may have a wrong sign (opposite direction)."); */
+      }
+      else
+      {
+        // otherwise use the inlier-estimated speed
+        mean_vel /= mean_vel_weight;
+      }
+
+      // if requested, publish the neighborhood for debugging
+      /*  //{ */
+      
+      if (m_pub_chosen_neighborhood.getNumSubscribers() > 0)
+      {
+        pc_XYZt_t cloud_out;
+        const auto stamp = ros::Time::now();
+        pcl_conversions::toPCL(stamp, cloud_out.header.stamp);
+        cloud_out.header.frame_id = m_world_frame_id;
+        cloud_out.reserve(in_dt_pts.size());
+        for (const auto& dt_pt : in_dt_pts)
+        {
+          const auto dt = dt_pt.first;
+          const auto pt = dt_pt.second;
+          pt_XYZt_t pcl_pt = arena_to_global<pt_XYZt_t>(pt.x(), pt.y(), pt.z());
+          pcl_pt.intensity = dt;
+          cloud_out.push_back(pcl_pt);
+        }
+        m_pub_chosen_neighborhood.publish(cloud_out);
+      }
+      
+      //}
+
+      // use the estimated velocity to set the luring pose orientation
+      const float yaw = std::atan2(mean_vel.y(), mean_vel.x());
+      const Eigen::AngleAxisf anax(yaw, vec3_t::UnitZ());
+      const Eigen::Quaternionf quat(anax);
+      ret.pose.orientation.w = quat.w();
+      ret.pose.orientation.x = quat.x();
+      ret.pose.orientation.y = quat.y();
+      ret.pose.orientation.z = quat.z();
+
+      // the passthrouhgh pose position is just the most frequent detetion position (recalculate it from the map to global coordinates)
+      ret.pose.position = arena_to_global<geometry_msgs::Point>(max_x, max_y, max_z);
+
+      return ret;
+    }
+    //}
+
     /* in_safety_area() method //{ */
     inline bool in_safety_area(const pcl::PointXYZ& pt)
     {
@@ -455,7 +672,7 @@ namespace uav_detect
     void filter_points(pc_XYZ_t::Ptr cloud)
     {
       pc_XYZ_t::Ptr cloud_out = boost::make_shared<pc_XYZ_t>();
-      cloud_out->reserve(cloud->size()/100);
+      cloud_out->reserve(cloud->size() / 100);
       for (size_t it = 0; it < cloud->size(); it++)
       {
         if (in_safety_area(cloud->points[it]))
@@ -485,30 +702,30 @@ namespace uav_detect
       const Eigen::Vector3f v0v1 = v1 - v0;
       const Eigen::Vector3f v0v2 = v2 - v0;
       const float dist = vec.norm();
-      const Eigen::Vector3f dir = vec/dist;
+      const Eigen::Vector3f dir = vec / dist;
       const Eigen::Vector3f pvec = dir.cross(v0v2);
       const float det = v0v1.dot(pvec);
-    
+
       // ray and triangle are parallel if det is close to 0
       if (std::abs(det) < eps)
         return false;
-    
+
       const float inv_det = 1.0f / det;
-    
+
       const Eigen::Vector3f tvec = v0;
       const float u = tvec.dot(pvec) * inv_det;
       if (u < 0 || u > 1)
         return false;
-    
+
       const Eigen::Vector3f qvec = tvec.cross(v0v1);
       const float v = dir.dot(qvec) * inv_det;
       if (v < 0 || u + v > 1)
         return false;
-    
-      const float int_dist = v0v2.dot(qvec) * inv_det; 
+
+      const float int_dist = v0v2.dot(qvec) * inv_det;
       if (int_dist + tol < dist)
         return false;
-    
+
       return true;
     }
     //}
@@ -601,18 +818,17 @@ namespace uav_detect
       ret.scale.x = ret.scale.y = ret.scale.z = 1.0;
       if (mesh.polygons.empty())
         return ret;
-    
+
       const auto n_verts = mesh.polygons.at(0).vertices.size();
       if (n_verts == 3)
       {
         ret.type = visualization_msgs::Marker::TRIANGLE_LIST;
-      }
-      else
+      } else
       {
         ret.scale.x = ret.scale.y = ret.scale.z = 0.1;
         ret.type = visualization_msgs::Marker::LINE_LIST;
       }
-      ret.points.reserve(mesh.polygons.size()*n_verts);
+      ret.points.reserve(mesh.polygons.size() * n_verts);
       pc_XYZ_t mesh_cloud;
       pcl::fromPCLPointCloud2(mesh.cloud, mesh_cloud);
       for (const auto& vert : mesh.polygons)
@@ -622,8 +838,7 @@ namespace uav_detect
           if (vert.vertices.size() != n_verts)
             ROS_WARN_THROTTLE(0.1, "[PCLDetector]: Number of vertices in mesh is incosistent (expected: %lu, got %lu)!", n_verts, vert.vertices.size());
           fill_marker_pts_triangles(vert, mesh_cloud, ret.points);
-        }
-        else
+        } else
           fill_marker_pts_lines(vert, mesh_cloud, ret.points);
       }
       /* ret.colors; */
@@ -648,11 +863,11 @@ namespace uav_detect
       ofm.setInputCloud(pc);
       ofm.setTriangulationType(ofm_t::TriangulationType::TRIANGLE_ADAPTIVE_CUT);
       const bool use_shadowed_faces = m_drmgr_ptr->config.orgmesh_use_shadowed;
-      const float shadow_angle_tolerance = use_shadowed_faces ? -1.0f : (m_drmgr_ptr->config.orgmesh_shadow_ang_tol/180.0f*M_PI);
+      const float shadow_angle_tolerance = use_shadowed_faces ? -1.0f : (m_drmgr_ptr->config.orgmesh_shadow_ang_tol / 180.0f * M_PI);
       ofm.storeShadowedFaces(use_shadowed_faces);
       ofm.setAngleTolerance(shadow_angle_tolerance);
       ofm.reconstruct(mesh);
-      
+
       // | ------------ Add the border cases to the mesh ------------ |
       const auto pc_width = pc->width;
       const auto pc_height = pc->height;
@@ -686,45 +901,41 @@ namespace uav_detect
         const auto idxc = idx0;
         mesh_cloud.push_back(centroid);
         idx0++;
-        for (unsigned c_it1 = 0; c_it1 < pc_width-1; c_it1++)
+        for (unsigned c_it1 = 0; c_it1 < pc_width - 1; c_it1++)
         {
-          const int c_it2 = c_it1+1;
+          const int c_it2 = c_it1 + 1;
           const auto pt0 = pc->at(c_it1, r_it);
           const auto pt1 = pc->at(c_it2, r_it);
-          if (!valid_pt(pt0)
-           || !valid_pt(pt1))
+          if (!valid_pt(pt0) || !valid_pt(pt1))
             continue;
           mesh_cloud.push_back(pt0);
           mesh_cloud.push_back(pt1);
-          add_triangle(idx0, idx0+1, idxc, mesh_polygons);
+          add_triangle(idx0, idx0 + 1, idxc, mesh_polygons);
           idx0 += 2;
         }
       }
       //}
-      
+
       /* stitch the last and first columns //{ */
       {
-        const int c_it1 = pc_width-1;
+        const int c_it1 = pc_width - 1;
         const int c_it2 = 0;
         auto idx0 = mesh_cloud.size();
-        for (unsigned r_it1 = 0; r_it1 < pc_height-1; r_it1++)
+        for (unsigned r_it1 = 0; r_it1 < pc_height - 1; r_it1++)
         {
-          const int r_it2 = r_it1+1;
+          const int r_it2 = r_it1 + 1;
           const auto pt0 = pc->at(c_it1, r_it1);
           const auto pt1 = pc->at(c_it2, r_it1);
           const auto pt2 = pc->at(c_it1, r_it2);
           const auto pt3 = pc->at(c_it2, r_it2);
-          if (!valid_pt(pt0)
-           || !valid_pt(pt1)
-           || !valid_pt(pt2)
-           || !valid_pt(pt3))
+          if (!valid_pt(pt0) || !valid_pt(pt1) || !valid_pt(pt2) || !valid_pt(pt3))
             continue;
           mesh_cloud.push_back(pt0);
           mesh_cloud.push_back(pt1);
           mesh_cloud.push_back(pt2);
           mesh_cloud.push_back(pt3);
-          add_triangle(idx0+2, idx0+1, idx0, mesh_polygons);
-          add_triangle(idx0+2, idx0+3, idx0+1, mesh_polygons);
+          add_triangle(idx0 + 2, idx0 + 1, idx0, mesh_polygons);
+          add_triangle(idx0 + 2, idx0 + 3, idx0 + 1, mesh_polygons);
           idx0 += 4;
         }
       }
@@ -777,20 +988,20 @@ namespace uav_detect
         for (const auto idx : poly.vertices)
         {
           const auto cur_label = labels.at(idx);
-          if (cur_label > -1 && connected_label != cur_label) // a label is assigned
+          if (cur_label > -1 && connected_label != cur_label)  // a label is assigned
           {
-            if (connected_label > -1) // a label is already assigned to the polygon
+            if (connected_label > -1)  // a label is already assigned to the polygon
             {
               const label_t master1 = get_master_label(cur_label, equal_labels);
               const label_t master2 = get_master_label(connected_label, equal_labels);
               if (master1 != master2)
                 equal_labels.insert({master1, master2});
-            } // if (connected_label > -1)
+            }  // if (connected_label > -1)
             else
             {
               connected_label = cur_label;
-            } // else (connected_label > -1)
-          } // if (cur_label > -1) // a label is assigned
+            }  // else (connected_label > -1)
+          }    // if (cur_label > -1) // a label is assigned
         }
         if (connected_label <= -1)
         {
@@ -831,9 +1042,7 @@ namespace uav_detect
     template <class Point_T>
     bool valid_pt(Point_T pt)
     {
-      return (std::isfinite(pt.x) &&
-              std::isfinite(pt.y) &&
-              std::isfinite(pt.z));
+      return (std::isfinite(pt.x) && std::isfinite(pt.y) && std::isfinite(pt.z));
     }
     //}
 
@@ -851,20 +1060,33 @@ namespace uav_detect
       catch (tf2::TransformException& ex)
       {
         NODELET_WARN_THROTTLE(1.0, "[%s]: Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", m_node_name.c_str(), frame_id.c_str(),
-                          m_world_frame_id.c_str(), ex.what());
+                              m_world_frame_id.c_str(), ex.what());
         return false;
       }
       return true;
     }
     //}
 
+    /* /1* coords_from_idx() method //{ *1/ */
+
+    /* vec3_t coords_from_idx(const int coord) */
+    /* { */
+    /*   const float x = (coord % int(std::round(m_arena_bbox_size_y * m_arena_bbox_size_z))) + m_arena_bbox_offset_x/2.0; */
+    /*   const float y = ((coord -  % int(std::round(m_arena_bbox_size_z))) + m_arena_bbox_offset_y/2.0; */
+    /*   const float z = (coord % int(std::round(m_arena_bbox_size_y * m_arena_bbox_size_z))) + m_arena_bbox_offset_z; */
+    /*   return {x, y, z}; */
+    /* } */
+
+    /* //} */
+
     /* map_at_coords() method //{ */
-    
-    float& map_at_coords(int coord_x, int coord_y, int coord_z)
+
+    template <class T>
+    T& map_at_coords(std::vector<T>& map, int coord_x, int coord_y, int coord_z)
     {
-      return m_map3d.at(coord_x*m_arena_bbox_size_y*m_arena_bbox_size_z + coord_y*m_arena_bbox_size_z + coord_z);
+      return map.at(coord_x * m_arena_bbox_size_y * m_arena_bbox_size_z + coord_y * m_arena_bbox_size_z + coord_z);
     }
-    
+
     //}
 
     /* map3d_visualization() method //{ */
@@ -872,39 +1094,37 @@ namespace uav_detect
     {
       visualization_msgs::Marker ret;
       ret.header = header;
-      ret.points.reserve(m_map3d.size()/1000);
-      ret.pose.position.x = m_arena_bbox_offset_x - m_arena_bbox_size_x/2.0 ;
-      ret.pose.position.y = m_arena_bbox_offset_y - m_arena_bbox_size_y/2.0 ;
-      ret.pose.position.z = m_arena_bbox_offset_z;
+      ret.points.reserve(m_map3d.size() / 1000);
+      ret.pose.position = arena_to_global<geometry_msgs::Point>(0, 0, 0);
       ret.pose.orientation.w = 1.0;
       ret.scale.x = ret.scale.y = ret.scale.z = 1.0;
       ret.color.a = 1.0;
       ret.color.r = 0.0;
       ret.type = visualization_msgs::Marker::CUBE_LIST;
-    
+
       float maxval = 0.0;
       for (const auto val : m_map3d)
         if (val > maxval)
           maxval = val;
-    
+
       for (int x_it = 0; x_it < m_arena_bbox_size_x; x_it++)
       {
         for (int y_it = 0; y_it < m_arena_bbox_size_y; y_it++)
         {
           for (int z_it = 0; z_it < m_arena_bbox_size_z; z_it++)
           {
-            const float mapval = map_at_coords(x_it, y_it, z_it);
+            const float mapval = map_at_coords(m_map3d, x_it, y_it, z_it);
             if (mapval <= 0.0)
               continue;
-    
+
             geometry_msgs::Point pt;
-            pt.x = x_it + 0.5;
-            pt.y = y_it + 0.5;
-            pt.z = z_it + 0.5;
+            pt.x = x_it;
+            pt.y = y_it;
+            pt.z = z_it;
             ret.points.push_back(pt);
-    
+
             std_msgs::ColorRGBA color;
-            color.a = mapval/maxval;
+            color.a = mapval / maxval;
             color.r = 1.0;
             ret.colors.push_back(color);
           }
@@ -920,109 +1140,108 @@ namespace uav_detect
     }
     //}
 
-  /* oparea_visualization() method //{ */
+    /* oparea_visualization() method //{ */
 
-  geometry_msgs::Point boost2gmsgs(const point& bpt, const double height)
-  {
-    geometry_msgs::Point pt;
-    pt.x = bpt.x();
-    pt.y = bpt.y();
-    pt.z = height;
-    return pt;
-  }
-
-  visualization_msgs::Marker oparea_visualization(const std_msgs::Header header)
-  {
-    visualization_msgs::Marker safety_area_marker;
-    safety_area_marker.header = header;
-
-    safety_area_marker.id            = 333;
-    safety_area_marker.ns            = "oparea";
-    safety_area_marker.type            = visualization_msgs::Marker::LINE_LIST;
-    safety_area_marker.color.a         = 0.15;
-    safety_area_marker.scale.x         = 0.2;
-    safety_area_marker.color.r         = 0;
-    safety_area_marker.color.g         = 0;
-    safety_area_marker.color.b         = 1;
-  
-    safety_area_marker.pose.orientation.x = 0;
-    safety_area_marker.pose.orientation.y = 0;
-    safety_area_marker.pose.orientation.z = 0;
-    safety_area_marker.pose.orientation.w = 1;
-
-    /* adding safety area points //{ */
-  
-    // bottom border
-    for (size_t i = 0; i < m_safety_area_ring.size()-1; i++)
+    geometry_msgs::Point boost2gmsgs(const point& bpt, const double height)
     {
-      const auto pt1 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_min_z);
-      const auto pt2 = boost2gmsgs(m_safety_area_ring.at(i+1), m_safety_area_min_z);
-      safety_area_marker.points.push_back(pt1);
-      safety_area_marker.points.push_back(pt2);
+      geometry_msgs::Point pt;
+      pt.x = bpt.x();
+      pt.y = bpt.y();
+      pt.z = height;
+      return pt;
     }
 
-    // top border
-    for (size_t i = 0; i < m_safety_area_ring.size()-1; i++)
+    visualization_msgs::Marker oparea_visualization(const std_msgs::Header header)
     {
-      const auto pt1 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_max_z);
-      const auto pt2 = boost2gmsgs(m_safety_area_ring.at(i+1), m_safety_area_max_z);
-      safety_area_marker.points.push_back(pt1);
-      safety_area_marker.points.push_back(pt2);
+      visualization_msgs::Marker safety_area_marker;
+      safety_area_marker.header = header;
+
+      safety_area_marker.id = 333;
+      safety_area_marker.ns = "oparea";
+      safety_area_marker.type = visualization_msgs::Marker::LINE_LIST;
+      safety_area_marker.color.a = 0.15;
+      safety_area_marker.scale.x = 0.2;
+      safety_area_marker.color.r = 0;
+      safety_area_marker.color.g = 0;
+      safety_area_marker.color.b = 1;
+
+      safety_area_marker.pose.orientation.x = 0;
+      safety_area_marker.pose.orientation.y = 0;
+      safety_area_marker.pose.orientation.z = 0;
+      safety_area_marker.pose.orientation.w = 1;
+
+      /* adding safety area points //{ */
+
+      // bottom border
+      for (size_t i = 0; i < m_safety_area_ring.size() - 1; i++)
+      {
+        const auto pt1 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_min_z);
+        const auto pt2 = boost2gmsgs(m_safety_area_ring.at(i + 1), m_safety_area_min_z);
+        safety_area_marker.points.push_back(pt1);
+        safety_area_marker.points.push_back(pt2);
+      }
+
+      // top border
+      for (size_t i = 0; i < m_safety_area_ring.size() - 1; i++)
+      {
+        const auto pt1 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_max_z);
+        const auto pt2 = boost2gmsgs(m_safety_area_ring.at(i + 1), m_safety_area_max_z);
+        safety_area_marker.points.push_back(pt1);
+        safety_area_marker.points.push_back(pt2);
+      }
+
+      // top/bot edges
+      for (size_t i = 0; i < m_safety_area_ring.size() - 1; i++)
+      {
+        const auto pt1 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_min_z);
+        const auto pt2 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_max_z);
+        safety_area_marker.points.push_back(pt1);
+        safety_area_marker.points.push_back(pt2);
+      }
+
+      //}
+
+      return safety_area_marker;
     }
 
-    // top/bot edges
-    for (size_t i = 0; i < m_safety_area_ring.size()-1; i++)
-    {
-      const auto pt1 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_min_z);
-      const auto pt2 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_max_z);
-      safety_area_marker.points.push_back(pt1);
-      safety_area_marker.points.push_back(pt2);
-    }
-  
     //}
-  
-    return safety_area_marker;
-  }
-  
-  //}
 
-  /* map3d_bounds_visualization() method //{ */
+    /* map3d_bounds_visualization() method //{ */
 
-  visualization_msgs::Marker map3d_bounds_visualization(const std_msgs::Header header)
-  {
-    visualization_msgs::Marker safety_area_marker;
-    safety_area_marker.header = header;
+    visualization_msgs::Marker map3d_bounds_visualization(const std_msgs::Header header)
+    {
+      visualization_msgs::Marker safety_area_marker;
+      safety_area_marker.header = header;
 
-    safety_area_marker.id            = 666;
-    safety_area_marker.ns            = "map3d_bounds";
-    safety_area_marker.type            = visualization_msgs::Marker::CUBE;
-    safety_area_marker.color.a         = 0.15;
-    safety_area_marker.color.r         = 0;
-    safety_area_marker.color.g         = 0;
-    safety_area_marker.color.b         = 1;
-  
-    safety_area_marker.pose.orientation.x = 0;
-    safety_area_marker.pose.orientation.y = 0;
-    safety_area_marker.pose.orientation.z = 0;
-    safety_area_marker.pose.orientation.w = 1;
+      safety_area_marker.id = 666;
+      safety_area_marker.ns = "map3d_bounds";
+      safety_area_marker.type = visualization_msgs::Marker::CUBE;
+      safety_area_marker.color.a = 0.15;
+      safety_area_marker.color.r = 0;
+      safety_area_marker.color.g = 0;
+      safety_area_marker.color.b = 1;
 
-    geometry_msgs::Point pt;
-    pt.x = m_arena_bbox_offset_x;
-    pt.y = m_arena_bbox_offset_y;
-    pt.z = m_arena_bbox_offset_z + m_arena_bbox_size_z/2.0;
-    safety_area_marker.pose.position = pt;
+      safety_area_marker.pose.orientation.x = 0;
+      safety_area_marker.pose.orientation.y = 0;
+      safety_area_marker.pose.orientation.z = 0;
+      safety_area_marker.pose.orientation.w = 1;
 
-    safety_area_marker.scale.x = m_arena_bbox_size_x;
-    safety_area_marker.scale.y = m_arena_bbox_size_y;
-    safety_area_marker.scale.z = m_arena_bbox_size_z;
-  
-    return safety_area_marker;
-  }
-  
-  //}
+      geometry_msgs::Point pt;
+      pt.x = m_arena_bbox_offset_x;
+      pt.y = m_arena_bbox_offset_y;
+      pt.z = m_arena_bbox_offset_z + m_arena_bbox_size_z / 2.0;
+      safety_area_marker.pose.position = pt;
+
+      safety_area_marker.scale.x = m_arena_bbox_size_x;
+      safety_area_marker.scale.y = m_arena_bbox_size_y;
+      safety_area_marker.scale.z = m_arena_bbox_size_z;
+
+      return safety_area_marker;
+    }
+
+    //}
 
   private:
-
     // --------------------------------------------------------------
     // |                ROS-related member variables                |
     // --------------------------------------------------------------
@@ -1037,6 +1256,8 @@ namespace uav_detect
     ros::Publisher m_pub_map3d;
     ros::Publisher m_pub_map3d_bounds;
     ros::Publisher m_pub_oparea;
+    ros::Publisher m_pub_chosen_neighborhood;
+    ros::Publisher m_pub_chosen_position;
     ros::Timer m_main_loop_timer;
     ros::Timer m_info_loop_timer;
     ros::Timer m_safety_area_init_timer;
@@ -1046,13 +1267,12 @@ namespace uav_detect
     //}
 
   private:
-
     // --------------------------------------------------------------
     // |                 Parameters, loaded from ROS                |
     // --------------------------------------------------------------
 
     /* Parameters, loaded from ROS //{ */
-    
+
     std::string m_world_frame_id;
     double m_exclude_box_offset_x;
     double m_exclude_box_offset_y;
@@ -1069,11 +1289,10 @@ namespace uav_detect
     double m_safety_area_max_z;
 
     bool m_keep_pc_organized;
-    
+
     //}
 
   private:
-
     // --------------------------------------------------------------
     // |                   Other member variables                   |
     // --------------------------------------------------------------
@@ -1081,25 +1300,26 @@ namespace uav_detect
     bool m_safety_area_initialized;
     uint32_t m_last_detection_id;
     std::vector<float> m_map3d;
-    double m_arena_bbox_offset_x; // x-center of the 3D bounding box
-    double m_arena_bbox_offset_y; // y-center of the 3D bounding box
-    double m_arena_bbox_offset_z; // z-bottom of the 3D bounding box
-    double m_arena_bbox_size_x;
-    double m_arena_bbox_size_y;
-    double m_arena_bbox_size_z;
+    std::vector<ros::Time> m_map3d_last_update;
+    double m_arena_bbox_offset_x;  // x-center of the 3D bounding box
+    double m_arena_bbox_offset_y;  // y-center of the 3D bounding box
+    double m_arena_bbox_offset_z;  // z-bottom of the 3D bounding box
+    int m_arena_bbox_size_x;
+    int m_arena_bbox_size_y;
+    int m_arena_bbox_size_z;
 
     int m_map_size;
-    
+
     /* Statistics variables //{ */
     std::mutex m_stat_mtx;
-    unsigned   m_det_blobs;
-    unsigned   m_images_processed;
-    float      m_avg_fps;
-    float      m_avg_delay;
+    unsigned m_det_blobs;
+    unsigned m_images_processed;
+    float m_avg_fps;
+    float m_avg_delay;
     //}
 
-  }; // class PCLDetector
-}; // namespace uav_detect
+  };  // class PCLDetector
+};    // namespace uav_detect
 
 #include <pluginlib/class_list_macros.h>
 PLUGINLIB_EXPORT_CLASS(uav_detect::PCLDetector, nodelet::Nodelet)

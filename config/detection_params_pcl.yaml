@@ -2,7 +2,7 @@
 filtering_leaf_size: 0.5 # meters
 
 safety_area:
-  deflation: 16 # metres
+  deflation: 7 # metres
   height:
     min: 5 # metres
     max: 15 # metres
