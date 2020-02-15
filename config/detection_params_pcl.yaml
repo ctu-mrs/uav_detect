@@ -4,6 +4,20 @@ filtering_leaf_size: 0.5 # meters
 ball_speed: 3.0 # metres per second
 max_speed_error: 2.0 # metres per second
 
+linefit:
+  neighborhood: 3 # voxels (each voxel is 1m^3)
+  point_max_age_coefficient: 2.0 # seconds per neighborhood size
+
+classification:
+  max_detection_height: 2.5 # metres
+  max_mav_height: 1.0 # metres
+  max_detection_width: 2.0 # metres
+  ball_wire_length: 1.45 # metres
+
+line_segment_fit:
+  min_points: 50
+  ransac_threshold: 1.0 # metres
+
 safety_area:
   deflation: 7 # metres
   height:
