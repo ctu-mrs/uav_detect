@@ -1,6 +1,7 @@
 <launch>
 
   <arg name="uav_name" default="$(optenv UAV_NAME uav)"/>
+  <arg name="respawn" default="false" />
   <arg name="WORLD_FILE" default="$(optenv WORLD_FILE)" />
   <arg name="WORLD_NAME" default="$(optenv WORLD_NAME)" />
 
@@ -24,7 +25,7 @@
 
   <group ns="$(arg uav_name)">
 
-    <node pkg="nodelet" type="nodelet" name="uav_detection" args="$(arg nodelet_load)" output="screen" launch-prefix="$(arg launch_prefix)">
+    <node pkg="nodelet" type="nodelet" name="uav_detection" args="$(arg nodelet_load)" output="screen" launch-prefix="$(arg launch_prefix)" respawn="$(arg respawn)" >
       
       <param name="uav_name" value="$(arg uav_name)" />
       <param name="path_to_mask" value="$(arg mask_filename)" />
