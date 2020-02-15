@@ -3,6 +3,7 @@
 #include <nodelet/nodelet.h>
 
 #include <pcl/ModelCoefficients.h>
+#include <pcl/common/common.h>
 #include <pcl/common/transforms.h>
 #include <pcl/conversions.h>
 #include <pcl/io/pcd_io.h>
@@ -58,6 +59,7 @@ namespace uav_detect
   using box = boost::geometry::model::box<point>;
 
   using vec3_t = Eigen::Vector3f;
+  using vec4_t = Eigen::Vector4f;
 
   /* helper functions //{ */
 
@@ -145,6 +147,8 @@ namespace uav_detect
       m_pub_oparea = nh.advertise<visualization_msgs::Marker>("operation_area", 1, true);
       m_pub_chosen_position = nh.advertise<geometry_msgs::PoseStamped>("passthrough_position", 1, true);
       m_pub_chosen_neighborhood = nh.advertise<sensor_msgs::PointCloud2>("passthrough_neighborhood", 1, true);
+      m_pub_detection = nh.advertise<geometry_msgs::PoseStamped>("detection", 1);
+      m_pub_detection_neighborhood = nh.advertise<sensor_msgs::PointCloud2>("detection_neighborhood", 1, true);
       //}
 
       /* initialize transformer //{ */
@@ -181,6 +185,7 @@ namespace uav_detect
         /* ros::Time start_t = ros::Time::now(); */
 
         NODELET_INFO_STREAM("[PCLDetector]: Processing new data --------------------------------------------------------- ");
+        // TODO: produce also online detections based on the known MAV size etc.
 
         pc_XYZ_t::ConstPtr cloud = m_pc_sh->get_data();
         ros::Time msg_stamp;
@@ -255,40 +260,100 @@ namespace uav_detect
 
         //}
 
-        /* pcl::PointCloud<pcl::PointXYZL> cloud_clusters; */
-        /* /1* extract euclidean clusters //{ *1/ */
-        /* { */
-        /*   std::vector<pcl::PointIndices> cluster_indices; */
-        /*   pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec; */
-        /*   ec.setClusterTolerance(0.5); */
-        /*   ec.setMinClusterSize(1); */
-        /*   ec.setMaxClusterSize(25000); */
-        /*   ec.setInputCloud(cloud_filtered); */
-        /*   ec.extract(cluster_indices); */
-        /*   cloud_clusters.reserve(cloud_filtered->size()); */
-        /*   int label = 0; */
-        /*   for (const auto& idxs : cluster_indices) */
-        /*   { */
-        /*     for (const auto idx : idxs.indices) */
-        /*     { */
-        /*       const auto pt_orig = cloud_filtered->at(idx); */
-        /*       pcl::PointXYZL pt; */
-        /*       pt.x = pt_orig.x; */
-        /*       pt.y = pt_orig.y; */
-        /*       pt.z = pt_orig.z; */
-        /*       pt.label = label; */
-        /*       cloud_clusters.push_back(pt); */
-        /*     } */
-        /*     label++; */
-        /*   } */
-        /* } */
-        /* //} */
+        std::vector<pc_XYZ_t::Ptr> cloud_clusters;
+        /* extract euclidean clusters //{ */
+        {
+          std::vector<pcl::PointIndices> cluster_indices;
+          pcl::EuclideanClusterExtraction<pt_XYZ_t> ec;
+          ec.setClusterTolerance(2.0);
+          ec.setMinClusterSize(1);
+          ec.setMaxClusterSize(25000);
+          ec.setInputCloud(cloud_filtered);
+          ec.extract(cluster_indices);
+          cloud_clusters.reserve(cloud_filtered->size());
+          int label = 0;
+          cloud_clusters.reserve(cluster_indices.size());
+          for (const auto& idxs : cluster_indices)
+          {
+            pc_XYZ_t::Ptr cloud_cluster = boost::make_shared<pc_XYZ_t>();
+            cloud_cluster->reserve(idxs.indices.size());
+            for (const auto idx : idxs.indices)
+            {
+              const auto pt_orig = cloud_filtered->at(idx);
+              pt_XYZ_t pt;
+              pt.x = pt_orig.x;
+              pt.y = pt_orig.y;
+              pt.z = pt_orig.z;
+              cloud_cluster->push_back(pt);
+            }
+            cloud_clusters.push_back(cloud_cluster);
+            label++;
+          }
+        }
+        //}
+        ROS_INFO("[PCLDetector]: Found %lu detection candidates", cloud_clusters.size());
 
+        std::optional<pt_XYZ_t> ballpos_opt = std::nullopt;
+        /* find the largest cluster, classified as a detection, and the corresponding ball position //{ */
+        
+        {
+          size_t ballpos_n_pts = 0; // how many points did the cluster used for picking the ball position have
+          //TODO: parametrize this shit
+          const float m_max_detection_height = 2.5;
+          const float m_max_mav_height = 1.0;
+          const float m_max_detection_width = 2.0;
+          for (const auto& cluster : cloud_clusters)
+          {
+            // only the detection with the maximum of points in the cluster is considered
+            if (cluster->size() < ballpos_n_pts)
+              continue;
+
+            pt_XYZ_t min_pt, max_pt;
+            pcl::getMinMax3D(*cluster, min_pt, max_pt);
+            const float height = std::abs(max_pt.z - min_pt.z);
+            const float width = std::max(std::abs(max_pt.x - min_pt.x), std::abs(max_pt.y - min_pt.y));
+
+            // if the cluster is too large, just ignore it
+            if (height > m_max_detection_height || width > m_max_detection_height)
+            {
+              ROS_INFO("[PCLDetector]: Skipping too large cluster with height %.2f > %.2f or width %.2f > %.2f.", height, m_max_detection_height, width, m_max_detection_width);
+              continue;
+            }
+
+            // if the cluster is larger than it could be jut for the MAV, it probably includes the ball as well
+            if (height > m_max_mav_height)
+            {
+              // find the lowest point in z - that will probably be the ball
+              pt_XYZ_t min_z_pt(std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::max());
+              for (const auto& pt : cluster->points)
+                if (pt.z < min_z_pt.z)
+                  min_z_pt = pt;
+              ballpos_opt = min_z_pt;
+              ballpos_n_pts = cluster->size();
+            }
+            // otherwise it's probably just a detection of the MAV - assume the ball is below it
+            else
+            {
+              //TODO: parametrize this shit
+              const float m_ball_wire_length = 1.45;
+              // find the highest point in z - that will probably be the MAV
+              pt_XYZ_t max_z_pt(std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::lowest());
+              for (const auto& pt : cluster->points)
+                if (pt.z > max_z_pt.z)
+                  max_z_pt = pt;
+              // subtract length of the wire from the MAV position
+              ballpos_opt = {max_z_pt.x, max_z_pt.y, max_z_pt.z - m_ball_wire_length};
+              ballpos_n_pts = cluster->size();
+            }
+          }
+        }
+        
+        //}
+
+        // update voxels in the frequency map and stamp map
         for (const auto& pt : *cloud_filtered)
         {
-          const int pt_arena_x = std::floor(pt.x - m_arena_bbox_offset_x + m_arena_bbox_size_x / 2.0);
-          const int pt_arena_y = std::floor(pt.y - m_arena_bbox_offset_y + m_arena_bbox_size_y / 2.0);
-          const int pt_arena_z = std::floor(pt.z - m_arena_bbox_offset_z);
+          const auto [pt_arena_x, pt_arena_y, pt_arena_z] = global_to_arena(pt.x, pt.y, pt.z);
           map_at_coords(m_map3d, pt_arena_x, pt_arena_y, pt_arena_z) += 1.0;
           map_at_coords(m_map3d_last_update, pt_arena_x, pt_arena_y, pt_arena_z) = msg_stamp;
         }
@@ -297,10 +362,20 @@ namespace uav_detect
         header.frame_id = m_world_frame_id;
         header.stamp = msg_stamp;
 
+        // publish the current detection if there is any
+        if (ballpos_opt.has_value())
+        {
+          const auto detection_pose_opt = find_detection_pose(ballpos_opt.value(), header);
+          if (detection_pose_opt.has_value())
+            m_pub_detection.publish(detection_pose_opt.value());
+        }
+
+        // find and publish the most probable pose the ball will pass through again from the frequency map
         const auto most_probable_passthrough_opt = find_most_probable_passthrough(header);
         if (most_probable_passthrough_opt.has_value())
           m_pub_chosen_position.publish(most_probable_passthrough_opt.value());
 
+        // publish some debug shit
         if (m_pub_filtered_input_pc.getNumSubscribers() > 0)
           m_pub_filtered_input_pc.publish(cloud_filtered);
         if (m_pub_map3d.getNumSubscribers() > 0)
@@ -442,6 +517,16 @@ namespace uav_detect
 
   private:
 
+    /* global_to_arena() method //{ */
+    std::tuple<int, int, int> global_to_arena(float glx, float gly, float glz)
+    {
+      const int x = std::floor(glx - m_arena_bbox_offset_x + m_arena_bbox_size_x / 2.0);
+      const int y = std::floor(gly - m_arena_bbox_offset_y + m_arena_bbox_size_y / 2.0);
+      const int z = std::floor(glz - m_arena_bbox_offset_z);
+      return {x, y, z};
+    }
+    //}
+
     /* arena_to_global() method //{ */
     template <class T>
     T arena_to_global(int x, int y, int z)
@@ -458,6 +543,190 @@ namespace uav_detect
     vec3_t to_eigen(const pt_XYZ_t& pt)
     {
       return {pt.x, pt.y, pt.z};
+    }
+    //}
+
+    /* estimate_yaw_from_map3d() method //{ */
+    std::optional<float> estimate_yaw_from_map3d(const int x_idx, const int y_idx, const int z_idx, const ros::Time& cur_stamp, ros::Publisher& dbg_pub)
+    {
+      // find neighborhood points and their stamps
+      // note that per one voxel, N points are added, where N is the weight of the voxel (its value in the map)
+      // TODO: parametrize this shit
+      const int m_neighborhood = 3;
+      int n_unique_pts = 0;
+      pc_XYZ_t::Ptr line_pts = boost::make_shared<pc_XYZ_t>();
+      line_pts->reserve(m_neighborhood*m_neighborhood*m_neighborhood);
+      std::vector<float> line_dts;
+      line_dts.reserve(m_neighborhood*m_neighborhood*m_neighborhood);
+      for (int x_it = std::max(x_idx-m_neighborhood, 0); x_it < std::min(x_idx+m_neighborhood, m_arena_bbox_size_x-1); x_it++)
+      {
+        for (int y_it = std::max(y_idx-m_neighborhood, 0); y_it < std::min(y_idx+m_neighborhood, m_arena_bbox_size_y-1); y_it++)
+        {
+          for (int z_it = std::max(z_idx-m_neighborhood, 0); z_it < std::min(z_idx+m_neighborhood, m_arena_bbox_size_z-1); z_it++)
+          {
+            const int mapval = std::ceil(map_at_coords(m_map3d, x_it, y_it, z_it));
+            const float dt = (map_at_coords(m_map3d_last_update, x_it, y_it, z_it) - cur_stamp).toSec();
+            const pt_XYZ_t pt {float(x_it), float(y_it), float(z_it)};
+            for (int it = 0; it < mapval; it++)
+            {
+              line_pts->push_back(pt);
+              line_dts.push_back(dt);
+            }
+            if (mapval > 0)
+              n_unique_pts++;
+          }
+        }
+      }
+    
+      // TODO: parametrize this shit
+      const int m_min_linefit_points = 3;
+      if (n_unique_pts < m_min_linefit_points)
+      {
+        ROS_WARN("[PCLDetector]: Not enough points to fit line, skipping (got %d/%d)", n_unique_pts, m_min_linefit_points);
+        return std::nullopt;
+      }
+    
+      // fit a line to the neighborhood points
+      auto model_l = boost::make_shared<pcl::SampleConsensusModelLine<pt_XYZ_t>>(line_pts);
+      pcl::LeastMedianSquares<pt_XYZ_t> fitter(model_l);
+      fitter.setDistanceThreshold(1);
+      fitter.computeModel();
+      std::vector<int> inliers;
+      fitter.getInliers(inliers);
+    
+      // get the inlier dts and points
+      using dt_pt_t = std::pair<float, vec3_t>;
+      // TODO: parametrize this shit
+      const float m_linefit_max_point_age_coeff = 2.0;
+      const float max_point_age = m_neighborhood*m_linefit_max_point_age_coeff; // seconds
+      std::vector<dt_pt_t> in_dt_pts;
+      for (const auto idx : inliers)
+      {
+        const float dt = line_dts.at(idx);
+        // ignore too old points
+        if (dt < -max_point_age)
+          continue;
+        in_dt_pts.push_back({dt, to_eigen(line_pts->at(idx))});
+      }
+      // sort the inliers by relative time to the main point
+      std::sort(std::begin(in_dt_pts), std::end(in_dt_pts),
+          // comparison lambda function
+            [](const dt_pt_t& a, 
+               const dt_pt_t& b)
+            {
+              return a.first < b.first;
+            }
+          );
+    
+      // find the mean velocity between the points
+      vec3_t mean_vel(0, 0, 0);
+      size_t mean_vel_weight = 0;
+      dt_pt_t prev_dt_pt;
+      size_t prev_dt_pt_weight = 0;
+      bool prev_dt_pt_initialized = false;
+      for (const auto& dt_pt : in_dt_pts)
+      {
+        if (!prev_dt_pt_initialized)
+        {
+          prev_dt_pt = dt_pt;
+          prev_dt_pt_initialized = true;
+          prev_dt_pt_weight = 1;
+          continue;
+        }
+    
+        const float cur_dt = dt_pt.first - prev_dt_pt.first;
+        const auto cur_pt = dt_pt.second;
+        // points from the same time don't give us any information about speed - average them
+        if (cur_dt == 0.0)
+        {
+          prev_dt_pt.second += cur_pt;
+          prev_dt_pt_weight += 1;
+          continue;
+        }
+        // in case of weighting, calculate the average
+        prev_dt_pt.second /= prev_dt_pt_weight;
+    
+        const vec3_t cur_vel = (dt_pt.second - prev_dt_pt.second)/cur_dt;
+        mean_vel += cur_vel;
+        mean_vel_weight += 1;
+        prev_dt_pt.second = dt_pt.second;
+        prev_dt_pt_weight = 1;
+      }
+    
+      // if no velocity estimate could be obtained from the inliers, get at least some velocity estimation even if it might be wrong sign
+      if (mean_vel.isZero() || mean_vel_weight == 0.0f)
+      {
+        Eigen::VectorXf model;
+        fitter.getModelCoefficients(model);
+        if (model.rows() < 6)
+        {
+          ROS_ERROR("[PCLDetector]: Line fit failed!");
+          return std::nullopt;
+        }
+        mean_vel = model.block<3, 1>(3, 0);
+        ROS_WARN("[PCLDetector]: Unable to estimate speed direction from inliers! Using line fit estimate, which may have a wrong sign (opposite direction).");
+        /* ROS_WARN_THROTTLE(0.5, "[PCLDetector]: Unable to estimate speed direction from inliers! Using line fit estimate, which may have a wrong sign (opposite direction)."); */
+      }
+      else
+      {
+        // otherwise use the inlier-estimated speed
+        mean_vel /= mean_vel_weight;
+      }
+    
+      // if requested, publish the neighborhood for debugging
+      /*  //{ */
+    
+      if (dbg_pub.getNumSubscribers() > 0)
+      {
+        pc_XYZt_t cloud_out;
+        const auto stamp = ros::Time::now();
+        pcl_conversions::toPCL(stamp, cloud_out.header.stamp);
+        cloud_out.header.frame_id = m_world_frame_id;
+        cloud_out.reserve(in_dt_pts.size());
+        for (const auto& dt_pt : in_dt_pts)
+        {
+          const auto dt = dt_pt.first;
+          const auto pt = dt_pt.second;
+          pt_XYZt_t pcl_pt = arena_to_global<pt_XYZt_t>(pt.x(), pt.y(), pt.z());
+          pcl_pt.intensity = dt;
+          cloud_out.push_back(pcl_pt);
+        }
+        dbg_pub.publish(cloud_out);
+      }
+    
+      //}
+    
+      // use the estimated velocity to set the luring pose orientation
+      const float yaw = std::atan2(mean_vel.y(), mean_vel.x());
+      return yaw;
+    }
+    //}
+
+    /* find_detection_pose() method //{ */
+    std::optional<geometry_msgs::PoseStamped> find_detection_pose(const pt_XYZ_t& pos, const std_msgs::Header& header)
+    {
+      geometry_msgs::PoseStamped ret;
+      ret.header = header;
+
+      const auto [pt_arena_x, pt_arena_y, pt_arena_z] = global_to_arena(pos.x, pos.y, pos.z);
+
+      const auto yaw_opt = estimate_yaw_from_map3d(pt_arena_x, pt_arena_y, pt_arena_z, header.stamp, m_pub_detection_neighborhood);
+      if (!yaw_opt.has_value())
+        return std::nullopt;
+
+      const float yaw = yaw_opt.value();
+      const Eigen::AngleAxisf anax(yaw, vec3_t::UnitZ());
+      const Eigen::Quaternionf quat(anax);
+      ret.pose.orientation.w = quat.w();
+      ret.pose.orientation.x = quat.x();
+      ret.pose.orientation.y = quat.y();
+      ret.pose.orientation.z = quat.z();
+    
+      ret.pose.position.x = pos.x;
+      ret.pose.position.y = pos.y;
+      ret.pose.position.z = pos.z;
+
+      return ret;
     }
     //}
 
@@ -496,155 +765,12 @@ namespace uav_detect
       if (maxval == 0.0)
         return std::nullopt;
 
-      // find neighborhood points and their stamps
-      // note that per one voxel, N points are added, where N is the weight of the voxel (its value in the map)
-      // TODO: parametrize this shit
-      const int m_neighborhood = 3;
-      int n_unique_poits = 0;
-      pc_XYZ_t::Ptr line_pts = boost::make_shared<pc_XYZ_t>();
-      line_pts->reserve(maxval*m_neighborhood*m_neighborhood*m_neighborhood);
-      std::vector<float> line_dts;
-      line_dts.reserve(maxval*m_neighborhood*m_neighborhood*m_neighborhood);
-      for (int x_it = std::max(max_x-m_neighborhood, 0); x_it < std::min(max_x+m_neighborhood, m_arena_bbox_size_x-1); x_it++)
-      {
-        for (int y_it = std::max(max_y-m_neighborhood, 0); y_it < std::min(max_y+m_neighborhood, m_arena_bbox_size_y-1); y_it++)
-        {
-          for (int z_it = std::max(max_z-m_neighborhood, 0); z_it < std::min(max_z+m_neighborhood, m_arena_bbox_size_z-1); z_it++)
-          {
-            const int mapval = std::ceil(map_at_coords(m_map3d, x_it, y_it, z_it));
-            const float dt = (map_at_coords(m_map3d_last_update, x_it, y_it, z_it) - max_stamp).toSec();
-            const pt_XYZ_t pt {float(x_it), float(y_it), float(z_it)};
-            for (int it = 0; it < mapval; it++)
-            {
-              line_pts->push_back(pt);
-              line_dts.push_back(dt);
-            }
-            if (mapval > 0)
-              n_unique_poits++;
-          }
-        }
-      }
-
-      // TODO: parametrize this shit
-      const int m_min_linefit_points = 3;
-      if (n_unique_poits < m_min_linefit_points)
-      {
-        ROS_WARN("[PCLDetector]: Not enough points to fit line, skipping (got %d/%d)", n_unique_poits, m_min_linefit_points);
+      const auto yaw_opt = estimate_yaw_from_map3d(max_x, max_y, max_z, max_stamp, m_pub_chosen_neighborhood);
+      if (!yaw_opt.has_value())
         return std::nullopt;
-      }
-
-      // fit a line to the neighborhood points
-      auto model_l = boost::make_shared<pcl::SampleConsensusModelLine<pt_XYZ_t>>(line_pts);
-      pcl::LeastMedianSquares<pt_XYZ_t> fitter(model_l);
-      fitter.setDistanceThreshold(1);
-      fitter.computeModel();
-      std::vector<int> inliers;
-      fitter.getInliers(inliers);
-
-      // get the inlier dts and points
-      using dt_pt_t = std::pair<float, vec3_t>;
-      // TODO: parametrize this shit
-      const float m_linefit_max_point_age_coeff = 2.0;
-      const float max_point_age = m_neighborhood*m_linefit_max_point_age_coeff; // seconds
-      std::vector<dt_pt_t> in_dt_pts;
-      for (const auto idx : inliers)
-      {
-        const float dt = line_dts.at(idx);
-        // ignore too old points
-        if (dt < -max_point_age)
-          continue;
-        in_dt_pts.push_back({dt, to_eigen(line_pts->at(idx))});
-      }
-      // sort the inliers by relative time to the main point
-      std::sort(std::begin(in_dt_pts), std::end(in_dt_pts),
-          // comparison lambda function
-            [](const dt_pt_t& a, 
-               const dt_pt_t& b)
-            {
-              return a.first < b.first;
-            }
-          );
-
-      // find the mean velocity between the points
-      vec3_t mean_vel(0, 0, 0);
-      size_t mean_vel_weight = 0;
-      dt_pt_t prev_dt_pt;
-      size_t prev_dt_pt_weight = 0;
-      bool prev_dt_pt_initialized = false;
-      for (const auto& dt_pt : in_dt_pts)
-      {
-        if (!prev_dt_pt_initialized)
-        {
-          prev_dt_pt = dt_pt;
-          prev_dt_pt_initialized = true;
-          prev_dt_pt_weight = 1;
-          continue;
-        }
-
-        const float cur_dt = dt_pt.first - prev_dt_pt.first;
-        const auto cur_pt = dt_pt.second;
-        // points from the same time don't give us any information about speed - average them
-        if (cur_dt == 0.0)
-        {
-          prev_dt_pt.second += cur_pt;
-          prev_dt_pt_weight += 1;
-          continue;
-        }
-        // in case of weighting, calculate the average
-        prev_dt_pt.second /= prev_dt_pt_weight;
-
-        const vec3_t cur_vel = (dt_pt.second - prev_dt_pt.second)/cur_dt;
-        mean_vel += cur_vel;
-        mean_vel_weight += 1;
-        prev_dt_pt.second = dt_pt.second;
-        prev_dt_pt_weight = 1;
-      }
-
-      // if no velocity estimate could be obtained from the inliers, get at least some velocity estimation even if it might be wrong sign
-      if (mean_vel.isZero() || mean_vel_weight == 0.0f)
-      {
-        Eigen::VectorXf model;
-        fitter.getModelCoefficients(model);
-        if (model.rows() < 6)
-        {
-          ROS_ERROR("[PCLDetector]: Line fit failed!");
-          return std::nullopt;
-        }
-        mean_vel = model.block<3, 1>(3, 0);
-        ROS_WARN("[PCLDetector]: Unable to estimate speed direction from inliers! Using line fit estimate, which may have a wrong sign (opposite direction).");
-        /* ROS_WARN_THROTTLE(0.5, "[PCLDetector]: Unable to estimate speed direction from inliers! Using line fit estimate, which may have a wrong sign (opposite direction)."); */
-      }
-      else
-      {
-        // otherwise use the inlier-estimated speed
-        mean_vel /= mean_vel_weight;
-      }
-
-      // if requested, publish the neighborhood for debugging
-      /*  //{ */
-      
-      if (m_pub_chosen_neighborhood.getNumSubscribers() > 0)
-      {
-        pc_XYZt_t cloud_out;
-        const auto stamp = ros::Time::now();
-        pcl_conversions::toPCL(stamp, cloud_out.header.stamp);
-        cloud_out.header.frame_id = m_world_frame_id;
-        cloud_out.reserve(in_dt_pts.size());
-        for (const auto& dt_pt : in_dt_pts)
-        {
-          const auto dt = dt_pt.first;
-          const auto pt = dt_pt.second;
-          pt_XYZt_t pcl_pt = arena_to_global<pt_XYZt_t>(pt.x(), pt.y(), pt.z());
-          pcl_pt.intensity = dt;
-          cloud_out.push_back(pcl_pt);
-        }
-        m_pub_chosen_neighborhood.publish(cloud_out);
-      }
-      
-      //}
 
       // use the estimated velocity to set the luring pose orientation
-      const float yaw = std::atan2(mean_vel.y(), mean_vel.x());
+      const float yaw = yaw_opt.value();
       const Eigen::AngleAxisf anax(yaw, vec3_t::UnitZ());
       const Eigen::Quaternionf quat(anax);
       ret.pose.orientation.w = quat.w();
@@ -1259,6 +1385,8 @@ namespace uav_detect
     ros::Publisher m_pub_oparea;
     ros::Publisher m_pub_chosen_neighborhood;
     ros::Publisher m_pub_chosen_position;
+    ros::Publisher m_pub_detection;
+    ros::Publisher m_pub_detection_neighborhood;
     ros::Timer m_main_loop_timer;
     ros::Timer m_info_loop_timer;
     ros::Timer m_safety_area_init_timer;
