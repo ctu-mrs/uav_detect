@@ -177,7 +177,7 @@ namespace uav_detect
     {
       if (!m_safety_area_initialized)
       {
-        NODELET_WARN_STREAM_THROTTLE(1.0, "[PCLDetector]: Safety area not initialized, skipping. ");
+        NODELET_WARN_STREAM_THROTTLE(1.0, "[MainLoop]: Safety area not initialized, skipping. ");
         return;
       }
 
@@ -185,7 +185,7 @@ namespace uav_detect
       {
         const ros::WallTime start_t = ros::WallTime::now();
 
-        NODELET_INFO_STREAM("[PCLDetector]: Processing new data --------------------------------------------------------- ");
+        NODELET_INFO_STREAM("[MainLoop]: Processing new data --------------------------------------------------------- ");
 
         pc_XYZ_t::ConstPtr cloud = m_pc_sh->get_data();
         ros::Time msg_stamp;
@@ -193,7 +193,7 @@ namespace uav_detect
         std::string cloud_frame_id = cloud->header.frame_id;  // cut off the first forward slash
         if (cloud_frame_id.at(0) == '/')
           cloud_frame_id = cloud_frame_id.substr(1);  // cut off the first forward slash
-        NODELET_INFO_STREAM("[PCLDetector]: Input PC has " << cloud->size() << " points");
+        NODELET_INFO_STREAM("[MainLoop]: Input PC has " << cloud->size() << " points");
 
         /* filter input cloud and transform it to world //{ */
 
@@ -219,13 +219,13 @@ namespace uav_detect
             /* cb.filter(indices_filtered->indices); */
           }
           //}
-          NODELET_INFO_STREAM("[PCLDetector]: Input PC after CropBox 1: " << cloud_filtered->size() << " points");
+          NODELET_INFO_STREAM("[MainLoop]: Input PC after CropBox 1: " << cloud_filtered->size() << " points");
 
           Eigen::Affine3d s2w_tf;
           bool tf_ok = get_transform_to_world(cloud_frame_id, msg_stamp, s2w_tf);
           if (!tf_ok)
           {
-            NODELET_ERROR("[PCLDetector]: Could not transform pointcloud to global, skipping.");
+            NODELET_ERROR("[MainLoop]: Could not transform pointcloud to global, skipping.");
             return;
           }
           tf_trans = s2w_tf.translation();
@@ -249,13 +249,13 @@ namespace uav_detect
             /* cb.filter(indices_filtered->indices); */
           }
           //}
-          NODELET_INFO_STREAM("[PCLDetector]: Input PC after arena CropBox 2: " << cloud_filtered->size() << " points");
+          NODELET_INFO_STREAM("[MainLoop]: Input PC after arena CropBox 2: " << cloud_filtered->size() << " points");
 
           // Filter by cropping points outside the safety area
           filter_points(cloud_filtered);
-          NODELET_INFO_STREAM("[PCLDetector]: Input PC after arena filtering: " << cloud_filtered->size() << " points");
+          NODELET_INFO_STREAM("[MainLoop]: Input PC after arena filtering: " << cloud_filtered->size() << " points");
 
-          NODELET_INFO_STREAM("[PCLDetector]: Filtered input PC has " << cloud_filtered->size() << " points");
+          NODELET_INFO_STREAM("[MainLoop]: Filtered input PC has " << cloud_filtered->size() << " points");
         }
 
         //}
@@ -300,7 +300,7 @@ namespace uav_detect
           }
         }
         //}
-        ROS_INFO("[PCLDetector]: Found %lu detection candidates", cloud_clusters.size());
+        ROS_INFO("[MainLoop]: Found %lu detection candidates", cloud_clusters.size());
 
         // filter out too small clusters to remove singular points (-> noise)
         {
@@ -309,7 +309,7 @@ namespace uav_detect
           ei.setIndices(keep_points);
           ei.setInputCloud(cloud_filtered);
           ei.filter(*cloud_filtered);
-          ROS_INFO("[PCLDetector]: Filtered %lu singular points.", n_pts_prev - cloud_filtered->size());
+          ROS_INFO("[MainLoop]: Filtered %lu singular points.", n_pts_prev - cloud_filtered->size());
         }
 
 
@@ -336,7 +336,7 @@ namespace uav_detect
             // if the cluster is too large, just ignore it
             if (height > m_max_detection_height || width > m_max_detection_height)
             {
-              ROS_INFO("[PCLDetector]: Skipping too large cluster with height %.2f > %.2f or width %.2f > %.2f.", height, m_max_detection_height, width, m_max_detection_width);
+              ROS_INFO("[MainLoop]: Skipping too large cluster with height %.2f > %.2f or width %.2f > %.2f.", height, m_max_detection_height, width, m_max_detection_width);
               continue;
             }
 
@@ -402,10 +402,22 @@ namespace uav_detect
           m_pub_map3d.publish(map3d_visualization(header));
 
         const double delay = (ros::Time::now() - msg_stamp).toSec();
-        NODELET_INFO_STREAM("[PCLDetector]: Done processing data with delay " << delay << "s ---------------------------------------------- ");
+        NODELET_INFO_STREAM("[MainLoop]: Done processing data with delay " << delay << "s ---------------------------------------------- ");
         const ros::WallTime end_t = ros::WallTime::now();
         std::cout << "Processing time: " << end_t - start_t << "s" << std::endl;
       }
+    }
+    //}
+
+    /* segmentation_loop() method //{ */
+    void segmentation_loop([[maybe_unused]] const ros::TimerEvent& evt)
+    {
+      if (!m_safety_area_initialized)
+      {
+        NODELET_WARN_STREAM_THROTTLE(1.0, "[SegmentationLoop]: Safety area not initialized, skipping.");
+        return;
+      }
+
     }
     //}
 
@@ -485,12 +497,12 @@ namespace uav_detect
       if (result.empty())
       {
         m_safety_area_ring = ring();
-        ROS_ERROR("[PCLDetector]: Deflated safety area is empty! This probably shouldn't happen!");
+        ROS_ERROR("[InitSafetyArea]: Deflated safety area is empty! This probably shouldn't happen!");
         return;
       }
 
       if (result.size() > 1)
-        ROS_WARN("[PCLDetector]: Deflated safety area breaks into multiple pieces! This probably shouldn't happen! Using the first piece...");
+        ROS_WARN("[InitSafetyArea]: Deflated safety area breaks into multiple pieces! This probably shouldn't happen! Using the first piece...");
 
       polygon poly = result.at(0);
       m_safety_area_ring = poly.outer();
@@ -505,7 +517,7 @@ namespace uav_detect
       m_arena_bbox_offset_z = std::min(m_safety_area_max_z, m_safety_area_min_z);
 
       m_map_size = m_arena_bbox_size_x * m_arena_bbox_size_y * m_arena_bbox_size_z;
-      ROS_INFO("[PCLDetector]: Arena initialized with bounding box size [%d, %d, %d] (%d voxels).", m_arena_bbox_size_x, m_arena_bbox_size_y,
+      ROS_INFO("[InitSafetyArea]: Arena initialized with bounding box size [%d, %d, %d] (%d voxels).", m_arena_bbox_size_x, m_arena_bbox_size_y,
                m_arena_bbox_size_z, m_map_size);
 
       // initialize the frequency map
@@ -567,7 +579,7 @@ namespace uav_detect
     }
     //}
 
-    /* fit_line_local() method //{ */
+    /* fit_local_line() method //{ */
     struct linefit_t
     {
       using params_t = Eigen::Matrix<float, 6, 1>;
@@ -577,7 +589,7 @@ namespace uav_detect
       params_t parameters;
     };
     
-    std::optional<linefit_t> fit_line_local(const int neighborhood, const int x_idx, const int y_idx, const int z_idx, const ros::Time& cur_stamp)
+    std::optional<linefit_t> fit_local_line(const int neighborhood, const int x_idx, const int y_idx, const int z_idx, const ros::Time& cur_stamp)
     {
       // find neighborhood points and their stamps
       // note that per one voxel, N points are added, where N is the weight of the voxel (its value in the map)
@@ -614,7 +626,7 @@ namespace uav_detect
       const int m_min_linefit_points = 3;
       if (n_unique_pts < m_min_linefit_points)
       {
-        ROS_WARN("[PCLDetector]: Not enough points to fit line, skipping (got %d/%d)", n_unique_pts, m_min_linefit_points);
+        ROS_WARN("[FitLocalLine]: Not enough points to fit line, skipping (got %d/%d)", n_unique_pts, m_min_linefit_points);
         return std::nullopt;
       }
     
@@ -719,10 +731,10 @@ namespace uav_detect
     {
       // TODO: parametrize this shit
       const int m_neighborhood = 4;
-      const auto linefit_opt = fit_line_local(m_neighborhood , x_idx, y_idx, z_idx, cur_stamp);
+      const auto linefit_opt = fit_local_line(m_neighborhood , x_idx, y_idx, z_idx, cur_stamp);
       if (!linefit_opt.has_value())
       {
-        ROS_ERROR("[PCLDetector]: Line fit failed!");
+        ROS_ERROR("[EstimateYaw]: Line fit failed!");
         return std::nullopt;
       }
 
@@ -758,7 +770,7 @@ namespace uav_detect
       if (mean_vel.isZero() || mean_vel_weight == 0)
       {
         mean_vel = model_params.block<3, 1>(3, 0);
-        ROS_WARN("[PCLDetector]: Unable to estimate speed direction from inliers! Using line fit estimate, which may have a wrong sign (opposite direction).");
+        ROS_WARN("[EstimateYaw]: Unable to estimate speed direction from inliers! Using line fit estimate, which may have a wrong sign (opposite direction).");
         /* ROS_WARN_THROTTLE(0.5, "[PCLDetector]: Unable to estimate speed direction from inliers! Using line fit estimate, which may have a wrong sign (opposite direction)."); */
       }
       else
@@ -771,7 +783,7 @@ namespace uav_detect
       const double est_speed = mean_vel.norm();
       if (std::abs(est_speed - m_ball_speed) > m_max_speed_error)
       {
-        ROS_ERROR("[PCLDetector]: Object speed is too different from the expected speed (%.2fm/s vs %.2fm/s)!", est_speed, m_ball_speed);
+        ROS_ERROR("[EstimateYaw]: Object speed is too different from the expected speed (%.2fm/s vs %.2fm/s)!", est_speed, m_ball_speed);
         return std::nullopt;
       }
     
