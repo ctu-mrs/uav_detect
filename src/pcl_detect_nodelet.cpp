@@ -586,6 +586,8 @@ namespace uav_detect
         const float dist = (center - cur_pos).norm();
 
         // make sure that the rotated z-axis is the closest to the original z-axis
+        /*  //{ */
+        
         const vec3_t base_x = rotation * vec3_t::UnitX();
         const vec3_t base_y = rotation * vec3_t::UnitY();
         const vec3_t base_z = rotation * vec3_t::UnitZ();
@@ -595,34 +597,23 @@ namespace uav_detect
         x_angle = std::min(x_angle, M_PI-x_angle);
         y_angle = std::min(y_angle, M_PI-y_angle);
         z_angle = std::min(z_angle, M_PI-z_angle);
-        std::cout << "orig angle x: " << x_angle << std::endl;
-        std::cout << "orig angle y: " << y_angle << std::endl;
-        std::cout << "orig angle z: " << z_angle << std::endl;
         // X is closest to the Z axis
         if (x_angle < y_angle && x_angle < z_angle)
         {
-          std::cout << "rotating X to Z!" << std::endl;
-          const float angle = x_angle < M_PI_2 ? M_PI_2 : M_PI_2+M_PI;
-          rotation = anax_t(angle, base_y) * rotation;
+          rotation = anax_t(M_PI_2, base_y) * rotation;
           height = std::abs(max_pt.x - min_pt.x);
           width = std::max(std::abs(max_pt.z - min_pt.z), std::abs(max_pt.y - min_pt.y));
         }
         // Y is closest to the Z axis
         else if (y_angle < x_angle && y_angle < z_angle)
         {
-          std::cout << "rotating Y to Z!" << std::endl;
-          const float angle = y_angle < M_PI_2 ? -M_PI_2 : -M_PI_2-M_PI;
-          rotation = anax_t(angle, base_x) * rotation;
+          rotation = anax_t(-M_PI_2, base_x) * rotation;
           height = std::abs(max_pt.y - min_pt.y);
           width = std::max(std::abs(max_pt.z - min_pt.z), std::abs(max_pt.x - min_pt.x));
         }
-        std::cout << "new angle x: "
-                  << anax_t(quat_t::FromTwoVectors(vec3_t::UnitZ(), rotation * vec3_t::UnitX())).angle() << std::endl;
-        std::cout << "new angle y: "
-                  << anax_t(quat_t::FromTwoVectors(vec3_t::UnitZ(), rotation * vec3_t::UnitY())).angle() << std::endl;
-        std::cout << "new angle z: "
-                  << anax_t(quat_t::FromTwoVectors(vec3_t::UnitZ(), rotation * vec3_t::UnitZ())).angle() << std::endl;
         // otherwise Z is closest, which is fine
+        
+        //}
         quat_t quat(rotation);
 
         // if the cluster is too large, just ignore it
@@ -643,7 +634,7 @@ namespace uav_detect
         // decide the class based on the size and shape of the cluster
         else if (dist < m_classif_close_dist)
         {
-          const float width_thresh = std::abs(m_classif_mav_width - m_classif_ball_width) / 2.0f;
+          const float width_thresh = m_classif_ball_width + std::abs(m_classif_mav_width - m_classif_ball_width) / 2.0f;
           if (width < width_thresh)
             cclass = ball;
           else
