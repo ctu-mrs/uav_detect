@@ -86,15 +86,25 @@ namespace uav_detect
 
     //}
 
-    /* struct line_segment_t //{ */
+    /* struct planefit_t //{ */
 
-    struct line_segment_t
+    struct planefit_t
     {
-      vec3_t start_pt;
-      vec3_t end_pt;
+      vec3_t normal;
+      float offset;
     };
 
     //}
+
+    /* /1* struct line_segment_t //{ *1/ */
+
+    /* struct line_segment_t */
+    /* { */
+    /*   vec3_t start_pt; */
+    /*   vec3_t end_pt; */
+    /* }; */
+
+    /* //} */
 
   public:
     /* onInit() method //{ */
@@ -130,8 +140,8 @@ namespace uav_detect
       pl.load_param("classification/mav_width", m_classif_mav_width);
       pl.load_param("classification/ball_width", m_classif_ball_width);
 
-      pl.load_param("line_segment_fit/min_points", m_line_segment_fit_min_points);
-      pl.load_param("line_segment_fit/ransac_threshold", m_line_segment_fit_ransac_threshold);
+      pl.load_param("plane_fit/min_points", m_plane_fit_min_points);
+      pl.load_param("plane_fit/ransac_threshold", m_plane_fit_ransac_threshold);
 
       pl.load_param("exclude_box/offset/x", m_exclude_box_offset_x);
       pl.load_param("exclude_box/offset/y", m_exclude_box_offset_y);
@@ -182,7 +192,7 @@ namespace uav_detect
       m_pub_detection = nh.advertise<geometry_msgs::PoseStamped>("detection", 1);
       m_pub_detection_classified = nh.advertise<visualization_msgs::MarkerArray>("detection_classified", 1);
       m_pub_detection_neighborhood = nh.advertise<sensor_msgs::PointCloud2>("detection_neighborhood", 1, true);
-      m_pub_line_segment = nh.advertise<visualization_msgs::Marker>("line_segment", 1);
+      m_pub_plane = nh.advertise<visualization_msgs::MarkerArray>("plane", 1);
       //}
 
       /* initialize transformer //{ */
@@ -235,7 +245,7 @@ namespace uav_detect
         /* filter input cloud and transform it to world //{ */
 
         pc_XYZ_t::Ptr cloud_filtered = boost::make_shared<pc_XYZ_t>(*cloud);
-        Eigen::Vector3d tf_trans;
+        vec3_t tf_trans;
         {
           /* filter by cropping points inside a box, relative to the sensor //{ */
           {
@@ -265,7 +275,7 @@ namespace uav_detect
             NODELET_ERROR("[MainLoop]: Could not transform pointcloud to global, skipping.");
             return;
           }
-          tf_trans = s2w_tf.translation();
+          tf_trans = s2w_tf.translation().cast<float>();
           pcl::transformPointCloud(*cloud_filtered, *cloud_filtered, s2w_tf.cast<float>());
           cloud_filtered->header.frame_id = m_world_frame_id;
 
@@ -354,7 +364,7 @@ namespace uav_detect
         header.frame_id = m_world_frame_id;
         header.stamp = msg_stamp;
 
-        std::optional<pt_XYZ_t> ballpos_opt = find_ball_position(cloud_clusters, tf_trans.cast<float>(), header);
+        std::optional<pt_XYZ_t> ballpos_opt = find_ball_position(cloud_clusters, tf_trans, header);
 
         if (ballpos_opt.has_value())
         {
@@ -388,9 +398,9 @@ namespace uav_detect
         if (most_probable_passthrough_opt.has_value())
           m_pub_chosen_position.publish(most_probable_passthrough_opt.value());
 
-        const auto line_segment_opt = find_line_segments();
-        if (line_segment_opt.has_value())
-          m_pub_line_segment.publish(line_segment_visualization(line_segment_opt.value(), header));
+        /* const auto plane_opt = fit_plane(m_global_cloud); */
+        /* if (plane_opt.has_value()) */
+        /*   m_pub_plane.publish(plane_visualization(plane_opt.value(), header, tf_trans)); */
 
         // publish some debug shit
         if (m_pub_filtered_input_pc.getNumSubscribers() > 0)
@@ -719,23 +729,23 @@ namespace uav_detect
     }
     //}
 
-    /* fit_global_line() method //{ */
+    /* fit_plane() method //{ */
 
-    std::optional<linefit_t> fit_line(const pc_XYZt_t::ConstPtr cloud)
+    std::optional<planefit_t> fit_plane(const pc_XYZt_t::ConstPtr cloud)
     {
-      if (cloud->size() < (size_t)m_line_segment_fit_min_points)
+      if (cloud->size() < (size_t)m_plane_fit_min_points)
       {
-        ROS_WARN("[FitLocalLine]: Not enough points to fit line, skipping (got %lu/%d)", cloud->size(), m_line_segment_fit_min_points);
+        ROS_WARN("[FitLocalplane]: Not enough points to fit plane, skipping (got %lu/%d)", cloud->size(), m_plane_fit_min_points);
         return std::nullopt;
       }
 
-      // fit a line to the global cloud points
+      // fit a plane to the global cloud points
       /*  //{ */
 
-      auto model_l = boost::make_shared<pcl::SampleConsensusModelLine<pt_XYZt_t>>(cloud);
+      auto model_l = boost::make_shared<pcl::SampleConsensusModelPlane<pt_XYZt_t>>(cloud);
       pcl::RandomSampleConsensus<pt_XYZt_t> fitter(model_l);
       /* fitter.setNumberOfThreads(4); */
-      fitter.setDistanceThreshold(m_line_segment_fit_ransac_threshold);
+      fitter.setDistanceThreshold(m_plane_fit_ransac_threshold);
       fitter.computeModel();
       Eigen::VectorXf params;
       fitter.getModelCoefficients(params);
@@ -743,109 +753,15 @@ namespace uav_detect
       // check if the fit failed
       if (params.rows() == 0)
         return std::nullopt;
-      assert(params.rows() == 6);
+      assert(params.rows() == 4);
 
       std::vector<int> inliers;
       fitter.getInliers(inliers);
 
       //}
 
-      // get the inlier dts and points
-      /*  //{ */
-
-      using dt_pt_t = linefit_t::dt_pt_t;
-      std::vector<dt_pt_t> in_dt_pts;
-      for (const auto idx : inliers)
-      {
-        const pt_XYZt_t pti = cloud->at(idx);
-        const vec3_t pt{pti.x, pti.y, pti.z};
-        const float dt = pti.intensity;
-        in_dt_pts.push_back({dt, pt});
-      }
-
-      //}
-
-      // sort the inliers by time
-      /*  //{ */
-
-      std::sort(std::begin(in_dt_pts), std::end(in_dt_pts),
-                // comparison lambda function
-                [](const dt_pt_t& a, const dt_pt_t& b) { return a.first < b.first; });
-
-      //}
-
-      // average points from the same time
-      /*  //{ */
-
-      {
-        std::vector<dt_pt_t> tmp;
-        tmp.reserve(in_dt_pts.size());
-        dt_pt_t dt_pt_sum;
-        size_t dt_pt_weight;
-        bool dt_pt_initialized = false;
-        for (const auto& dt_pt : in_dt_pts)
-        {
-          if (!dt_pt_initialized)
-          {
-            dt_pt_sum = dt_pt;
-            dt_pt_weight = 1;
-            dt_pt_initialized = true;
-            continue;
-          }
-
-          const float dt_diff = dt_pt.first - dt_pt_sum.first;
-          if (dt_diff == 0.0f)
-          {
-            dt_pt_sum.second += dt_pt.second;
-            dt_pt_weight++;
-            continue;
-          }
-
-          dt_pt_sum.second /= float(dt_pt_weight);
-          tmp.push_back(dt_pt_sum);
-          dt_pt_sum = dt_pt;
-          dt_pt_weight = 1;
-        }
-        ROS_INFO("[EstimateYaw]: Averaged points: %lu/%lu.", tmp.size(), in_dt_pts.size());
-        in_dt_pts = tmp;
-      }
-
-      //}
-
-      const linefit_t ret = {in_dt_pts, params};
+      const planefit_t ret = {params.block<3, 1>(0, 0), params(3)};
       return ret;
-    }
-    //}
-
-    /* find_line_segments() method //{ */
-    std::optional<line_segment_t> find_line_segments()
-    {
-      const auto linefit1_opt = fit_line(m_global_cloud);
-      if (!linefit1_opt.has_value())
-        return std::nullopt;
-
-      vec3_t start_point, end_point;
-      float start_dist = std::numeric_limits<float>::max();
-      float end_dist = std::numeric_limits<float>::lowest();
-      const linefit_t linefit = linefit1_opt.value();
-      const vec3_t line_pt = linefit.parameters.block<3, 1>(0, 0).normalized();
-      const vec3_t line_dir = linefit.parameters.block<3, 1>(3, 0).normalized();
-      for (const auto& dt_pt : linefit.dt_pts)
-      {
-        const auto& pt = dt_pt.second;
-        const float dist = (pt.dot(line_dir) - line_pt.dot(line_dir)) / line_dir.dot(line_dir);
-        if (dist < start_dist)
-        {
-          start_point = pt;
-          start_dist = dist;
-        }
-        if (dist > end_dist)
-        {
-          end_point = pt;
-          end_dist = dist;
-        }
-      }
-      return {{start_point, end_point}};
     }
     //}
 
@@ -1727,34 +1643,142 @@ namespace uav_detect
 
     //}
 
-    /* line_segment_visualization() method //{ */
-    visualization_msgs::Marker line_segment_visualization(const line_segment_t& line_segment, const std_msgs::Header& header)
+  /* plane_origin() method //{ */
+  vec3_t plane_origin(const planefit_t& plane, const vec3_t& origin)
+  {
+    const static double eps = 1e-9;
+    const double a = plane.normal(0);
+    const double b = plane.normal(1);
+    const double c = plane.normal(2);
+    const double d = plane.offset;
+    const double x = origin.x();
+    const double y = origin.y();
+    const double z = origin.z();
+    vec3_t ret(x, y, z);
+    if (abs(a) > eps)
+      ret(0) = -(y * b + z * c + d) / a;
+    else if (abs(b) > eps)
+      ret(1) = -(x * a + z * c + d) / b;
+    else if (abs(c) > eps)
+      ret(2) = -(x * a + y * b + d) / c;
+    return ret;
+  }
+  //}
+
+  /* plane_visualization() method //{ */
+  visualization_msgs::MarkerArray plane_visualization(const planefit_t& plane, const std_msgs::Header& header, const vec3_t& origin)
+  {
+    visualization_msgs::MarkerArray ret;
+
+    const auto pos = plane_origin(plane, origin);
+    const auto quat = quat_t::FromTwoVectors(vec3_t::UnitZ(), plane.normal);
+
+    //TODO: parametrize this shit
+    const double m_plane_visualization_size = 100.0;
+    const double size = m_plane_visualization_size;
+    geometry_msgs::Point ptA;
+    ptA.x = size;
+    ptA.y = size;
+    ptA.z = 0;
+    geometry_msgs::Point ptB;
+    ptB.x = -size;
+    ptB.y = size;
+    ptB.z = 0;
+    geometry_msgs::Point ptC;
+    ptC.x = -size;
+    ptC.y = -size;
+    ptC.z = 0;
+    geometry_msgs::Point ptD;
+    ptD.x = size;
+    ptD.y = -size;
+    ptD.z = 0;
+
+    /* borders marker //{ */
     {
-      visualization_msgs::Marker ret;
-      ret.header = header;
-      ret.color.a = 1.0;
-      ret.color.r = 1.0;
-      ret.scale.x = 0.1;
-      ret.scale.y = 1.0;
-      ret.scale.z = 2.0;
-      ret.type = visualization_msgs::Marker::ARROW;
-      ret.pose.orientation.w = 1.0;
+      visualization_msgs::Marker borders_marker;
+      borders_marker.header = header;
 
-      geometry_msgs::Point pt1;
-      pt1.x = line_segment.start_pt.x();
-      pt1.y = line_segment.start_pt.y();
-      pt1.z = line_segment.start_pt.z();
-      geometry_msgs::Point pt2;
-      pt2.x = line_segment.end_pt.x();
-      pt2.y = line_segment.end_pt.y();
-      pt2.z = line_segment.end_pt.z();
+      borders_marker.ns = "borders";
+      borders_marker.id = 0;
+      borders_marker.type = visualization_msgs::Marker::LINE_LIST;
+      borders_marker.action = visualization_msgs::Marker::ADD;
 
-      ret.points.push_back(pt1);
-      ret.points.push_back(pt2);
+      borders_marker.pose.position.x = pos.x();
+      borders_marker.pose.position.y = pos.y();
+      borders_marker.pose.position.z = pos.z();
 
-      return ret;
+      borders_marker.pose.orientation.x = quat.x();
+      borders_marker.pose.orientation.y = quat.y();
+      borders_marker.pose.orientation.z = quat.z();
+      borders_marker.pose.orientation.w = quat.w();
+
+      borders_marker.scale.x = 0.1;
+      borders_marker.scale.y = 0.1;
+      borders_marker.scale.z = 0.1;
+
+      borders_marker.color.a = 0.5;  // Don't forget to set the alpha!
+      borders_marker.color.r = 0.0;
+      borders_marker.color.g = 0.0;
+      borders_marker.color.b = 1.0;
+
+      borders_marker.points.push_back(ptA);
+      borders_marker.points.push_back(ptB);
+
+      borders_marker.points.push_back(ptB);
+      borders_marker.points.push_back(ptC);
+
+      borders_marker.points.push_back(ptC);
+      borders_marker.points.push_back(ptD);
+
+      borders_marker.points.push_back(ptD);
+      borders_marker.points.push_back(ptA);
+
+      ret.markers.push_back(borders_marker);
     }
     //}
+
+    /* plane marker //{ */
+    {
+      visualization_msgs::Marker plane_marker;
+      plane_marker.header = header;
+
+      plane_marker.ns = "plane";
+      plane_marker.id = 1;
+      plane_marker.type = visualization_msgs::Marker::TRIANGLE_LIST;
+      plane_marker.action = visualization_msgs::Marker::ADD;
+
+      plane_marker.pose.position.x = pos.x();
+      plane_marker.pose.position.y = pos.y();
+      plane_marker.pose.position.z = pos.z();
+
+      plane_marker.pose.orientation.x = quat.x();
+      plane_marker.pose.orientation.y = quat.y();
+      plane_marker.pose.orientation.z = quat.z();
+      plane_marker.pose.orientation.w = quat.w();
+
+      plane_marker.scale.x = 1;
+
+      plane_marker.color.a = 0.2;  // Don't forget to set the alpha!
+      plane_marker.color.r = 0.0;
+      plane_marker.color.g = 0.0;
+      plane_marker.color.b = 1.0;
+
+      // triangle ABC
+      plane_marker.points.push_back(ptA);
+      plane_marker.points.push_back(ptB);
+      plane_marker.points.push_back(ptC);
+
+      // triangle ACD
+      plane_marker.points.push_back(ptA);
+      plane_marker.points.push_back(ptC);
+      plane_marker.points.push_back(ptD);
+      ret.markers.push_back(plane_marker);
+    }
+    //}
+
+    return ret;
+  }
+  //}
 
     /* classified_detection_visualization() method //{ */
     visualization_msgs::MarkerArray classified_detection_visualization(const vec3_t& center, const float width, const float height, const quat_t& quat,
@@ -1937,7 +1961,7 @@ namespace uav_detect
     ros::Publisher m_pub_chosen_neighborhood;
     ros::Publisher m_pub_chosen_position;
 
-    ros::Publisher m_pub_line_segment;
+    ros::Publisher m_pub_plane;
 
     ros::Timer m_main_loop_timer;
     ros::Timer m_info_loop_timer;
@@ -1970,8 +1994,8 @@ namespace uav_detect
     float m_classif_mav_width;
     float m_classif_ball_width;
 
-    int m_line_segment_fit_min_points;
-    float m_line_segment_fit_ransac_threshold;
+    int m_plane_fit_min_points;
+    float m_plane_fit_ransac_threshold;
 
     double m_exclude_box_offset_x;
     double m_exclude_box_offset_y;

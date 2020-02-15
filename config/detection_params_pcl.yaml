@@ -17,8 +17,8 @@ classification:
   mav_width: 0.650 # metres
   ball_width: 0.11 # metres
 
-line_segment_fit:
-  min_points: 50
+plane_fit:
+  min_points: 80
   ransac_threshold: 1.0 # metres
 
 safety_area:
