@@ -12,6 +12,7 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/kdtree/kdtree.h>
+#include <pcl/octree/octree_search.h>
 #include <pcl/registration/transforms.h>
 #include <pcl/segmentation/extract_clusters.h>
 #include <pcl/segmentation/conditional_euclidean_clustering.h>
@@ -47,6 +48,7 @@
 using namespace cv;
 using namespace std;
 using namespace uav_detect;
+using namespace pcl;
 
 //}
 
@@ -58,6 +60,7 @@ namespace uav_detect
   using pc_XYZ_t = pcl::PointCloud<pt_XYZ_t>;
   using pt_XYZt_t = pcl::PointXYZI;
   using pc_XYZt_t = pcl::PointCloud<pt_XYZt_t>;
+  using octree = pcl::octree::OctreePointCloudSearch<pt_XYZt_t>;
 
   using point = boost::geometry::model::d2::point_xy<double>;
   using ring = boost::geometry::model::ring<point>;
@@ -203,6 +206,8 @@ namespace uav_detect
 
       m_global_cloud = boost::make_shared<pc_XYZt_t>();
       m_global_cloud->header.frame_id = m_world_frame_id;
+      m_global_octree = boost::make_shared<octree>(1.0); // 1 metre resolution
+      m_global_octree->setInputCloud(m_global_cloud);
       m_last_detection_id = 0;
 
       m_det_blobs = 0;
@@ -378,7 +383,7 @@ namespace uav_detect
           ballpos_stamped.y = ballpos.y;
           ballpos_stamped.z = ballpos.z;
           ballpos_stamped.intensity = (msg_stamp - m_start_time).toSec();
-          m_global_cloud->push_back(ballpos_stamped);
+          m_global_octree->addPointToCloud(ballpos_stamped, m_global_cloud);
 
           // update voxels in the frequency map and stamp map
           {
@@ -391,7 +396,7 @@ namespace uav_detect
             }
             else
             {
-              NODELET_INFO_WARN("[MainLoop]: Ball seems to be out of arena bounds. Skipping.");
+              NODELET_WARN("[MainLoop]: Ball seems to be out of arena bounds. Skipping.");
             }
           }
 
@@ -794,30 +799,31 @@ namespace uav_detect
       // note that per one voxel, N points are added, where N is the weight of the voxel (its value in the map)
       /*  //{ */
 
-      int n_unique_pts = 0;
-      pc_XYZ_t::Ptr line_pts = boost::make_shared<pc_XYZ_t>();
-      line_pts->reserve(neighborhood * neighborhood * neighborhood);
-      std::vector<float> line_dts;
-      line_dts.reserve(neighborhood * neighborhood * neighborhood);
-      for (int x_it = std::max(x_idx - neighborhood, 0); x_it < std::min(x_idx + neighborhood, m_arena_bbox_size_x - 1); x_it++)
-      {
-        for (int y_it = std::max(y_idx - neighborhood, 0); y_it < std::min(y_idx + neighborhood, m_arena_bbox_size_y - 1); y_it++)
-        {
-          for (int z_it = std::max(z_idx - neighborhood, 0); z_it < std::min(z_idx + neighborhood, m_arena_bbox_size_z - 1); z_it++)
-          {
-            const int mapval = std::ceil(map_at_coords(m_map3d, x_it, y_it, z_it));
-            const float dt = (map_at_coords(m_map3d_last_update, x_it, y_it, z_it) - cur_stamp).toSec();
-            const pt_XYZ_t pt{float(x_it), float(y_it), float(z_it)};
-            for (int it = 0; it < mapval; it++)
-            {
-              line_pts->push_back(pt);
-              line_dts.push_back(dt);
-            }
-            if (mapval > 0)
-              n_unique_pts++;
-          }
-        }
-      }
+      pc_XYZt_t::Ptr pc = boost::make_unique
+      /* int n_unique_pts = 0; */
+      /* pc_XYZ_t::Ptr line_pts = boost::make_shared<pc_XYZ_t>(); */
+      /* line_pts->reserve(neighborhood * neighborhood * neighborhood); */
+      /* std::vector<float> line_dts; */
+      /* line_dts.reserve(neighborhood * neighborhood * neighborhood); */
+      /* for (int x_it = std::max(x_idx - neighborhood, 0); x_it < std::min(x_idx + neighborhood, m_arena_bbox_size_x - 1); x_it++) */
+      /* { */
+      /*   for (int y_it = std::max(y_idx - neighborhood, 0); y_it < std::min(y_idx + neighborhood, m_arena_bbox_size_y - 1); y_it++) */
+      /*   { */
+      /*     for (int z_it = std::max(z_idx - neighborhood, 0); z_it < std::min(z_idx + neighborhood, m_arena_bbox_size_z - 1); z_it++) */
+      /*     { */
+      /*       const int mapval = std::ceil(map_at_coords(m_map3d, x_it, y_it, z_it)); */
+      /*       const float dt = (map_at_coords(m_map3d_last_update, x_it, y_it, z_it) - cur_stamp).toSec(); */
+      /*       const pt_XYZ_t pt{float(x_it), float(y_it), float(z_it)}; */
+      /*       for (int it = 0; it < mapval; it++) */
+      /*       { */
+      /*         line_pts->push_back(pt); */
+      /*         line_dts.push_back(dt); */
+      /*       } */
+      /*       if (mapval > 0) */
+      /*         n_unique_pts++; */
+      /*     } */
+      /*   } */
+      /* } */
 
       //}
 
@@ -999,6 +1005,88 @@ namespace uav_detect
     }
     //}
 
+    /* estimate_yaw() method //{ */
+    std::optional<float> estimate_yaw(const int x_idx, const int y_idx, const int z_idx, const ros::Time& cur_stamp, ros::Publisher& dbg_pub)
+    {
+      const auto linefit_opt = fit_local_line(m_linefit_neighborhood, x_idx, y_idx, z_idx, cur_stamp);
+      if (!linefit_opt.has_value())
+      {
+        ROS_ERROR("[EstimateYaw]: Line fit failed!");
+        return std::nullopt;
+      }
+
+      const auto& in_dt_pts = linefit_opt->dt_pts;
+
+      // find the mean velocity between the points
+      using dt_pt_t = linefit_t::dt_pt_t;
+      vec3_t mean_vel(0, 0, 0);
+      size_t mean_vel_weight = 0;
+      dt_pt_t prev_dt_pt;
+      bool prev_dt_pt_initialized = false;
+      for (const auto& dt_pt : in_dt_pts)
+      {
+        if (!prev_dt_pt_initialized)
+        {
+          prev_dt_pt = dt_pt;
+          prev_dt_pt_initialized = true;
+          continue;
+        }
+
+        const float cur_dt = dt_pt.first - prev_dt_pt.first;
+        const auto cur_pt = dt_pt.second;
+        assert(cur_dt != 0.0f);
+
+        const vec3_t cur_vel = (cur_pt - prev_dt_pt.second) / cur_dt;
+        mean_vel += cur_vel;
+        mean_vel_weight += 1;
+        prev_dt_pt.second = dt_pt.second;
+      }
+
+      // if no velocity estimate could be obtained from the inliers, return
+      if (mean_vel.isZero() || mean_vel_weight == 0)
+      {
+        ROS_WARN("[EstimateYaw]: Unable to estimate speed from inliers!");
+        return std::nullopt;
+      }
+      mean_vel /= mean_vel_weight;
+
+      // check if the estimated speed makes sense
+      const double est_speed = mean_vel.norm();
+      if (std::abs(est_speed - m_ball_speed) > m_max_speed_error)
+      {
+        ROS_ERROR("[EstimateYaw]: Object speed is too different from the expected speed (%.2fm/s vs %.2fm/s)!", est_speed, m_ball_speed);
+        return std::nullopt;
+      }
+
+      // if requested, publish the neighborhood for debugging
+      /*  //{ */
+
+      if (dbg_pub.getNumSubscribers() > 0)
+      {
+        pc_XYZt_t cloud_out;
+        const auto stamp = ros::Time::now();
+        pcl_conversions::toPCL(stamp, cloud_out.header.stamp);
+        cloud_out.header.frame_id = m_world_frame_id;
+        cloud_out.reserve(in_dt_pts.size());
+        for (const auto& dt_pt : in_dt_pts)
+        {
+          const auto dt = dt_pt.first;
+          const auto pt = dt_pt.second;
+          pt_XYZt_t pcl_pt = arena_to_global<pt_XYZt_t>(pt.x(), pt.y(), pt.z());
+          pcl_pt.intensity = dt;
+          cloud_out.push_back(pcl_pt);
+        }
+        dbg_pub.publish(cloud_out);
+      }
+
+      //}
+
+      // use the estimated velocity to set the luring pose orientation
+      const float yaw = std::atan2(mean_vel.y(), mean_vel.x());
+      return yaw;
+    }
+    //}
+
     /* find_detection_pose() method //{ */
     std::optional<geometry_msgs::PoseStamped> find_detection_pose(const pt_XYZ_t& pos, const std_msgs::Header& header)
     {
@@ -1007,7 +1095,7 @@ namespace uav_detect
 
       const auto [pt_arena_x, pt_arena_y, pt_arena_z] = global_to_arena(pos.x, pos.y, pos.z);
 
-      const auto yaw_opt = estimate_yaw_from_map3d(pt_arena_x, pt_arena_y, pt_arena_z, header.stamp, m_pub_detection_neighborhood);
+      const auto yaw_opt = estimate_yaw(pt_arena_x, pt_arena_y, pt_arena_z, header.stamp, m_pub_detection_neighborhood);
       if (!yaw_opt.has_value())
         return std::nullopt;
 
@@ -2045,6 +2133,7 @@ namespace uav_detect
     bool m_safety_area_initialized;
     uint32_t m_last_detection_id;
     std::vector<float> m_map3d;
+    octree::Ptr m_global_octree;
     pc_XYZt_t::Ptr m_global_cloud;  // contains position estimates of the ball
     std::vector<ros::Time> m_map3d_last_update;
 
