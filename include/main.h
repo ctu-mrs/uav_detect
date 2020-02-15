@@ -36,5 +36,6 @@
 #include <mrs_lib/DynamicReconfigureMgr.h>
 #include <mrs_lib/subscribe_handler.h>
 #include <mrs_lib/transformer.h>
+#include <mrs_lib/geometry_utils.h>
 
 #endif //  MAIN_H

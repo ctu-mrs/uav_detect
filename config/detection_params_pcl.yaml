@@ -13,6 +13,9 @@ classification:
   max_mav_height: 1.0 # metres
   max_detection_width: 2.0 # metres
   ball_wire_length: 1.45 # metres
+  close_distance: 9 # metres
+  mav_width: 0.650 # metres
+  ball_width: 0.11 # metres
 
 line_segment_fit:
   min_points: 50
