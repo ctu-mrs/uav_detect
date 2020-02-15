@@ -351,6 +351,8 @@ namespace uav_detect
         ROS_INFO("[MainLoop]: Found %lu detection candidates", cloud_clusters.size());
 
         // filter out too small clusters to remove singular points (-> noise)
+        /*  //{ */
+        
         {
           const size_t n_pts_prev = cloud_filtered->size();
           pcl::ExtractIndices<pt_XYZ_t> ei;
@@ -359,36 +361,42 @@ namespace uav_detect
           ei.filter(*cloud_filtered);
           ROS_INFO("[MainLoop]: Filtered %lu singular points.", n_pts_prev - cloud_filtered->size());
         }
+        
+        //}
 
         std_msgs::Header header;
         header.frame_id = m_world_frame_id;
         header.stamp = msg_stamp;
 
-        std::optional<pt_XYZ_t> ballpos_opt = find_ball_position(cloud_clusters, tf_trans, header);
+        std::optional<std::pair<pt_XYZ_t, pc_XYZ_t::Ptr>> ballpos_result_opt = find_ball_position(cloud_clusters, tf_trans, header);
 
-        if (ballpos_opt.has_value())
+        if (ballpos_result_opt.has_value())
         {
-          const auto ballpos = ballpos_opt.value();
+          const auto ballpos = ballpos_result_opt.value().first;
           pt_XYZt_t ballpos_stamped;
           ballpos_stamped.x = ballpos.x;
           ballpos_stamped.y = ballpos.y;
           ballpos_stamped.z = ballpos.z;
           ballpos_stamped.intensity = (msg_stamp - m_start_time).toSec();
           m_global_cloud->push_back(ballpos_stamped);
-        }
 
-        // update voxels in the frequency map and stamp map
-        for (const auto& pt : *cloud_filtered)
-        {
-          const auto [pt_arena_x, pt_arena_y, pt_arena_z] = global_to_arena(pt.x, pt.y, pt.z);
-          map_at_coords(m_map3d, pt_arena_x, pt_arena_y, pt_arena_z) += 1.0;
-          map_at_coords(m_map3d_last_update, pt_arena_x, pt_arena_y, pt_arena_z) = msg_stamp;
-        }
+          // update voxels in the frequency map and stamp map
+          {
+            const auto cloud_used = ballpos_result_opt.value().second;
+            const auto [pt_arena_x, pt_arena_y, pt_arena_z] = global_to_arena(ballpos.x, ballpos.y, ballpos.z);
+            if (valid_arena_coordinates(pt_arena_x, pt_arena_y, pt_arena_z))
+            {
+              map_at_coords(m_map3d, pt_arena_x, pt_arena_y, pt_arena_z) += cloud_used->size();
+              map_at_coords(m_map3d_last_update, pt_arena_x, pt_arena_y, pt_arena_z) = msg_stamp;
+            }
+            else
+            {
+              NODELET_INFO_WARN("[MainLoop]: Ball seems to be out of arena bounds. Skipping.");
+            }
+          }
 
-        // publish the current detection if there is any
-        if (ballpos_opt.has_value())
-        {
-          const auto detection_pose_opt = find_detection_pose(ballpos_opt.value(), header);
+          // publish the current detection pose, if applicable
+          const auto detection_pose_opt = find_detection_pose(ballpos, header);
           if (detection_pose_opt.has_value())
             m_pub_detection.publish(detection_pose_opt.value());
         }
@@ -571,9 +579,13 @@ namespace uav_detect
     };
 
     // finds the largest cluster, classified as a detection, and the corresponding ball position
-    std::optional<pt_XYZ_t> find_ball_position(const std::vector<pc_XYZ_t::Ptr>& cloud_clusters, const vec3_t& cur_pos, const std_msgs::Header& header)
+    std::optional<std::pair<pt_XYZ_t, pc_XYZ_t::Ptr>> find_ball_position(
+        const std::vector<pc_XYZ_t::Ptr>& cloud_clusters,
+        const vec3_t& cur_pos,
+        const std_msgs::Header& header
+        )
     {
-      std::optional<pt_XYZ_t> ballpos_opt;
+      std::optional<std::pair<pt_XYZ_t, pc_XYZ_t::Ptr>> ballpos_result_opt;
       size_t ballpos_n_pts = 0;  // how many points did the cluster used for picking the ball position have
       for (const auto& cluster : cloud_clusters)
       {
@@ -669,7 +681,7 @@ namespace uav_detect
             for (const auto& pt : cluster->points)
               if (pt.z < min_z_pt.z)
                 min_z_pt = pt;
-            ballpos_opt = min_z_pt;
+            ballpos_result_opt = {min_z_pt, cluster};
             ballpos_n_pts = cluster->size();
           }
           break;
@@ -681,7 +693,7 @@ namespace uav_detect
               if (pt.z > max_z_pt.z)
                 max_z_pt = pt;
             // subtract length of the wire from the MAV position
-            ballpos_opt = {max_z_pt.x, max_z_pt.y, max_z_pt.z - m_classif_ball_wire_length};
+            ballpos_result_opt = {{max_z_pt.x, max_z_pt.y, max_z_pt.z - m_classif_ball_wire_length}, cluster};
             ballpos_n_pts = cluster->size();
           }
           break;
@@ -689,7 +701,7 @@ namespace uav_detect
             continue;
         }
       }
-      return ballpos_opt;
+      return ballpos_result_opt;
     }
     //}
 
@@ -712,6 +724,16 @@ namespace uav_detect
       ret.y = y + m_arena_bbox_offset_y - m_arena_bbox_size_y / 2.0 + 0.5;
       ret.z = z + m_arena_bbox_offset_z + 0.5;
       return ret;
+    }
+    //}
+
+    /* valid_arena_coordinates() method //{ */
+    bool valid_arena_coordinates(const int x, const int y, const int z)
+    {
+      const bool x_ok = x >= 0 && x < m_arena_bbox_size_x;
+      const bool y_ok = y >= 0 && y < m_arena_bbox_size_y;
+      const bool z_ok = z >= 0 && z < m_arena_bbox_size_z;
+      return x_ok && y_ok && z_ok;
     }
     //}
 

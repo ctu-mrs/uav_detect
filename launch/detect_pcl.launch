@@ -33,7 +33,11 @@
       <rosparam file="$(find uav_detect)/config/detection_params_pcl.yaml" />
       <rosparam file="$(arg world_file)" command="load" />
     
+      <!-- Subscribers -->
       <remap from="~pc" to="/points_raw" />
+
+      <!-- Publishers -->
+      <remap from="~map3d" to="~map3d_" />
 
     </node>
   
