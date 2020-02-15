@@ -99,8 +99,9 @@ namespace uav_detect
       NODELET_INFO("Loading static parameters:");
       const auto uav_name = pl.load_param2<std::string>("uav_name");
       pl.load_param("world_frame_id", m_world_frame_id);
-      pl.load_param("filtering_leaf_size", m_drmgr_ptr->config.filtering_leaf_size);
-      pl.load_param("active_box_size", m_drmgr_ptr->config.active_box_size);
+
+      pl.load_param("ball_speed", m_ball_speed);
+      pl.load_param("max_speed_error", m_max_speed_error);
 
       pl.load_param("exclude_box/offset/x", m_exclude_box_offset_x);
       pl.load_param("exclude_box/offset/y", m_exclude_box_offset_y);
@@ -182,10 +183,9 @@ namespace uav_detect
 
       if (m_pc_sh->new_data())
       {
-        /* ros::Time start_t = ros::Time::now(); */
+        const ros::WallTime start_t = ros::WallTime::now();
 
         NODELET_INFO_STREAM("[PCLDetector]: Processing new data --------------------------------------------------------- ");
-        // TODO: produce also online detections based on the known MAV size etc.
 
         pc_XYZ_t::ConstPtr cloud = m_pc_sh->get_data();
         ros::Time msg_stamp;
@@ -260,7 +260,11 @@ namespace uav_detect
 
         //}
 
+        // TODO: parametrize this shit
+        const int m_min_cluster_size = 3;
         std::vector<pc_XYZ_t::Ptr> cloud_clusters;
+        pcl::PointIndices::Ptr keep_points = boost::make_shared<pcl::PointIndices>(); // which points to keep (must be in a cluster with size > m_min_cluster_size)
+        keep_points->indices.reserve(cloud_filtered->size());
         /* extract euclidean clusters //{ */
         {
           std::vector<pcl::PointIndices> cluster_indices;
@@ -270,11 +274,15 @@ namespace uav_detect
           ec.setMaxClusterSize(25000);
           ec.setInputCloud(cloud_filtered);
           ec.extract(cluster_indices);
-          cloud_clusters.reserve(cloud_filtered->size());
+
           int label = 0;
           cloud_clusters.reserve(cluster_indices.size());
           for (const auto& idxs : cluster_indices)
           {
+            // skip too small clusters (to filter out singular points -> noise)
+            if (idxs.indices.size() < m_min_cluster_size)
+              continue;
+
             pc_XYZ_t::Ptr cloud_cluster = boost::make_shared<pc_XYZ_t>();
             cloud_cluster->reserve(idxs.indices.size());
             for (const auto idx : idxs.indices)
@@ -285,6 +293,7 @@ namespace uav_detect
               pt.y = pt_orig.y;
               pt.z = pt_orig.z;
               cloud_cluster->push_back(pt);
+              keep_points->indices.push_back(idx);
             }
             cloud_clusters.push_back(cloud_cluster);
             label++;
@@ -292,6 +301,17 @@ namespace uav_detect
         }
         //}
         ROS_INFO("[PCLDetector]: Found %lu detection candidates", cloud_clusters.size());
+
+        // filter out too small clusters to remove singular points (-> noise)
+        {
+          const size_t n_pts_prev = cloud_filtered->size();
+          pcl::ExtractIndices<pt_XYZ_t> ei;
+          ei.setIndices(keep_points);
+          ei.setInputCloud(cloud_filtered);
+          ei.filter(*cloud_filtered);
+          ROS_INFO("[PCLDetector]: Filtered %lu singular points.", n_pts_prev - cloud_filtered->size());
+        }
+
 
         std::optional<pt_XYZ_t> ballpos_opt = std::nullopt;
         /* find the largest cluster, classified as a detection, and the corresponding ball position //{ */
@@ -383,6 +403,8 @@ namespace uav_detect
 
         const double delay = (ros::Time::now() - msg_stamp).toSec();
         NODELET_INFO_STREAM("[PCLDetector]: Done processing data with delay " << delay << "s ---------------------------------------------- ");
+        const ros::WallTime end_t = ros::WallTime::now();
+        std::cout << "Processing time: " << end_t - start_t << "s" << std::endl;
       }
     }
     //}
@@ -516,7 +538,6 @@ namespace uav_detect
     //}
 
   private:
-
     /* global_to_arena() method //{ */
     std::tuple<int, int, int> global_to_arena(float glx, float gly, float glz)
     {
@@ -546,23 +567,32 @@ namespace uav_detect
     }
     //}
 
-    /* estimate_yaw_from_map3d() method //{ */
-    std::optional<float> estimate_yaw_from_map3d(const int x_idx, const int y_idx, const int z_idx, const ros::Time& cur_stamp, ros::Publisher& dbg_pub)
+    /* fit_line_local() method //{ */
+    struct linefit_t
+    {
+      using params_t = Eigen::Matrix<float, 6, 1>;
+      using dt_pt_t = std::pair<float, vec3_t>;
+
+      std::vector<dt_pt_t> dt_pts;
+      params_t parameters;
+    };
+    
+    std::optional<linefit_t> fit_line_local(const int neighborhood, const int x_idx, const int y_idx, const int z_idx, const ros::Time& cur_stamp)
     {
       // find neighborhood points and their stamps
       // note that per one voxel, N points are added, where N is the weight of the voxel (its value in the map)
-      // TODO: parametrize this shit
-      const int m_neighborhood = 3;
+      /*  //{ */
+      
       int n_unique_pts = 0;
       pc_XYZ_t::Ptr line_pts = boost::make_shared<pc_XYZ_t>();
-      line_pts->reserve(m_neighborhood*m_neighborhood*m_neighborhood);
+      line_pts->reserve(neighborhood*neighborhood*neighborhood);
       std::vector<float> line_dts;
-      line_dts.reserve(m_neighborhood*m_neighborhood*m_neighborhood);
-      for (int x_it = std::max(x_idx-m_neighborhood, 0); x_it < std::min(x_idx+m_neighborhood, m_arena_bbox_size_x-1); x_it++)
+      line_dts.reserve(neighborhood*neighborhood*neighborhood);
+      for (int x_it = std::max(x_idx-neighborhood, 0); x_it < std::min(x_idx+neighborhood, m_arena_bbox_size_x-1); x_it++)
       {
-        for (int y_it = std::max(y_idx-m_neighborhood, 0); y_it < std::min(y_idx+m_neighborhood, m_arena_bbox_size_y-1); y_it++)
+        for (int y_it = std::max(y_idx-neighborhood, 0); y_it < std::min(y_idx+neighborhood, m_arena_bbox_size_y-1); y_it++)
         {
-          for (int z_it = std::max(z_idx-m_neighborhood, 0); z_it < std::min(z_idx+m_neighborhood, m_arena_bbox_size_z-1); z_it++)
+          for (int z_it = std::max(z_idx-neighborhood, 0); z_it < std::min(z_idx+neighborhood, m_arena_bbox_size_z-1); z_it++)
           {
             const int mapval = std::ceil(map_at_coords(m_map3d, x_it, y_it, z_it));
             const float dt = (map_at_coords(m_map3d_last_update, x_it, y_it, z_it) - cur_stamp).toSec();
@@ -577,6 +607,8 @@ namespace uav_detect
           }
         }
       }
+      
+      //}
     
       // TODO: parametrize this shit
       const int m_min_linefit_points = 3;
@@ -587,18 +619,32 @@ namespace uav_detect
       }
     
       // fit a line to the neighborhood points
+      /*  //{ */
+      
       auto model_l = boost::make_shared<pcl::SampleConsensusModelLine<pt_XYZ_t>>(line_pts);
       pcl::LeastMedianSquares<pt_XYZ_t> fitter(model_l);
       fitter.setDistanceThreshold(1);
       fitter.computeModel();
+      Eigen::VectorXf params;
+      fitter.getModelCoefficients(params);
+      
+      // check if the fit failed
+      if (params.rows() == 0)
+        return std::nullopt;
+      assert(params.rows() == 6);
+
       std::vector<int> inliers;
       fitter.getInliers(inliers);
+      
+      //}
     
       // get the inlier dts and points
-      using dt_pt_t = std::pair<float, vec3_t>;
+      /*  //{ */
+      
       // TODO: parametrize this shit
+      using dt_pt_t = linefit_t::dt_pt_t;
       const float m_linefit_max_point_age_coeff = 2.0;
-      const float max_point_age = m_neighborhood*m_linefit_max_point_age_coeff; // seconds
+      const float max_point_age = neighborhood*m_linefit_max_point_age_coeff; // seconds
       std::vector<dt_pt_t> in_dt_pts;
       for (const auto idx : inliers)
       {
@@ -608,7 +654,12 @@ namespace uav_detect
           continue;
         in_dt_pts.push_back({dt, to_eigen(line_pts->at(idx))});
       }
+      
+      //}
+      
       // sort the inliers by relative time to the main point
+      /*  //{ */
+      
       std::sort(std::begin(in_dt_pts), std::end(in_dt_pts),
           // comparison lambda function
             [](const dt_pt_t& a, 
@@ -617,12 +668,72 @@ namespace uav_detect
               return a.first < b.first;
             }
           );
+      
+      //}
+
+      // average points from the same time
+      /*  //{ */
+      
+      {
+        std::vector<dt_pt_t> tmp;
+        tmp.reserve(in_dt_pts.size());
+        dt_pt_t dt_pt_sum;
+        size_t dt_pt_weight;
+        bool dt_pt_initialized = false;
+        for (const auto& dt_pt : in_dt_pts)
+        {
+          if (!dt_pt_initialized)
+          {
+            dt_pt_sum = dt_pt;
+            dt_pt_weight = 1;
+            dt_pt_initialized = true;
+            continue;
+          }
+      
+          const float dt_diff = dt_pt.first - dt_pt_sum.first;
+          if (dt_diff == 0.0f)
+          {
+            dt_pt_sum.second += dt_pt.second;
+            dt_pt_weight++;
+            continue;
+          }
+      
+          dt_pt_sum.second /= float(dt_pt_weight);
+          tmp.push_back(dt_pt_sum);
+          dt_pt_sum = dt_pt;
+          dt_pt_weight = 1;
+        }
+        ROS_INFO("[YawEstimation]: Averaged points: %lu/%lu.", tmp.size(), in_dt_pts.size());
+        in_dt_pts = tmp;
+      }
+      
+      //}
+
+      const linefit_t ret = {in_dt_pts, params};
+      return ret;
+    }
+    //}
+
+    /* estimate_yaw_from_map3d() method //{ */
+    std::optional<float> estimate_yaw_from_map3d(const int x_idx, const int y_idx, const int z_idx, const ros::Time& cur_stamp, ros::Publisher& dbg_pub)
+    {
+      // TODO: parametrize this shit
+      const int m_neighborhood = 4;
+      const auto linefit_opt = fit_line_local(m_neighborhood , x_idx, y_idx, z_idx, cur_stamp);
+      if (!linefit_opt.has_value())
+      {
+        ROS_ERROR("[PCLDetector]: Line fit failed!");
+        return std::nullopt;
+      }
+
+      const auto& in_dt_pts = linefit_opt->dt_pts;
+      const auto& model_params = linefit_opt->parameters;
     
       // find the mean velocity between the points
+      using dt_pt_t = linefit_t::dt_pt_t;
       vec3_t mean_vel(0, 0, 0);
       size_t mean_vel_weight = 0;
       dt_pt_t prev_dt_pt;
-      size_t prev_dt_pt_weight = 0;
       bool prev_dt_pt_initialized = false;
       for (const auto& dt_pt : in_dt_pts)
       {
@@ -630,40 +741,23 @@ namespace uav_detect
         {
           prev_dt_pt = dt_pt;
           prev_dt_pt_initialized = true;
-          prev_dt_pt_weight = 1;
           continue;
         }
     
         const float cur_dt = dt_pt.first - prev_dt_pt.first;
         const auto cur_pt = dt_pt.second;
-        // points from the same time don't give us any information about speed - average them
-        if (cur_dt == 0.0)
-        {
-          prev_dt_pt.second += cur_pt;
-          prev_dt_pt_weight += 1;
-          continue;
-        }
-        // in case of weighting, calculate the average
-        prev_dt_pt.second /= prev_dt_pt_weight;
+        assert(cur_dt != 0.0f);
     
-        const vec3_t cur_vel = (dt_pt.second - prev_dt_pt.second)/cur_dt;
+        const vec3_t cur_vel = (cur_pt - prev_dt_pt.second)/cur_dt;
         mean_vel += cur_vel;
         mean_vel_weight += 1;
         prev_dt_pt.second = dt_pt.second;
-        prev_dt_pt_weight = 1;
       }
     
       // if no velocity estimate could be obtained from the inliers, get at least some velocity estimation even if it might be wrong sign
-      if (mean_vel.isZero() || mean_vel_weight == 0.0f)
+      if (mean_vel.isZero() || mean_vel_weight == 0)
       {
-        Eigen::VectorXf model;
-        fitter.getModelCoefficients(model);
-        if (model.rows() < 6)
-        {
-          ROS_ERROR("[PCLDetector]: Line fit failed!");
-          return std::nullopt;
-        }
-        mean_vel = model.block<3, 1>(3, 0);
+        mean_vel = model_params.block<3, 1>(3, 0);
         ROS_WARN("[PCLDetector]: Unable to estimate speed direction from inliers! Using line fit estimate, which may have a wrong sign (opposite direction).");
         /* ROS_WARN_THROTTLE(0.5, "[PCLDetector]: Unable to estimate speed direction from inliers! Using line fit estimate, which may have a wrong sign (opposite direction)."); */
       }
@@ -671,6 +765,14 @@ namespace uav_detect
       {
         // otherwise use the inlier-estimated speed
         mean_vel /= mean_vel_weight;
+      }
+
+      // check if the estimated speed makes sense
+      const double est_speed = mean_vel.norm();
+      if (std::abs(est_speed - m_ball_speed) > m_max_speed_error)
+      {
+        ROS_ERROR("[PCLDetector]: Object speed is too different from the expected speed (%.2fm/s vs %.2fm/s)!", est_speed, m_ball_speed);
+        return std::nullopt;
       }
     
       // if requested, publish the neighborhood for debugging
@@ -1403,6 +1505,10 @@ namespace uav_detect
     /* Parameters, loaded from ROS //{ */
 
     std::string m_world_frame_id;
+
+    double m_ball_speed; // metres per second
+    double m_max_speed_error; // metres per second
+
     double m_exclude_box_offset_x;
     double m_exclude_box_offset_y;
     double m_exclude_box_offset_z;
