@@ -958,7 +958,7 @@ namespace uav_detect
 
         const float cur_dt = pt.intensity - prev_pt.intensity;
         const auto cur_pt = pt.getVector3fMap();
-        assert(cur_dt != 0.0f);
+        /* assert(cur_dt != 0.0f); */
         if (cur_dt == 0.0f)
         {
           NODELET_ERROR("[EstimateVelocity]: dt between points is zero - this shouldn't happen! Prev. time: %.2f, cur. time: %.2f.", prev_pt.intensity, pt.intensity);
