@@ -38,6 +38,8 @@
 
       <!-- Publishers -->
       <remap from="~map3d" to="~map3d_" />
+      <remap from="~detection" to="~detection_" />
+      <remap from="~detection_neighborhood" to="~detection_neighborhood_" />
 
     </node>
   

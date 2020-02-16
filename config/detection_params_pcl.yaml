@@ -5,8 +5,8 @@ ball_speed: 3.0 # metres per second
 max_speed_error: 2.0 # metres per second
 
 linefit:
-  neighborhood: 3 # voxels (each voxel is 1m^3)
-  point_max_age_coefficient: 2.0 # seconds per neighborhood size
+  neighborhood: 3 # metres
+  point_max_age: 3.0 # seconds per neighborhood size
 
 classification:
   max_detection_height: 2.5 # metres
