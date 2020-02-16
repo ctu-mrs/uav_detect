@@ -789,9 +789,9 @@ namespace uav_detect
     using msg_cov_t = geometry_msgs::PoseWithCovarianceStamped::_pose_type::_covariance_type;
     void set_cov(const Eigen::Matrix3f& e_cov, msg_cov_t& cov, int start_idx)
     {
-      for (int r = start_idx; r < start_idx+3; r++)
+      for (unsigned r = start_idx; r < (unsigned)start_idx+3; r++)
       {
-        for (int c = start_idx; c < start_idx+3; c++)
+        for (unsigned c = start_idx; c < (unsigned)start_idx+3; c++)
         {
           cov[r * 6 + c] = e_cov(r-start_idx, c-start_idx);
         }
