@@ -4,6 +4,18 @@ filtering_leaf_size: 0.5 # meters
 ball_speed: 3.0 # metres per second
 max_speed_error: 2.0 # metres per second
 
+cov_coeffs:
+  xy:
+    mav:              0.1
+    ball:             0.05
+    mav_with_ball:    0.01
+  z:
+    mav:              0.1
+    ball:             0.05
+    mav_with_ball:    0.03
+  xyz:
+    velocity: 0.4 # radians
+
 linefit:
   neighborhood: 3 # metres
   point_max_age: 3.0 # seconds per neighborhood size

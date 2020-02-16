@@ -43,6 +43,8 @@
 #include <visualization_msgs/MarkerArray.h>
 #include <uav_detect/DetectionParamsConfig.h>
 #include <mesh_sampling.h>
+
+#include <eigen_conversions/eigen_msg.h>
 /* #include <PointXYZt.h> */
 
 using namespace cv;
@@ -98,6 +100,18 @@ namespace uav_detect
 
     //}
 
+    /* ball_det_t //{ */
+    
+    struct ball_det_t
+    {
+      using cov_t = Eigen::Matrix3f;
+      pt_XYZ_t pos_stamped;
+      pc_XYZ_t::Ptr cloud;
+      cov_t cov;
+    };
+    
+    //}
+
     /* /1* struct line_segment_t //{ *1/ */
 
     /* struct line_segment_t */
@@ -121,6 +135,13 @@ namespace uav_detect
       /* Load parameters from ROS //{*/
       NODELET_INFO("Loading default dynamic parameters:");
       m_drmgr_ptr = make_unique<drmgr_t>(nh, m_node_name);
+      
+      // CHECK LOADING STATUS
+      if (!m_drmgr_ptr->loaded_successfully())
+      {
+        NODELET_ERROR("Some compulsory parameters were not loaded successfully, ending the node");
+        ros::shutdown();
+      }
 
       mrs_lib::ParamLoader pl(nh, m_node_name);
       // LOAD STATIC PARAMETERS
@@ -162,10 +183,7 @@ namespace uav_detect
       m_safety_area_init_timer = nh.createTimer(ros::Duration(1.0), &PCLDetector::init_safety_area, this);
 
       //}
-
-      pl.load_param("keep_pc_organized", m_keep_pc_organized, false);
-
-      // LOAD DYNAMIC PARAMETERS
+      
       // CHECK LOADING STATUS
       if (!pl.loaded_successfully())
       {
@@ -191,7 +209,7 @@ namespace uav_detect
       m_pub_chosen_position = nh.advertise<geometry_msgs::PoseStamped>("passthrough_position", 1, true);
       m_pub_chosen_neighborhood = nh.advertise<sensor_msgs::PointCloud2>("passthrough_neighborhood", 1, true);
       m_pub_detections_pc = nh.advertise<sensor_msgs::PointCloud2>("detections_pc", 1);
-      m_pub_detection = nh.advertise<geometry_msgs::PoseStamped>("detection", 1);
+      m_pub_detection = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("detection", 1);
       m_pub_detection_classified = nh.advertise<visualization_msgs::MarkerArray>("detection_classified", 1);
       m_pub_detection_neighborhood = nh.advertise<sensor_msgs::PointCloud2>("detection_neighborhood", 1, true);
       m_pub_plane = nh.advertise<visualization_msgs::MarkerArray>("plane", 1);
@@ -232,6 +250,24 @@ namespace uav_detect
         return;
       }
 
+      /* load covariance coefficients from dynparam //{ */
+      
+      {
+        const std::pair<double&, double&> cov_coeffs_mav =
+          {m_drmgr_ptr->config.cov_coeffs__xy__mav, m_drmgr_ptr->config.cov_coeffs__z__mav};
+        const std::pair<double&, double&> cov_coeffs_ball =
+          {m_drmgr_ptr->config.cov_coeffs__xy__ball, m_drmgr_ptr->config.cov_coeffs__z__ball};
+        const std::pair<double&, double&> cov_coeffs_mav_with_ball =
+          {m_drmgr_ptr->config.cov_coeffs__xy__mav_with_ball, m_drmgr_ptr->config.cov_coeffs__z__mav_with_ball};
+        m_cov_coeffs.insert_or_assign(cluster_class_t::mav, cov_coeffs_mav);
+        m_cov_coeffs.insert_or_assign(cluster_class_t::ball, cov_coeffs_ball );
+        m_cov_coeffs.insert_or_assign(cluster_class_t::mav_with_ball, cov_coeffs_mav_with_ball);
+        m_cov_coeff_vel = m_drmgr_ptr->config.cov_coeffs__xyz__velocity;
+      }
+      
+      //}
+
+
       if (m_pc_sh->new_data())
       {
         const ros::WallTime start_t = ros::WallTime::now();
@@ -262,7 +298,6 @@ namespace uav_detect
             cb.setMin(box_point2);
             cb.setInputCloud(cloud_filtered);
             cb.setNegative(true);
-            /* cb.setKeepOrganized(m_keep_pc_organized); */
             cb.filter(*cloud_filtered);
             /* cb.setInputCloud(cloud); */
             /* cb.setIndices(indices_filtered); */
@@ -294,7 +329,6 @@ namespace uav_detect
             cb.setMin(box_point2);
             cb.setInputCloud(cloud_filtered);
             cb.setNegative(false);
-            /* cb.setKeepOrganized(m_keep_pc_organized); */
             cb.filter(*cloud_filtered);
             /* cb.setNegative(false); */
             /* cb.filter(indices_filtered->indices); */
@@ -372,11 +406,12 @@ namespace uav_detect
         header.frame_id = m_world_frame_id;
         header.stamp = msg_stamp;
 
-        std::optional<std::pair<pt_XYZ_t, pc_XYZ_t::Ptr>> ballpos_result_opt = find_ball_position(cloud_clusters, tf_trans, header);
+        std::optional<ball_det_t> ball_det_result_opt = find_ball_position(cloud_clusters, tf_trans, header);
 
-        if (ballpos_result_opt.has_value())
+        if (ball_det_result_opt.has_value())
         {
-          const auto ballpos = ballpos_result_opt.value().first;
+          const ball_det_t detection = ball_det_result_opt.value();
+          const auto ballpos = detection.pos_stamped;
           const float cur_time = (msg_stamp - m_start_time).toSec();
           pt_XYZt_t ballpos_stamped;
           ballpos_stamped.x = ballpos.x;
@@ -387,7 +422,7 @@ namespace uav_detect
 
           // update voxels in the frequency map and stamp map
           {
-            const auto cloud_used = ballpos_result_opt.value().second;
+            const auto cloud_used = detection.cloud;
             const auto [pt_arena_x, pt_arena_y, pt_arena_z] = global_to_arena(ballpos.x, ballpos.y, ballpos.z);
             if (valid_arena_coordinates(pt_arena_x, pt_arena_y, pt_arena_z))
             {
@@ -400,16 +435,41 @@ namespace uav_detect
             }
           }
 
-          // publish the current detection pose, if applicable
-          const auto detection_pose_opt = find_detection_pose(ballpos_stamped, header, m_pub_detection_neighborhood);
+          // find the velocity direction as well, if possible
+          const auto detection_pose_opt = find_detection_pose(ballpos_stamped, m_pub_detection_neighborhood);
+
+          // prepare the output message
+          geometry_msgs::PoseWithCovarianceStamped msg;
+          msg.header = header;
+          for (auto& el : msg.pose.covariance)
+            el = 0.0;
+          set_pos_cov(detection.cov, msg.pose.covariance);
           if (detection_pose_opt.has_value())
-            m_pub_detection.publish(detection_pose_opt.value());
+          {
+            msg.pose.pose = detection_pose_opt.value();
+            Eigen::Matrix3f rot_cov = m_cov_coeff_vel*Eigen::Matrix3f::Identity();
+            set_rot_cov(rot_cov, msg.pose.covariance);
+          }
+          else
+          {
+            msg.pose.pose.position.x = ballpos.x;
+            msg.pose.pose.position.y = ballpos.y;
+            msg.pose.pose.position.z = ballpos.z;
+            Eigen::Matrix3f rot_cov = M_PI*Eigen::Matrix3f::Identity();
+            set_rot_cov(rot_cov, msg.pose.covariance);
+          }
+          m_pub_detection.publish(msg);
         }
 
         // find and publish the most probable pose the ball will pass through again from the frequency map
-        const auto most_probable_passthrough_opt = find_most_probable_passthrough(header);
+        const auto most_probable_passthrough_opt = find_most_probable_passthrough();
         if (most_probable_passthrough_opt.has_value())
-          m_pub_chosen_position.publish(most_probable_passthrough_opt.value());
+        {
+          geometry_msgs::PoseStamped msg;
+          msg.header = header;
+          msg.pose = most_probable_passthrough_opt.value();
+          m_pub_chosen_position.publish(msg);
+        }
 
         /* const auto plane_opt = fit_plane(m_global_cloud); */
         /* if (plane_opt.has_value()) */
@@ -583,14 +643,28 @@ namespace uav_detect
       unknown
     };
 
+    ball_det_t::cov_t create_covariance(const cluster_class_t cclass)
+    {
+      if (m_cov_coeffs.find(cclass) == std::end(m_cov_coeffs))
+      {
+        ROS_ERROR("[PCLDetector]: Invalid cluster class %d! Covariance will be invalid.", cclass);
+        return std::numeric_limits<float>::quiet_NaN()*ball_det_t::cov_t::Ones();
+      }
+      auto [xy_covariance_coeff, z_covariance_coeff] = m_cov_coeffs.at(cclass);
+      ball_det_t::cov_t cov = ball_det_t::cov_t::Zero();
+      cov(0, 0) = cov(1, 1) = xy_covariance_coeff;
+      cov(2, 2) = z_covariance_coeff;
+      return cov;
+    }
+
     // finds the largest cluster, classified as a detection, and the corresponding ball position
-    std::optional<std::pair<pt_XYZ_t, pc_XYZ_t::Ptr>> find_ball_position(
+    std::optional<ball_det_t> find_ball_position(
         const std::vector<pc_XYZ_t::Ptr>& cloud_clusters,
         const vec3_t& cur_pos,
         const std_msgs::Header& header
         )
     {
-      std::optional<std::pair<pt_XYZ_t, pc_XYZ_t::Ptr>> ballpos_result_opt;
+      std::optional<ball_det_t> ballpos_result_opt;
       size_t ballpos_n_pts = 0;  // how many points did the cluster used for picking the ball position have
       for (const auto& cluster : cloud_clusters)
       {
@@ -607,7 +681,7 @@ namespace uav_detect
         pt_XYZ_t center_pt;
         Eigen::Matrix3f rotation;
         moie.getOBB(min_pt, max_pt, center_pt, rotation);
-        const vec3_t center = to_eigen(center_pt);
+        const vec3_t center = center_pt.getVector3fMap();
         float height = std::abs(max_pt.z - min_pt.z);
         float width = std::max(std::abs(max_pt.x - min_pt.x), std::abs(max_pt.y - min_pt.y));
         const float dist = (center - cur_pos).norm();
@@ -676,6 +750,7 @@ namespace uav_detect
         if (m_pub_detection_classified.getNumSubscribers() > 0)
           m_pub_detection_classified.publish(classified_detection_visualization(center, width, height, quat, cclass, dist, header));
 
+        ball_det_t::cov_t covariance = rotate_covariance(create_covariance(cclass), rotation);
         switch (cclass)
         {
           case cluster_class_t::ball:
@@ -686,7 +761,7 @@ namespace uav_detect
             for (const auto& pt : cluster->points)
               if (pt.z < min_z_pt.z)
                 min_z_pt = pt;
-            ballpos_result_opt = {min_z_pt, cluster};
+            ballpos_result_opt = {min_z_pt, cluster, covariance};
             ballpos_n_pts = cluster->size();
           }
           break;
@@ -698,7 +773,7 @@ namespace uav_detect
               if (pt.z > max_z_pt.z)
                 max_z_pt = pt;
             // subtract length of the wire from the MAV position
-            ballpos_result_opt = {{max_z_pt.x, max_z_pt.y, max_z_pt.z - m_classif_ball_wire_length}, cluster};
+            ballpos_result_opt = {{max_z_pt.x, max_z_pt.y, max_z_pt.z - m_classif_ball_wire_length}, cluster, covariance};
             ballpos_n_pts = cluster->size();
           }
           break;
@@ -709,6 +784,35 @@ namespace uav_detect
       return ballpos_result_opt;
     }
     //}
+
+    /* set_cov() methods //{ */
+    using msg_cov_t = geometry_msgs::PoseWithCovarianceStamped::_pose_type::_covariance_type;
+    void set_cov(const Eigen::Matrix3f& e_cov, msg_cov_t& cov, int start_idx)
+    {
+      for (int r = start_idx; r < start_idx+3; r++)
+      {
+        for (int c = start_idx; c < start_idx+3; c++)
+        {
+          cov[r * 6 + c] = e_cov(r-start_idx, c-start_idx);
+        }
+      }
+    }
+    void set_pos_cov(const Eigen::Matrix3f& e_cov, msg_cov_t& cov)
+    {
+      set_cov(e_cov, cov, 0);
+    }
+    void set_rot_cov(const Eigen::Matrix3f& e_cov, msg_cov_t& cov)
+    {
+      set_cov(e_cov, cov, 3);
+    }
+    //}
+
+  /* rotate_covariance() method //{ */
+  Eigen::Matrix3f rotate_covariance(const Eigen::Matrix3f& covariance, const Eigen::Matrix3f& rotation)
+  {
+    return rotation * covariance * rotation.transpose();  // rotate the covariance to point in direction of est. position
+  }
+  //}
 
     /* global_to_arena() method //{ */
     std::tuple<int, int, int> global_to_arena(float glx, float gly, float glz)
@@ -742,53 +846,10 @@ namespace uav_detect
     }
     //}
 
-    /* to_eigen() method //{ */
-    vec3_t to_eigen(const pt_XYZ_t& pt)
-    {
-      return {pt.x, pt.y, pt.z};
-    }
-    //}
-
     /* to_pcl() method //{ */
     pt_XYZ_t to_pcl(const vec3_t& pt)
     {
       return {pt.x(), pt.y(), pt.z()};
-    }
-    //}
-
-    /* fit_plane() method //{ */
-
-    std::optional<planefit_t> fit_plane(const pc_XYZt_t::ConstPtr cloud)
-    {
-      if (cloud->size() < (size_t)m_plane_fit_min_points)
-      {
-        ROS_WARN("[FitLocalplane]: Not enough points to fit plane, skipping (got %lu/%d)", cloud->size(), m_plane_fit_min_points);
-        return std::nullopt;
-      }
-
-      // fit a plane to the global cloud points
-      /*  //{ */
-
-      auto model_l = boost::make_shared<pcl::SampleConsensusModelPlane<pt_XYZt_t>>(cloud);
-      pcl::RandomSampleConsensus<pt_XYZt_t> fitter(model_l);
-      /* fitter.setNumberOfThreads(4); */
-      fitter.setDistanceThreshold(m_plane_fit_ransac_threshold);
-      fitter.computeModel();
-      Eigen::VectorXf params;
-      fitter.getModelCoefficients(params);
-
-      // check if the fit failed
-      if (params.rows() == 0)
-        return std::nullopt;
-      assert(params.rows() == 4);
-
-      std::vector<int> inliers;
-      fitter.getInliers(inliers);
-
-      //}
-
-      const planefit_t ret = {params.block<3, 1>(0, 0), params(3)};
-      return ret;
     }
     //}
 
@@ -875,7 +936,7 @@ namespace uav_detect
       const auto linefit_opt = fit_local_line(m_linefit_neighborhood, pt_stamped);
       if (!linefit_opt.has_value())
       {
-        ROS_ERROR("[EstimateYaw]: Line fit failed!");
+        ROS_ERROR("[EstimateVelocity]: Line fit failed!");
         return std::nullopt;
       }
 
@@ -898,6 +959,11 @@ namespace uav_detect
         const float cur_dt = pt.intensity - prev_pt.intensity;
         const auto cur_pt = pt.getVector3fMap();
         assert(cur_dt != 0.0f);
+        if (cur_dt == 0.0f)
+        {
+          NODELET_ERROR("[EstimateVelocity]: dt between points is zero - this shouldn't happen! Prev. time: %.2f, cur. time: %.2f.", prev_pt.intensity, pt.intensity);
+          continue;
+        }
 
         const vec3_t cur_vel = (cur_pt - prev_pt.getVector3fMap()) / cur_dt;
         mean_vel += cur_vel;
@@ -908,7 +974,7 @@ namespace uav_detect
       // if no velocity estimate could be obtained from the inliers, return
       if (mean_vel.isZero() || mean_vel_weight == 0)
       {
-        ROS_WARN("[EstimateYaw]: Unable to estimate speed from inliers!");
+        ROS_WARN("[EstimateVelocity]: Unable to estimate speed from inliers!");
         return std::nullopt;
       }
       mean_vel /= mean_vel_weight;
@@ -917,7 +983,7 @@ namespace uav_detect
       const double est_speed = mean_vel.norm();
       if (std::abs(est_speed - m_ball_speed) > m_max_speed_error)
       {
-        ROS_ERROR("[EstimateYaw]: Object speed is too different from the expected speed (%.2fm/s vs %.2fm/s)!", est_speed, m_ball_speed);
+        ROS_ERROR("[EstimateVelocity]: Object speed is too different from the expected speed (%.2fm/s vs %.2fm/s)!", est_speed, m_ball_speed);
         return std::nullopt;
       }
 
@@ -934,11 +1000,9 @@ namespace uav_detect
     //}
 
     /* find_detection_pose() method //{ */
-    std::optional<geometry_msgs::PoseStamped> find_detection_pose(const pt_XYZt_t& pos_stamped, const std_msgs::Header& header, ros::Publisher& pub)
+    std::optional<geometry_msgs::Pose> find_detection_pose(const pt_XYZt_t& pos_stamped, ros::Publisher& pub)
     {
-      geometry_msgs::PoseStamped ret;
-      ret.header = header;
-
+      geometry_msgs::Pose ret;
       const auto vel_opt = estimate_velocity(pos_stamped, pub);
       if (!vel_opt.has_value())
         return std::nullopt;
@@ -946,21 +1010,21 @@ namespace uav_detect
       const auto vel = vel_opt.value();
       /* const Eigen::AngleAxisf anax(yaw, vec3_t::UnitZ()); */
       const quat_t quat = quat_t::FromTwoVectors(vec3_t::UnitX(), vel);
-      ret.pose.orientation.w = quat.w();
-      ret.pose.orientation.x = quat.x();
-      ret.pose.orientation.y = quat.y();
-      ret.pose.orientation.z = quat.z();
+      ret.orientation.w = quat.w();
+      ret.orientation.x = quat.x();
+      ret.orientation.y = quat.y();
+      ret.orientation.z = quat.z();
 
-      ret.pose.position.x = pos_stamped.x;
-      ret.pose.position.y = pos_stamped.y;
-      ret.pose.position.z = pos_stamped.z;
+      ret.position.x = pos_stamped.x;
+      ret.position.y = pos_stamped.y;
+      ret.position.z = pos_stamped.z;
 
       return ret;
     }
     //}
 
     /* find_most_probable_passthrough() method //{ */
-    std::optional<geometry_msgs::PoseStamped> find_most_probable_passthrough(const std_msgs::Header& header)
+    std::optional<geometry_msgs::Pose> find_most_probable_passthrough()
     {
       float maxval = 0.0;
       int max_x = 0, max_y = 0, max_z = 0;
@@ -994,7 +1058,7 @@ namespace uav_detect
       pt_XYZt_t pos_stamped = arena_to_global<pt_XYZt_t>(max_x, max_y, max_z);;
       pos_stamped.intensity = max_time;
 
-      const auto ret = find_detection_pose(pos_stamped, header, m_pub_chosen_neighborhood);
+      const auto ret = find_detection_pose(pos_stamped, m_pub_chosen_neighborhood);
       return ret;
     }
     //}
@@ -1022,76 +1086,6 @@ namespace uav_detect
         }
       }
       cloud_out->swap(*cloud);
-    }
-    //}
-
-    /* ray_triangle_intersect() method //{ */
-    // implemented according to https://www.scratchapixel.com/code.php?id=11&origin=/lessons/3d-basic-rendering/ray-tracing-polygon-mesh
-    bool ray_triangle_intersect(const Eigen::Vector3f& vec, const pcl::Vertices& poly, const pc_XYZ_t& mesh_cloud, const float tol = 0.1)
-    {
-      const static float eps = 1e-9;
-      assert(poly.vertices.size() == 3);
-      const auto pclA = mesh_cloud.at(poly.vertices.at(0));
-      const auto pclB = mesh_cloud.at(poly.vertices.at(1));
-      const auto pclC = mesh_cloud.at(poly.vertices.at(2));
-      const Eigen::Vector3f v0(pclA.x, pclA.y, pclA.z);
-      const Eigen::Vector3f v1(pclB.x, pclB.y, pclB.z);
-      const Eigen::Vector3f v2(pclC.x, pclC.y, pclC.z);
-      /* const Eigen::Vector3f v0 = A - B; */
-      /* const Eigen::Vector3f v1 = B - C; */
-      /* const Eigen::Vector3f v2 = C - A; */
-      const Eigen::Vector3f v0v1 = v1 - v0;
-      const Eigen::Vector3f v0v2 = v2 - v0;
-      const float dist = vec.norm();
-      const Eigen::Vector3f dir = vec / dist;
-      const Eigen::Vector3f pvec = dir.cross(v0v2);
-      const float det = v0v1.dot(pvec);
-
-      // ray and triangle are parallel if det is close to 0
-      if (std::abs(det) < eps)
-        return false;
-
-      const float inv_det = 1.0f / det;
-
-      const Eigen::Vector3f tvec = v0;
-      const float u = tvec.dot(pvec) * inv_det;
-      if (u < 0 || u > 1)
-        return false;
-
-      const Eigen::Vector3f qvec = tvec.cross(v0v1);
-      const float v = dir.dot(qvec) * inv_det;
-      if (v < 0 || u + v > 1)
-        return false;
-
-      const float int_dist = v0v2.dot(qvec) * inv_det;
-      if (int_dist + tol < dist)
-        return false;
-
-      return true;
-    }
-    //}
-
-    /* filter_mesh_raytrace() method //{ */
-    void filter_mesh_raytrace(pcl::PolygonMesh& mesh, const pc_XYZ_t& cloud)
-    {
-      pc_XYZ_t mesh_cloud;
-      pcl::fromPCLPointCloud2(mesh.cloud, mesh_cloud);
-      const float intersection_tolerance = m_drmgr_ptr->config.intersection_tolerance;
-      for (const auto& point : cloud)
-      {
-        const Eigen::Vector3f vec(point.x, point.y, point.z);
-        if (!vec.array().isFinite().all())
-          continue;
-        for (auto it = std::cbegin(mesh.polygons); it != std::cend(mesh.polygons); ++it)
-        {
-          const auto& poly = *it;
-          if (ray_triangle_intersect(vec, poly, mesh_cloud, intersection_tolerance))
-          {
-            it = mesh.polygons.erase(it);
-            it--;
-          }
-        }
-      }
     }
     //}
 
@@ -1185,198 +1179,6 @@ namespace uav_detect
       /* ret.colors; */
       return ret;
     }
-    //}
-
-    /* reconstruct_mesh_organized() method //{ */
-
-    void add_triangle(const unsigned idx0, const unsigned idx1, const unsigned idx2, std::vector<pcl::Vertices>& mesh_polygons)
-    {
-      pcl::Vertices poly;
-      poly.vertices = {idx0, idx1, idx2};
-      mesh_polygons.push_back(poly);
-    }
-
-    pcl::PolygonMesh reconstruct_mesh_organized(const pc_XYZ_t::Ptr& pc)
-    {
-      using ofm_t = pcl::OrganizedFastMesh<pc_XYZ_t::PointType>;
-      pcl::PolygonMesh mesh;
-      ofm_t ofm;
-      ofm.setInputCloud(pc);
-      ofm.setTriangulationType(ofm_t::TriangulationType::TRIANGLE_ADAPTIVE_CUT);
-      const bool use_shadowed_faces = m_drmgr_ptr->config.orgmesh_use_shadowed;
-      const float shadow_angle_tolerance = use_shadowed_faces ? -1.0f : (m_drmgr_ptr->config.orgmesh_shadow_ang_tol / 180.0f * M_PI);
-      ofm.storeShadowedFaces(use_shadowed_faces);
-      ofm.setAngleTolerance(shadow_angle_tolerance);
-      ofm.reconstruct(mesh);
-
-      // | ------------ Add the border cases to the mesh ------------ |
-      const auto pc_width = pc->width;
-      const auto pc_height = pc->height;
-      pc_XYZ_t mesh_cloud;
-      auto& mesh_polygons = mesh.polygons;
-      pcl::fromPCLPointCloud2(mesh.cloud, mesh_cloud);
-
-      /* stitch the bottom row //{ */
-      {
-        const int r_it = 0;
-        int acc = 0;
-        pt_XYZ_t centroid(0.0f, 0.0f, 0.0f);
-        for (unsigned c_it = 0; c_it < pc_width; c_it++)
-        {
-          const auto pt = pc->at(c_it, r_it);
-          if (!valid_pt(pt))
-            continue;
-          centroid.x += pt.x;
-          centroid.y += pt.y;
-          centroid.z += pt.z;
-          acc++;
-        }
-        if (acc > 0)
-        {
-          centroid.x /= acc;
-          centroid.y /= acc;
-          centroid.z /= acc;
-        }
-
-        auto idx0 = mesh_cloud.size();
-        const auto idxc = idx0;
-        mesh_cloud.push_back(centroid);
-        idx0++;
-        for (unsigned c_it1 = 0; c_it1 < pc_width - 1; c_it1++)
-        {
-          const int c_it2 = c_it1 + 1;
-          const auto pt0 = pc->at(c_it1, r_it);
-          const auto pt1 = pc->at(c_it2, r_it);
-          if (!valid_pt(pt0) || !valid_pt(pt1))
-            continue;
-          mesh_cloud.push_back(pt0);
-          mesh_cloud.push_back(pt1);
-          add_triangle(idx0, idx0 + 1, idxc, mesh_polygons);
-          idx0 += 2;
-        }
-      }
-      //}
-
-      /* stitch the last and first columns //{ */
-      {
-        const int c_it1 = pc_width - 1;
-        const int c_it2 = 0;
-        auto idx0 = mesh_cloud.size();
-        for (unsigned r_it1 = 0; r_it1 < pc_height - 1; r_it1++)
-        {
-          const int r_it2 = r_it1 + 1;
-          const auto pt0 = pc->at(c_it1, r_it1);
-          const auto pt1 = pc->at(c_it2, r_it1);
-          const auto pt2 = pc->at(c_it1, r_it2);
-          const auto pt3 = pc->at(c_it2, r_it2);
-          if (!valid_pt(pt0) || !valid_pt(pt1) || !valid_pt(pt2) || !valid_pt(pt3))
-            continue;
-          mesh_cloud.push_back(pt0);
-          mesh_cloud.push_back(pt1);
-          mesh_cloud.push_back(pt2);
-          mesh_cloud.push_back(pt3);
-          add_triangle(idx0 + 2, idx0 + 1, idx0, mesh_polygons);
-          add_triangle(idx0 + 2, idx0 + 3, idx0 + 1, mesh_polygons);
-          idx0 += 4;
-        }
-      }
-      //}
-      pcl::toPCLPointCloud2(mesh_cloud, mesh.cloud);
-      return mesh;
-    }
-
-    //}
-
-    /* segment_meshes() method //{ */
-
-    /* template <class Point_T> */
-    /* std::vector<Point_T> get_poly_pts(const pcl::Vertices& poly, const pcl::PointCloud<Point_T>& mesh_cloud) */
-    /* { */
-    /*   std::vector<Point_T> ret; */
-    /*   ret.reserve(poly.vertices.size()); */
-    /*   for (const auto idx : poly.vertices) */
-    /*     ret.push_back(mesh_cloud.at(idx)); */
-    /*   return ret; */
-    /* } */
-    using label_t = int;
-    label_t get_master_label(const label_t slave, const std::unordered_map<label_t, label_t>& equal_labels)
-    {
-      label_t master = slave;
-      auto master_it = equal_labels.find(slave);
-      while (master_it != std::end(equal_labels))
-      {
-        master = master_it->second;
-        master_it = equal_labels.find(master);
-      }
-      return master;
-    }
-
-    pcl::PointCloud<pcl::PointXYZL> segment_meshes(const pcl::PolygonMesh& mesh)
-    {
-      pcl::PointCloud<pcl::PointXYZL> ret;
-      pc_XYZ_t mesh_cloud;
-      pcl::fromPCLPointCloud2(mesh.cloud, mesh_cloud);
-      const auto& mesh_polygons = mesh.polygons;
-      const auto n_pts = mesh_cloud.size();
-
-      ret.reserve(n_pts);
-      std::vector<int> labels(n_pts, -1);
-      std::unordered_map<int, int> equal_labels;
-      int n_labels = 0;
-      for (const auto& poly : mesh_polygons)
-      {
-        int connected_label = -1;
-        for (const auto idx : poly.vertices)
-        {
-          const auto cur_label = labels.at(idx);
-          if (cur_label > -1 && connected_label != cur_label)  // a label is assigned
-          {
-            if (connected_label > -1)  // a label is already assigned to the polygon
-            {
-              const label_t master1 = get_master_label(cur_label, equal_labels);
-              const label_t master2 = get_master_label(connected_label, equal_labels);
-              if (master1 != master2)
-                equal_labels.insert({master1, master2});
-            }  // if (connected_label > -1)
-            else
-            {
-              connected_label = cur_label;
-            }  // else (connected_label > -1)
-          }    // if (cur_label > -1) // a label is assigned
-        }
-        if (connected_label <= -1)
-        {
-          connected_label = n_labels++;
-        }
-        for (const auto idx : poly.vertices)
-          labels.at(idx) = connected_label;
-      }
-
-      std::unordered_map<int, int> equal_labels_filtered;
-      for (const auto& keyval : equal_labels)
-      {
-        const auto slave = keyval.first;
-        const auto master = get_master_label(slave, equal_labels);
-        equal_labels_filtered.insert({slave, master});
-      }
-
-      for (unsigned it = 0; it < labels.size(); it++)
-      {
-        auto label = labels.at(it);
-        if (equal_labels.find(label) != std::end(equal_labels))
-          label = equal_labels.at(label);
-        const auto pt = mesh_cloud.at(it);
-        pcl::PointXYZL ptl;
-        ptl.x = pt.x;
-        ptl.y = pt.y;
-        ptl.z = pt.z;
-        ptl.label = label;
-        ret.push_back(ptl);
-      }
-
-      return ret;
-    }
-
     //}
 
     /* valid_pt() method //{ */
@@ -1950,7 +1752,8 @@ namespace uav_detect
     double m_safety_area_min_z;
     double m_safety_area_max_z;
 
-    bool m_keep_pc_organized;
+    std::map<cluster_class_t, std::pair<double&, double&>> m_cov_coeffs;
+    double m_cov_coeff_vel;
 
     //}
 
