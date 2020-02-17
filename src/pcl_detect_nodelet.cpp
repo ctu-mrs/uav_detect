@@ -566,21 +566,25 @@ namespace uav_detect
       if (!boost_area_pts.empty())
         boost_area_pts.push_back({m_safety_area_border_points.row(0).x(), m_safety_area_border_points.row(0).y()});
       m_safety_area_ring = ring(std::begin(boost_area_pts), std::end(boost_area_pts));
+      boost::geometry::correct(m_safety_area_ring);
 
       // Declare strategies
       const int points_per_circle = 36;
-      boost::geometry::strategy::buffer::distance_symmetric distance_strategy(-m_safety_area_deflation);
+      boost::geometry::strategy::buffer::distance_symmetric<double> distance_strategy(-m_safety_area_deflation);
       boost::geometry::strategy::buffer::join_round join_strategy(points_per_circle);
       boost::geometry::strategy::buffer::end_round end_strategy(points_per_circle);
       boost::geometry::strategy::buffer::point_circle circle_strategy(points_per_circle);
       boost::geometry::strategy::buffer::side_straight side_strategy;
 
+      polygon tmp;
+      tmp.outer() = (m_safety_area_ring);
+      mpolygon input;
+      input.push_back(tmp);
       mpolygon result;
       // Create the buffer of a multi polygon
-      boost::geometry::buffer(m_safety_area_ring, result, distance_strategy, side_strategy, join_strategy, end_strategy, circle_strategy);
+      boost::geometry::buffer(input, result, distance_strategy, side_strategy, join_strategy, end_strategy, circle_strategy);
       if (result.empty())
       {
-        m_safety_area_ring = ring();
         ROS_ERROR("[InitSafetyArea]: Deflated safety area is empty! This probably shouldn't happen!");
         return;
       }
