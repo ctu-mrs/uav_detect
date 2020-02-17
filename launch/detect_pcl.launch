@@ -37,9 +37,9 @@
       <remap from="~pc" to="/points_raw" />
 
       <!-- Publishers -->
-      <remap from="~map3d" to="~map3d_" />
-      <remap from="~detection" to="~detection_" />
-      <remap from="~detection_neighborhood" to="~detection_neighborhood_" />
+      <remap from="~map3d" to="~map3d" />
+      <remap from="~detection" to="~detection" />
+      <remap from="~detection_neighborhood" to="~detection_neighborhood" />
 
     </node>
   
