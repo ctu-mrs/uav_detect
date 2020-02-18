@@ -34,8 +34,8 @@
       <rosparam file="$(arg world_file)" command="load" />
     
       <!-- Subscribers -->
-      <!-- <remap from="~pc" to="/points_raw" /> -->
-      <remap from="~pc" to="/$(arg uav_name)/os1_cloud_node/points" />
+      <remap from="~pc" to="/points_raw" />
+      <!-- <remap from="~pc" to="/$(arg uav_name)/os1_cloud_node/points" /> -->
 
       <!-- Publishers -->
       <remap from="~map3d" to="~map3d" />

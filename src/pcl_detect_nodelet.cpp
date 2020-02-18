@@ -176,8 +176,8 @@ namespace uav_detect
       /* load safety area //{ */
 
       pl.load_param("safety_area/deflation", m_safety_area_deflation);
-      pl.load_param("safety_area/height/min", m_safety_area_min_z);
-      pl.load_param("safety_area/height/max", m_safety_area_max_z);
+      pl.load_param("safety_area/height/min", m_operation_area_min_z);
+      pl.load_param("safety_area/height/max", m_operation_area_max_z);
       m_safety_area_frame = pl.load_param2<std::string>("safety_area/frame_name");
       m_safety_area_border_points = pl.load_matrix_dynamic2("safety_area/safety_area", -1, 2);
       m_safety_area_init_timer = nh.createTimer(ros::Duration(1.0), &PCLDetector::init_safety_area, this);
@@ -212,7 +212,7 @@ namespace uav_detect
       m_pub_detection = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("detection", 1);
       m_pub_detection_classified = nh.advertise<visualization_msgs::MarkerArray>("detection_classified", 1);
       m_pub_detection_neighborhood = nh.advertise<sensor_msgs::PointCloud2>("detection_neighborhood", 1, true);
-      m_pub_plane = nh.advertise<visualization_msgs::MarkerArray>("plane", 1);
+      m_pub_lidar_fov = nh.advertise<visualization_msgs::Marker>("lidar_fov", 1, true);
       //}
 
       /* initialize transformer //{ */
@@ -241,9 +241,28 @@ namespace uav_detect
     //}
 
   private:
+
     /* main_loop() method //{ */
     void main_loop([[maybe_unused]] const ros::TimerEvent& evt)
     {
+      // publish the lidar FOV marker
+      /*  //{ */
+      
+      if (m_pc_sh->has_data())
+      {
+        const auto msg_ptr = m_pc_sh->peek_data();
+        std_msgs::Header header;
+        header.frame_id = msg_ptr->header.frame_id;
+        header.stamp = ros::Time::now();
+        // TODO: parametrize this shit
+        constexpr double hfov = 33.2;
+        constexpr double range = 40.0;
+        const auto msg = lidar_visualization(hfov, range, header);
+        m_pub_lidar_fov.publish(msg);
+      }
+      
+      //}
+
       if (!m_safety_area_initialized)
       {
         NODELET_WARN_STREAM_THROTTLE(1.0, "[MainLoop]: Safety area not initialized, skipping. ");
@@ -471,10 +490,6 @@ namespace uav_detect
           m_pub_chosen_position.publish(msg);
         }
 
-        /* const auto plane_opt = fit_plane(m_global_cloud); */
-        /* if (plane_opt.has_value()) */
-        /*   m_pub_plane.publish(plane_visualization(plane_opt.value(), header, tf_trans)); */
-
         // publish some debug shit
         if (m_pub_filtered_input_pc.getNumSubscribers() > 0)
           m_pub_filtered_input_pc.publish(cloud_filtered);
@@ -565,8 +580,8 @@ namespace uav_detect
       }
       if (!boost_area_pts.empty())
         boost_area_pts.push_back({m_safety_area_border_points.row(0).x(), m_safety_area_border_points.row(0).y()});
-      m_safety_area_ring = ring(std::begin(boost_area_pts), std::end(boost_area_pts));
-      boost::geometry::correct(m_safety_area_ring);
+      m_operation_area_ring = ring(std::begin(boost_area_pts), std::end(boost_area_pts));
+      boost::geometry::correct(m_operation_area_ring);
 
       // Declare strategies
       const int points_per_circle = 36;
@@ -577,7 +592,7 @@ namespace uav_detect
       boost::geometry::strategy::buffer::side_straight side_strategy;
 
       polygon tmp;
-      tmp.outer() = (m_safety_area_ring);
+      tmp.outer() = (m_operation_area_ring);
       mpolygon input;
       input.push_back(tmp);
       mpolygon result;
@@ -593,16 +608,16 @@ namespace uav_detect
         ROS_WARN("[InitSafetyArea]: Deflated safety area breaks into multiple pieces! This probably shouldn't happen! Using the first piece...");
 
       polygon poly = result.at(0);
-      m_safety_area_ring = poly.outer();
+      m_operation_area_ring = poly.outer();
 
       box bbox;
-      boost::geometry::envelope(m_safety_area_ring, bbox);
+      boost::geometry::envelope(m_operation_area_ring, bbox);
       m_arena_bbox_size_x = std::ceil(std::abs(bbox.max_corner().x() - bbox.min_corner().x()));
       m_arena_bbox_size_y = std::ceil(std::abs(bbox.max_corner().y() - bbox.min_corner().y()));
-      m_arena_bbox_size_z = std::ceil(std::abs(m_safety_area_max_z - m_safety_area_min_z));
+      m_arena_bbox_size_z = std::ceil(std::abs(m_operation_area_max_z - m_operation_area_min_z));
       m_arena_bbox_offset_x = (bbox.max_corner().x() + bbox.min_corner().x()) / 2.0;
       m_arena_bbox_offset_y = (bbox.max_corner().y() + bbox.min_corner().y()) / 2.0;
-      m_arena_bbox_offset_z = std::min(m_safety_area_max_z, m_safety_area_min_z);
+      m_arena_bbox_offset_z = std::min(m_operation_area_max_z, m_operation_area_min_z);
 
       m_map_size = m_arena_bbox_size_x * m_arena_bbox_size_y * m_arena_bbox_size_z;
       ROS_INFO("[InitSafetyArea]: Arena initialized with bounding box size [%d, %d, %d] (%d voxels).", m_arena_bbox_size_x, m_arena_bbox_size_y,
@@ -693,30 +708,32 @@ namespace uav_detect
         // make sure that the rotated z-axis is the closest to the original z-axis
         /*  //{ */
         
-        const vec3_t base_x = rotation * vec3_t::UnitX();
-        const vec3_t base_y = rotation * vec3_t::UnitY();
-        const vec3_t base_z = rotation * vec3_t::UnitZ();
-        double x_angle = anax_t(quat_t::FromTwoVectors(vec3_t::UnitZ(), base_x)).angle();
-        double y_angle = anax_t(quat_t::FromTwoVectors(vec3_t::UnitZ(), base_y)).angle();
-        double z_angle = anax_t(quat_t::FromTwoVectors(vec3_t::UnitZ(), base_z)).angle();
-        x_angle = std::min(x_angle, M_PI-x_angle);
-        y_angle = std::min(y_angle, M_PI-y_angle);
-        z_angle = std::min(z_angle, M_PI-z_angle);
-        // X is closest to the Z axis
-        if (x_angle < y_angle && x_angle < z_angle)
         {
-          rotation = anax_t(M_PI_2, base_y) * rotation;
-          height = std::abs(max_pt.x - min_pt.x);
-          width = std::max(std::abs(max_pt.z - min_pt.z), std::abs(max_pt.y - min_pt.y));
+          const vec3_t base_x = rotation * vec3_t::UnitX();
+          const vec3_t base_y = rotation * vec3_t::UnitY();
+          const vec3_t base_z = rotation * vec3_t::UnitZ();
+          double x_angle = anax_t(quat_t::FromTwoVectors(vec3_t::UnitZ(), base_x)).angle();
+          double y_angle = anax_t(quat_t::FromTwoVectors(vec3_t::UnitZ(), base_y)).angle();
+          double z_angle = anax_t(quat_t::FromTwoVectors(vec3_t::UnitZ(), base_z)).angle();
+          x_angle = std::min(x_angle, M_PI-x_angle);
+          y_angle = std::min(y_angle, M_PI-y_angle);
+          z_angle = std::min(z_angle, M_PI-z_angle);
+          // X is closest to the Z axis
+          if (x_angle < y_angle && x_angle < z_angle)
+          {
+            rotation = anax_t(M_PI_2, base_y) * rotation;
+            height = std::abs(max_pt.x - min_pt.x);
+            width = std::max(std::abs(max_pt.z - min_pt.z), std::abs(max_pt.y - min_pt.y));
+          }
+          // Y is closest to the Z axis
+          else if (y_angle < x_angle && y_angle < z_angle)
+          {
+            rotation = anax_t(-M_PI_2, base_x) * rotation;
+            height = std::abs(max_pt.y - min_pt.y);
+            width = std::max(std::abs(max_pt.z - min_pt.z), std::abs(max_pt.x - min_pt.x));
+          }
+          // otherwise Z is closest, which is fine
         }
-        // Y is closest to the Z axis
-        else if (y_angle < x_angle && y_angle < z_angle)
-        {
-          rotation = anax_t(-M_PI_2, base_x) * rotation;
-          height = std::abs(max_pt.y - min_pt.y);
-          width = std::max(std::abs(max_pt.z - min_pt.z), std::abs(max_pt.x - min_pt.x));
-        }
-        // otherwise Z is closest, which is fine
         
         //}
         quat_t quat(rotation);
@@ -785,7 +802,21 @@ namespace uav_detect
             continue;
         }
       }
-      return ballpos_result_opt;
+      // only return detections in the operation area to avoid overflows of the voxelmap
+      if (ballpos_result_opt.has_value())
+      {
+        const auto ptt = ballpos_result_opt.value().pos_stamped;
+        pt_XYZ_t pt;
+        pt.x = ptt.x;
+        pt.y = ptt.y;
+        pt.z = ptt.z;
+        if (in_operation_area(pt))
+          return ballpos_result_opt;
+        else
+          return std::nullopt;
+      }
+      else
+        return std::nullopt;
     }
     //}
 
@@ -1067,12 +1098,12 @@ namespace uav_detect
     }
     //}
 
-    /* in_safety_area() method //{ */
-    inline bool in_safety_area(const pcl::PointXYZ& pt)
+    /* in_operation_area() method //{ */
+    inline bool in_operation_area(const pcl::PointXYZ& pt)
     {
-      /* const bool in_poly = boost::geometry::covered_by(point(pt.x, pt.y), m_safety_area_ring); */
-      const bool in_poly = boost::geometry::within(point(pt.x, pt.y), m_safety_area_ring);
-      const bool height_ok = pt.z > m_safety_area_min_z && pt.z < m_safety_area_max_z;
+      /* const bool in_poly = boost::geometry::covered_by(point(pt.x, pt.y), m_operation_area_ring); */
+      const bool in_poly = boost::geometry::within(point(pt.x, pt.y), m_operation_area_ring);
+      const bool height_ok = pt.z > m_operation_area_min_z && pt.z < m_operation_area_max_z;
       return in_poly && height_ok;
     }
     //}
@@ -1084,7 +1115,7 @@ namespace uav_detect
       cloud_out->reserve(cloud->size() / 100);
       for (size_t it = 0; it < cloud->size(); it++)
       {
-        if (in_safety_area(cloud->points[it]))
+        if (in_operation_area(cloud->points[it]))
         {
           cloud_out->push_back(cloud->points[it]);
         }
@@ -1320,28 +1351,28 @@ namespace uav_detect
       /* adding safety area points //{ */
 
       // bottom border
-      for (size_t i = 0; i < m_safety_area_ring.size() - 1; i++)
+      for (size_t i = 0; i < m_operation_area_ring.size() - 1; i++)
       {
-        const auto pt1 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_min_z);
-        const auto pt2 = boost2gmsgs(m_safety_area_ring.at(i + 1), m_safety_area_min_z);
+        const auto pt1 = boost2gmsgs(m_operation_area_ring.at(i), m_operation_area_min_z);
+        const auto pt2 = boost2gmsgs(m_operation_area_ring.at(i + 1), m_operation_area_min_z);
         safety_area_marker.points.push_back(pt1);
         safety_area_marker.points.push_back(pt2);
       }
 
       // top border
-      for (size_t i = 0; i < m_safety_area_ring.size() - 1; i++)
+      for (size_t i = 0; i < m_operation_area_ring.size() - 1; i++)
       {
-        const auto pt1 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_max_z);
-        const auto pt2 = boost2gmsgs(m_safety_area_ring.at(i + 1), m_safety_area_max_z);
+        const auto pt1 = boost2gmsgs(m_operation_area_ring.at(i), m_operation_area_max_z);
+        const auto pt2 = boost2gmsgs(m_operation_area_ring.at(i + 1), m_operation_area_max_z);
         safety_area_marker.points.push_back(pt1);
         safety_area_marker.points.push_back(pt2);
       }
 
       // top/bot edges
-      for (size_t i = 0; i < m_safety_area_ring.size() - 1; i++)
+      for (size_t i = 0; i < m_operation_area_ring.size() - 1; i++)
       {
-        const auto pt1 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_min_z);
-        const auto pt2 = boost2gmsgs(m_safety_area_ring.at(i), m_safety_area_max_z);
+        const auto pt1 = boost2gmsgs(m_operation_area_ring.at(i), m_operation_area_min_z);
+        const auto pt2 = boost2gmsgs(m_operation_area_ring.at(i), m_operation_area_max_z);
         safety_area_marker.points.push_back(pt1);
         safety_area_marker.points.push_back(pt2);
       }
@@ -1681,6 +1712,72 @@ namespace uav_detect
     }
     //}
 
+    /* lidar_visualization() method //{ */
+    visualization_msgs::Marker lidar_visualization(const double hfov, const double range, const std_msgs::Header& header)
+    {
+      visualization_msgs::Marker ret;
+
+      ret.header = header;
+      ret.color.a = 0.2;
+      ret.color.r = 1.0;
+      ret.scale.x = 1.0;
+      ret.scale.y = 1.0;
+      ret.scale.z = 1.0;
+      ret.ns = "lidar FOV";
+      ret.pose.orientation.w = 1;
+      ret.pose.orientation.x = 0;
+      ret.pose.orientation.y = 0;
+      ret.pose.orientation.z = 0;
+      ret.pose.position.x = 0;
+      ret.pose.position.y = 0;
+      ret.pose.position.z = 0;
+
+      ret.type = visualization_msgs::Marker::TRIANGLE_LIST;
+      constexpr int circ_pts_per_meter_radius = 10;
+      int circ_pts = std::round(range * circ_pts_per_meter_radius);
+      if (circ_pts % 2)
+        circ_pts++;
+      geometry_msgs::Point center_pt; // just zeros - center of the sensor
+      geometry_msgs::Point prev_pt_top;
+      geometry_msgs::Point prev_pt_bot;
+      for (int it = 0; it < circ_pts; it++)
+      {
+        const float angle = M_PI / (circ_pts / 2.0f) * it;
+        geometry_msgs::Point pt_top;
+        pt_top.x = range * cos(angle);
+        pt_top.y = range * sin(angle);
+        pt_top.z = range * tan(hfov/2.0);
+
+        geometry_msgs::Point pt_bot;
+        pt_bot.x = range * cos(angle);
+        pt_bot.y = range * sin(angle);
+        pt_bot.z = -range * tan(hfov/2.0);
+        if (it != 0)
+        {
+          ret.points.push_back(prev_pt_top);
+          ret.points.push_back(pt_top);
+          ret.points.push_back(center_pt);
+
+          ret.points.push_back(prev_pt_bot);
+          ret.points.push_back(pt_bot);
+          ret.points.push_back(center_pt);
+
+          ret.points.push_back(prev_pt_bot);
+          ret.points.push_back(pt_bot);
+          ret.points.push_back(pt_top);
+
+          ret.points.push_back(prev_pt_top);
+          ret.points.push_back(pt_top);
+          ret.points.push_back(prev_pt_bot);
+        }
+        prev_pt_top = pt_top;
+        prev_pt_bot = pt_bot;
+      }
+
+      return ret;
+    }
+    //}
+
   private:
     // --------------------------------------------------------------
     // |                ROS-related member variables                |
@@ -1706,7 +1803,7 @@ namespace uav_detect
     ros::Publisher m_pub_chosen_neighborhood;
     ros::Publisher m_pub_chosen_position;
 
-    ros::Publisher m_pub_plane;
+    ros::Publisher m_pub_lidar_fov;
 
     ros::Timer m_main_loop_timer;
     ros::Timer m_info_loop_timer;
@@ -1752,9 +1849,9 @@ namespace uav_detect
     std::string m_safety_area_frame;
     Eigen::MatrixXd m_safety_area_border_points;
     double m_safety_area_deflation;
-    ring m_safety_area_ring;
-    double m_safety_area_min_z;
-    double m_safety_area_max_z;
+    ring m_operation_area_ring;
+    double m_operation_area_min_z;
+    double m_operation_area_max_z;
 
     std::map<cluster_class_t, std::pair<double&, double&>> m_cov_coeffs;
     double m_cov_coeff_vel;
