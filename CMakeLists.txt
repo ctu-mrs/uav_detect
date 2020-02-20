@@ -115,23 +115,3 @@ target_link_libraries(PCLDetector
   ${PCL_LIBRARIES}
 )
 target_include_directories(PCLDetector SYSTEM PRIVATE ${PCL_INCLUDE_DIRS})
-
-# add_library(DepthmapPreprocessor src/depthmap_preprocessing.cpp)
-# add_dependencies(DepthmapPreprocessor
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS}
-#   ${catkin_EXPORTED_TARGETS}
-# )
-# target_link_libraries(DepthmapPreprocessor
-#   ${catkin_LIBRARIES}
-#   ${OpenCV_LIBRARIES}
-# )
-
-# add_executable(dbg_display_node src/dbg_display_node.cpp)
-# add_dependencies(dbg_display_node
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS}
-#   ${catkin_EXPORTED_TARGETS}
-# )
-# target_link_libraries(dbg_display_node
-#   ${catkin_LIBRARIES}
-#   ${OpenCV_LIBRARIES}
-# )

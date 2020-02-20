@@ -1,7 +1,7 @@
 # points of the input pointcloud, closer than this size, are discarded
 filtering_leaf_size: 0.5 # meters
 
-ball_speed: 7.0 # metres per second
+ball_speed: 8.0 # metres per second
 max_speed_error: 2.0 # metres per second
 
 cov_coeffs:
@@ -17,7 +17,7 @@ cov_coeffs:
     velocity: 0.4 # radians
 
 linefit:
-  neighborhood: 3 # metres
+  neighborhood: 5 # metres
   point_max_age: 3.0 # seconds per neighborhood size
 
 classification:
@@ -34,7 +34,7 @@ plane_fit:
   ransac_threshold: 1.0 # metres
 
 safety_area:
-  deflation: 2 # metres
+  deflation: 0.0 # metres
   height:
     min: 5 # metres
     max: 15 # metres

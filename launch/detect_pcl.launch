@@ -38,17 +38,17 @@
       <!-- <remap from="~pc" to="/$(arg uav_name)/os1_cloud_node/points" /> -->
 
       <!-- Publishers -->
-      <remap from="~filtered_input_pc" to="~filtered_input_pc" />
-      <remap from="~map3d" to="~map3d" />
-      <remap from="~map3d_bounds" to="~map3d_bounds" />
-      <remap from="~operation_area" to="~operation_area" />
-      <remap from="~passthrough_position" to="~passthrough_position" />
-      <remap from="~passthrough_neighborhood" to="~passthrough_neighborhood" />
-      <remap from="~detections_pc" to="~detections_pc" />
-      <remap from="~detection" to="~detection" />
-      <remap from="~detection_classified" to="~detection_classified" />
-      <remap from="~detection_neighborhood" to="~detection_neighborhood" />
-      <remap from="~lidar_fov" to="~lidar_fov" />
+      <remap from="~filtered_input_pc" to="~filtered_input_pc_" />
+      <remap from="~map3d" to="~map3d_" />
+      <remap from="~map3d_bounds" to="~map3d_bounds_" />
+      <remap from="~operation_area" to="~operation_area_" />
+      <remap from="~passthrough_position" to="~passthrough_position_" />
+      <remap from="~passthrough_neighborhood" to="~passthrough_neighborhood_" />
+      <remap from="~detections_pc" to="~detections_pc_" />
+      <remap from="~detection" to="~detection_" />
+      <remap from="~detection_classified" to="~detection_classified_" />
+      <remap from="~detection_neighborhood" to="~detection_neighborhood_" />
+      <remap from="~lidar_fov" to="~lidar_fov_" />
 
     </node>
   
