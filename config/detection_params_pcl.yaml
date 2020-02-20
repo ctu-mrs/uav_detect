@@ -26,7 +26,7 @@ classification:
   max_detection_width: 2.0 # metres
   ball_wire_length: 1.45 # metres
   close_distance: 9 # metres
-  mav_width: 0.650 # metres
+  mav_width: 0.450 # metres
   ball_width: 0.11 # metres
 
 plane_fit:
@@ -34,7 +34,7 @@ plane_fit:
   ransac_threshold: 1.0 # metres
 
 safety_area:
-  deflation: 7 # metres
+  deflation: 2 # metres
   height:
     min: 5 # metres
     max: 15 # metres
