@@ -1,7 +1,6 @@
 # points of the input pointcloud, closer than this size, are discarded
 filtering_leaf_size: 0.5 # meters
 
-ball_speed: 8.0 # metres per second
 max_speed_error: 2.0 # metres per second
 
 cov_coeffs:
