@@ -34,9 +34,9 @@ plane_fit:
   ransac_threshold: 1.0 # metres
 
 safety_area:
-  deflation: 0.0 # metres
+  deflation: 2.5 # metres
   height:
-    min: 5 # metres
+    min: 5.5 # metres
     max: 15 # metres
 
 # points inside the box, defined by *uav_exclude_box*, relative to the sensor, are discarded
