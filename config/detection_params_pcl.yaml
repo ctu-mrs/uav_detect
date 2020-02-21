@@ -34,7 +34,7 @@ plane_fit:
   ransac_threshold: 1.0 # metres
 
 safety_area:
-  deflation: 2.5 # metres
+  deflation: 3.5 # metres
   height:
     min: 5.5 # metres
     max: 15 # metres
