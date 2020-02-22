@@ -250,10 +250,10 @@ namespace uav_detect
     /* main_loop() method //{ */
     void main_loop([[maybe_unused]] const ros::TimerEvent& evt)
     {
-      // publish the lidar FOV marker
+      // publish the lidar FOV marker (only once)
       /*  //{ */
       
-      if (m_sh_pc->has_data())
+      if (m_sh_pc->has_data() && !m_sh_pc->used_data())
       {
         const auto msg_ptr = m_sh_pc->peek_data();
         std_msgs::Header header;
