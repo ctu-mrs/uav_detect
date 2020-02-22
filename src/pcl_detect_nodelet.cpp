@@ -208,6 +208,8 @@ namespace uav_detect
       m_pub_detection_classified = nh.advertise<visualization_msgs::MarkerArray>("detection_classified", 1);
       m_pub_detection_neighborhood = nh.advertise<sensor_msgs::PointCloud2>("detection_neighborhood", 1, true);
       m_pub_lidar_fov = nh.advertise<visualization_msgs::Marker>("lidar_fov", 1, true);
+
+      m_reset_server = nh.advertiseService("reset", &PCLDetector::reset_callback, this);
       //}
 
       /* initialize transformer //{ */
@@ -217,9 +219,7 @@ namespace uav_detect
       //}
 
       m_global_cloud = boost::make_shared<pc_XYZt_t>();
-      m_global_cloud->header.frame_id = m_world_frame_id;
-      m_global_octree = boost::make_shared<octree>(1.0); // 1 metre resolution
-      m_global_octree->setInputCloud(m_global_cloud);
+      reset();
       m_last_detection_id = 0;
 
       m_det_blobs = 0;
@@ -227,13 +227,23 @@ namespace uav_detect
       m_avg_fps = 0.0f;
       m_avg_delay = 0.0f;
 
-      m_start_time = ros::Time::now();
-
       m_main_loop_timer = nh.createTimer(ros::Rate(1000), &PCLDetector::main_loop, this);
 
       cout << "----------------------------------------------------------" << std::endl;
     }
     //}
+
+  /* reset_callback() method //{ */
+
+  bool reset_callback([[maybe_unused]] std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& resp)
+  {
+    reset();
+    resp.message = "Detector reset.";
+    resp.success = true;
+    return true;
+  }
+
+  //}
 
   private:
 
@@ -264,6 +274,8 @@ namespace uav_detect
         return;
       }
 
+      std::scoped_lock lck(m_reset_mtx);
+
       /* load covariance coefficients from dynparam //{ */
       
       {
@@ -280,7 +292,6 @@ namespace uav_detect
       }
       
       //}
-
 
       if (m_sh_pc->new_data())
       {
@@ -533,91 +544,131 @@ namespace uav_detect
     void init_safety_area([[maybe_unused]] const ros::TimerEvent& evt)
     {
       assert(m_safety_area_border_points.cols() == 2);
-      const auto tf_opt = m_transformer.getTransform(m_safety_area_frame, m_world_frame_id);
-      if (!tf_opt.has_value())
       {
-        ROS_ERROR("Safety area could not be transformed!");
-        return;
-      }
-
-      const auto tf = tf_opt.value();
-      /* transform border_points //{ */
-
-      {
+        std::scoped_lock lck(m_reset_mtx);
+        const auto tf_opt = m_transformer.getTransform(m_safety_area_frame, m_world_frame_id);
+        if (!tf_opt.has_value())
+        {
+          ROS_ERROR("Safety area could not be transformed!");
+          return;
+        }
+        
+        const auto tf = tf_opt.value();
+        /* transform border_points //{ */
+        
+        {
+          for (int it = 0; it < m_safety_area_border_points.rows(); it++)
+          {
+            Eigen::Vector2d vec = m_safety_area_border_points.row(it);
+            geometry_msgs::Point pt;
+            pt.x = vec.x();
+            pt.y = vec.y();
+            pt.z = 0.0;
+            auto tfd = m_transformer.transformHeaderless(tf, pt);
+            if (!tfd.has_value())
+            {
+              ROS_ERROR("Safety area could not be transformed!");
+              return;
+            } else
+            {
+              m_safety_area_border_points.row(it).x() = tfd.value().x;
+              m_safety_area_border_points.row(it).y() = tfd.value().y;
+            }
+          }
+        }
+        
+        //}
+        
+        std::vector<point> boost_area_pts;
+        boost_area_pts.reserve(m_safety_area_border_points.rows());
         for (int it = 0; it < m_safety_area_border_points.rows(); it++)
         {
-          Eigen::Vector2d vec = m_safety_area_border_points.row(it);
-          geometry_msgs::Point pt;
-          pt.x = vec.x();
-          pt.y = vec.y();
-          pt.z = 0.0;
-          auto tfd = m_transformer.transformHeaderless(tf, pt);
-          if (!tfd.has_value())
-          {
-            ROS_ERROR("Safety area could not be transformed!");
-            return;
-          } else
-          {
-            m_safety_area_border_points.row(it).x() = tfd.value().x;
-            m_safety_area_border_points.row(it).y() = tfd.value().y;
-          }
+          const Eigen::RowVector2d row = m_safety_area_border_points.row(it);
+          boost_area_pts.push_back({row.x(), row.y()});
+        }
+        if (!boost_area_pts.empty())
+          boost_area_pts.push_back({m_safety_area_border_points.row(0).x(), m_safety_area_border_points.row(0).y()});
+        m_operation_area_ring = ring(std::begin(boost_area_pts), std::end(boost_area_pts));
+        boost::geometry::correct(m_operation_area_ring);
+        
+        // Declare strategies
+        const int points_per_circle = 36;
+        boost::geometry::strategy::buffer::distance_symmetric<double> distance_strategy(-m_safety_area_deflation);
+        boost::geometry::strategy::buffer::join_round join_strategy(points_per_circle);
+        boost::geometry::strategy::buffer::end_round end_strategy(points_per_circle);
+        boost::geometry::strategy::buffer::point_circle circle_strategy(points_per_circle);
+        boost::geometry::strategy::buffer::side_straight side_strategy;
+        
+        polygon tmp;
+        tmp.outer() = (m_operation_area_ring);
+        mpolygon input;
+        input.push_back(tmp);
+        mpolygon result;
+        // Create the buffer of a multi polygon
+        boost::geometry::buffer(input, result, distance_strategy, side_strategy, join_strategy, end_strategy, circle_strategy);
+        if (result.empty())
+        {
+          ROS_ERROR("[InitSafetyArea]: Deflated safety area is empty! This probably shouldn't happen!");
+          return;
+        }
+        
+        if (result.size() > 1)
+          ROS_WARN("[InitSafetyArea]: Deflated safety area breaks into multiple pieces! This probably shouldn't happen! Using the first piece...");
+        
+        polygon poly = result.at(0);
+        m_operation_area_ring = poly.outer();
+        
+        box bbox;
+        boost::geometry::envelope(m_operation_area_ring, bbox);
+        m_arena_bbox_size_x = std::ceil(std::abs(bbox.max_corner().x() - bbox.min_corner().x()));
+        m_arena_bbox_size_y = std::ceil(std::abs(bbox.max_corner().y() - bbox.min_corner().y()));
+        m_arena_bbox_size_z = std::ceil(std::abs(m_operation_area_max_z - m_operation_area_min_z));
+        m_arena_bbox_offset_x = (bbox.max_corner().x() + bbox.min_corner().x()) / 2.0;
+        m_arena_bbox_offset_y = (bbox.max_corner().y() + bbox.min_corner().y()) / 2.0;
+        m_arena_bbox_offset_z = std::min(m_operation_area_max_z, m_operation_area_min_z);
+        
+        m_map_size = m_arena_bbox_size_x * m_arena_bbox_size_y * m_arena_bbox_size_z;
+        ROS_INFO("[InitSafetyArea]: Arena initialized with bounding box size [%d, %d, %d] (%d voxels).", m_arena_bbox_size_x, m_arena_bbox_size_y,
+                 m_arena_bbox_size_z, m_map_size);
+        
+        m_safety_area_init_timer.stop();
+        m_safety_area_initialized = true;
+        
+        std_msgs::Header header;
+        header.frame_id = m_world_frame_id;
+        header.stamp = ros::Time::now();
+        
+        {
+          auto msg = oparea_visualization(header);
+          m_pub_oparea.publish(msg);
+        }
+        
+        {
+          auto msg = map3d_bounds_visualization(header);
+          m_pub_map3d_bounds.publish(msg);
         }
       }
 
-      //}
+      // reset/initialize arena map, detection pcls etc.
+      reset();
+    }
+    //}
 
-      std::vector<point> boost_area_pts;
-      boost_area_pts.reserve(m_safety_area_border_points.rows());
-      for (int it = 0; it < m_safety_area_border_points.rows(); it++)
-      {
-        const Eigen::RowVector2d row = m_safety_area_border_points.row(it);
-        boost_area_pts.push_back({row.x(), row.y()});
-      }
-      if (!boost_area_pts.empty())
-        boost_area_pts.push_back({m_safety_area_border_points.row(0).x(), m_safety_area_border_points.row(0).y()});
-      m_operation_area_ring = ring(std::begin(boost_area_pts), std::end(boost_area_pts));
-      boost::geometry::correct(m_operation_area_ring);
+  private:
+  /* reset() method //{ */
 
-      // Declare strategies
-      const int points_per_circle = 36;
-      boost::geometry::strategy::buffer::distance_symmetric<double> distance_strategy(-m_safety_area_deflation);
-      boost::geometry::strategy::buffer::join_round join_strategy(points_per_circle);
-      boost::geometry::strategy::buffer::end_round end_strategy(points_per_circle);
-      boost::geometry::strategy::buffer::point_circle circle_strategy(points_per_circle);
-      boost::geometry::strategy::buffer::side_straight side_strategy;
+  void reset()
+  {
+    std::scoped_lock lck(m_reset_mtx);
+    m_global_cloud->clear();
+    m_global_cloud->header.frame_id = m_world_frame_id;
+    m_global_octree = boost::make_shared<octree>(1.0); // 1 metre resolution
+    m_global_octree->setInputCloud(m_global_cloud);
+    m_start_time = ros::Time::now();
+    ROS_WARN("[PCLDetector]: Global pointcloud, octree, and time reset!");
 
-      polygon tmp;
-      tmp.outer() = (m_operation_area_ring);
-      mpolygon input;
-      input.push_back(tmp);
-      mpolygon result;
-      // Create the buffer of a multi polygon
-      boost::geometry::buffer(input, result, distance_strategy, side_strategy, join_strategy, end_strategy, circle_strategy);
-      if (result.empty())
-      {
-        ROS_ERROR("[InitSafetyArea]: Deflated safety area is empty! This probably shouldn't happen!");
-        return;
-      }
-
-      if (result.size() > 1)
-        ROS_WARN("[InitSafetyArea]: Deflated safety area breaks into multiple pieces! This probably shouldn't happen! Using the first piece...");
-
-      polygon poly = result.at(0);
-      m_operation_area_ring = poly.outer();
-
-      box bbox;
-      boost::geometry::envelope(m_operation_area_ring, bbox);
-      m_arena_bbox_size_x = std::ceil(std::abs(bbox.max_corner().x() - bbox.min_corner().x()));
-      m_arena_bbox_size_y = std::ceil(std::abs(bbox.max_corner().y() - bbox.min_corner().y()));
-      m_arena_bbox_size_z = std::ceil(std::abs(m_operation_area_max_z - m_operation_area_min_z));
-      m_arena_bbox_offset_x = (bbox.max_corner().x() + bbox.min_corner().x()) / 2.0;
-      m_arena_bbox_offset_y = (bbox.max_corner().y() + bbox.min_corner().y()) / 2.0;
-      m_arena_bbox_offset_z = std::min(m_operation_area_max_z, m_operation_area_min_z);
-
-      m_map_size = m_arena_bbox_size_x * m_arena_bbox_size_y * m_arena_bbox_size_z;
-      ROS_INFO("[InitSafetyArea]: Arena initialized with bounding box size [%d, %d, %d] (%d voxels).", m_arena_bbox_size_x, m_arena_bbox_size_y,
-               m_arena_bbox_size_z, m_map_size);
-
+    if (m_safety_area_initialized)
+    {
       // initialize the frequency map
       m_map3d.resize(m_map_size);
       for (int it = 0; it < m_map_size; it++)
@@ -628,26 +679,12 @@ namespace uav_detect
       for (int it = 0; it < m_map_size; it++)
         m_map3d_last_update.at(it) = std::numeric_limits<float>::lowest();
 
-      m_safety_area_init_timer.stop();
-      m_safety_area_initialized = true;
-
-      std_msgs::Header header;
-      header.frame_id = m_world_frame_id;
-      header.stamp = ros::Time::now();
-
-      {
-        auto msg = oparea_visualization(header);
-        m_pub_oparea.publish(msg);
-      }
-
-      {
-        auto msg = map3d_bounds_visualization(header);
-        m_pub_map3d_bounds.publish(msg);
-      }
+      ROS_WARN("[PCLDetector]: Arena map reset!");
     }
-    //}
+  }
 
-  private:
+  //}
+
     /* find_ball_position() method //{ */
     enum cluster_class_t
     {
@@ -1807,6 +1844,8 @@ namespace uav_detect
 
     ros::Publisher m_pub_lidar_fov;
 
+    ros::ServiceServer m_reset_server;
+
     ros::Timer m_main_loop_timer;
     ros::Timer m_info_loop_timer;
     ros::Timer m_safety_area_init_timer;
@@ -1863,6 +1902,8 @@ namespace uav_detect
     // --------------------------------------------------------------
     // |                   Other member variables                   |
     // --------------------------------------------------------------
+
+    std::mutex m_reset_mtx;
 
     bool m_safety_area_initialized;
     uint32_t m_last_detection_id;
