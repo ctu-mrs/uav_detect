@@ -19,9 +19,6 @@
 #include <pcl_ros/point_cloud.h>
 #include <pcl_ros/transforms.h>
 #include <pcl_conversions/pcl_conversions.h>
-#include <pcl/surface/organized_fast_mesh.h>
-#include <pcl/surface/gp3.h>
-#include <pcl/surface/concave_hull.h>
 
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/crop_box.h>
@@ -42,7 +39,6 @@
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <uav_detect/DetectionParamsConfig.h>
-#include <mesh_sampling.h>
 
 #include <eigen_conversions/eigen_msg.h>
 /* #include <PointXYZt.h> */
@@ -149,7 +145,6 @@ namespace uav_detect
       const auto uav_name = pl.load_param2<std::string>("uav_name");
       pl.load_param("world_frame_id", m_world_frame_id);
 
-      pl.load_param("ball_speed", m_ball_speed);
       pl.load_param("max_speed_error", m_max_speed_error);
 
       pl.load_param("linefit/neighborhood", m_linefit_neighborhood);
@@ -197,8 +192,8 @@ namespace uav_detect
       m_tf_listener_ptr = std::make_unique<tf2_ros::TransformListener>(m_tf_buffer);
       // Initialize subscribers
       mrs_lib::SubscribeMgr smgr(nh, m_node_name);
-      const bool subs_time_consistent = false;
-      m_pc_sh = smgr.create_handler<pc_XYZ_t, subs_time_consistent>("pc", ros::Duration(5.0));
+      m_sh_pc = smgr.create_handler<pc_XYZ_t>("pc", ros::Duration(5.0));
+      m_sh_ball_speed = smgr.create_handler<std_msgs::Float64>("gt_ball_speed", ros::Duration(5.0));
       // Initialize publishers
       /* m_detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); */
       /* m_detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1); */
@@ -248,9 +243,9 @@ namespace uav_detect
       // publish the lidar FOV marker
       /*  //{ */
       
-      if (m_pc_sh->has_data())
+      if (m_sh_pc->has_data())
       {
-        const auto msg_ptr = m_pc_sh->peek_data();
+        const auto msg_ptr = m_sh_pc->peek_data();
         std_msgs::Header header;
         header.frame_id = msg_ptr->header.frame_id;
         header.stamp = ros::Time::now();
@@ -287,13 +282,13 @@ namespace uav_detect
       //}
 
 
-      if (m_pc_sh->new_data())
+      if (m_sh_pc->new_data())
       {
         const ros::WallTime start_t = ros::WallTime::now();
 
         NODELET_INFO_STREAM("[MainLoop]: Processing new data --------------------------------------------------------- ");
 
-        pc_XYZ_t::ConstPtr cloud = m_pc_sh->get_data();
+        pc_XYZ_t::ConstPtr cloud = m_sh_pc->get_data();
         ros::Time msg_stamp;
         pcl_conversions::fromPCL(cloud->header.stamp, msg_stamp);
         std::string cloud_frame_id = cloud->header.frame_id;  // cut off the first forward slash
@@ -1009,16 +1004,22 @@ namespace uav_detect
       // if no velocity estimate could be obtained from the inliers, return
       if (mean_vel.isZero() || mean_vel_weight == 0)
       {
-        ROS_WARN("[EstimateVelocity]: Unable to estimate speed from inliers!");
+        ROS_WARN("[EstimateVelocity]: Unable to estimate speed from inliers (is zero)!");
         return std::nullopt;
       }
       mean_vel /= mean_vel_weight;
 
+      if (!m_sh_ball_speed->has_data())
+      {
+        ROS_WARN("[EstimateVelocity]: Haven't received expected ball speed information - cannot confirm detection! Skipping.");
+        return std::nullopt;
+      }
+      const auto ball_speed = m_sh_ball_speed->get_data()->data;
       // check if the estimated speed makes sense
       const double est_speed = mean_vel.norm();
-      if (std::abs(est_speed - m_ball_speed) > m_max_speed_error)
+      if (std::abs(est_speed - ball_speed) > m_max_speed_error)
       {
-        ROS_ERROR("[EstimateVelocity]: Object speed is too different from the expected speed (%.2fm/s vs %.2fm/s)!", est_speed, m_ball_speed);
+        ROS_ERROR("[EstimateVelocity]: Object speed is too different from the expected speed (%.2fm/s vs %.2fm/s)!", est_speed, ball_speed);
         return std::nullopt;
       }
 
@@ -1787,7 +1788,8 @@ namespace uav_detect
     std::unique_ptr<drmgr_t> m_drmgr_ptr;
     tf2_ros::Buffer m_tf_buffer;
     std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
-    mrs_lib::SubscribeHandlerPtr<pc_XYZ_t> m_pc_sh;
+    mrs_lib::SubscribeHandlerPtr<pc_XYZ_t> m_sh_pc;
+    mrs_lib::SubscribeHandlerPtr<std_msgs::Float64> m_sh_ball_speed;
 
     ros::Publisher m_pub_map3d;
     ros::Publisher m_pub_map3d_bounds;
@@ -1822,7 +1824,6 @@ namespace uav_detect
 
     std::string m_world_frame_id;
 
-    double m_ball_speed;       // metres per second
     double m_max_speed_error;  // metres per second
     float m_linefit_neighborhood;
     float m_linefit_point_max_age;

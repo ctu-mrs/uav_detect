@@ -5,6 +5,10 @@
   <arg name="WORLD_FILE" default="$(optenv WORLD_FILE)" />
   <arg name="WORLD_NAME" default="$(optenv WORLD_NAME)" />
 
+  <arg name="rosbag_remap" default="false" />
+  <arg unless="$(arg rosbag_remap)" name="suf" value=""/>
+  <arg     if="$(arg rosbag_remap)" name="suf" value="_"/>
+
   <arg name="debug" default="false" />
   <arg unless="$(arg debug)" name="launch_prefix" value=""/>
   <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch"/>
@@ -35,20 +39,21 @@
     
       <!-- Subscribers -->
       <remap from="~pc" to="/points_raw" />
+      <remap from="~gt_ball_speed" to="balloon_filter/gt_ball_speed$(arg suf)" />
       <!-- <remap from="~pc" to="/$(arg uav_name)/os1_cloud_node/points" /> -->
 
       <!-- Publishers -->
-      <remap from="~filtered_input_pc" to="~filtered_input_pc" />
-      <remap from="~map3d" to="~map3d" />
-      <remap from="~map3d_bounds" to="~map3d_bounds" />
-      <remap from="~operation_area" to="~operation_area" />
-      <remap from="~passthrough_position" to="~passthrough_position" />
-      <remap from="~passthrough_neighborhood" to="~passthrough_neighborhood" />
-      <remap from="~detections_pc" to="~detections_pc" />
-      <remap from="~detection" to="~detection" />
-      <remap from="~detection_classified" to="~detection_classified" />
-      <remap from="~detection_neighborhood" to="~detection_neighborhood" />
-      <remap from="~lidar_fov" to="~lidar_fov" />
+      <remap from="~filtered_input_pc" to="~filtered_input_pc$(arg suf)" />
+      <remap from="~map3d" to="~map3d$(arg suf)" />
+      <remap from="~map3d_bounds" to="~map3d_bounds$(arg suf)" />
+      <remap from="~operation_area" to="~operation_area$(arg suf)" />
+      <remap from="~passthrough_position" to="~passthrough_position$(arg suf)" />
+      <remap from="~passthrough_neighborhood" to="~passthrough_neighborhood$(arg suf)" />
+      <remap from="~detections_pc" to="~detections_pc$(arg suf)" />
+      <remap from="~detection" to="~detection$(arg suf)" />
+      <remap from="~detection_classified" to="~detection_classified$(arg suf)" />
+      <remap from="~detection_neighborhood" to="~detection_neighborhood$(arg suf)" />
+      <remap from="~lidar_fov" to="~lidar_fov$(arg suf)" />
 
     </node>
   
