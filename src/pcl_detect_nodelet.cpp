@@ -380,7 +380,7 @@ namespace uav_detect
         {
           std::vector<pcl::PointIndices> cluster_indices;
           pcl::EuclideanClusterExtraction<pt_XYZ_t> ec;
-          ec.setClusterTolerance(2.0);
+          ec.setClusterTolerance(m_classif_max_detection_height);
           ec.setMinClusterSize(1);
           ec.setMaxClusterSize(25000);
           ec.setInputCloud(cloud_filtered);
