@@ -33,10 +33,17 @@ plane_fit:
   ransac_threshold: 1.0 # metres
 
 safety_area:
-  deflation: 6.5 # metres
+  offset: [5.0, 5.0]
+  deflation: 4.5 # metres
   height:
-    min: 5.5 # metres
+    min: 6.5 # metres
     max: 18 # metres
+  left_cut_plane:
+    normal: [-5.0, 2.0]
+    offset: 5.0
+  right_cut_plane:
+    normal: [-5.0, 2.0]
+    offset: -25
 
 # points inside the box, defined by *uav_exclude_box*, relative to the sensor, are discarded
 # this is used to filter out the MAV itself from the pointcloud

@@ -66,6 +66,7 @@ namespace uav_detect
   using mpolygon = boost::geometry::model::multi_polygon<polygon>;
   using box = boost::geometry::model::box<point>;
 
+  using vec2_t = Eigen::Vector2d;
   using vec3_t = Eigen::Vector3f;
   using vec4_t = Eigen::Vector4f;
   using quat_t = Eigen::Quaternionf;
@@ -175,6 +176,12 @@ namespace uav_detect
       pl.load_param("safety_area/height/max", m_operation_area_max_z);
       m_safety_area_frame = pl.load_param2<std::string>("safety_area/frame_name");
       m_safety_area_border_points = pl.load_matrix_dynamic2("safety_area/safety_area", -1, 2);
+      pl.load_matrix_static<2, 1>("safety_area/left_cut_plane/normal", m_safety_area_left_cut_plane_normal);
+      pl.load_param("safety_area/left_cut_plane/offset", m_safety_area_left_cut_plane_offset);
+      pl.load_matrix_static<2, 1>("safety_area/right_cut_plane/normal", m_safety_area_right_cut_plane_normal);
+      pl.load_param("safety_area/right_cut_plane/offset", m_safety_area_right_cut_plane_offset);
+      pl.load_matrix_static<2, 1>("safety_area/offset", m_safety_area_offset);
+
       m_safety_area_init_timer = nh.createTimer(ros::Duration(1.0), &PCLDetector::init_safety_area, this);
 
       //}
@@ -599,26 +606,69 @@ namespace uav_detect
         boost::geometry::strategy::buffer::point_circle circle_strategy(points_per_circle);
         boost::geometry::strategy::buffer::side_straight side_strategy;
         
+        // some helper variables
         polygon tmp;
         tmp.outer() = (m_operation_area_ring);
         mpolygon input;
         input.push_back(tmp);
         mpolygon result;
-        // Create the buffer of a multi polygon
+        polygon poly;
+        box bbox;
+
+        // Deflate the safety area plygon
         boost::geometry::buffer(input, result, distance_strategy, side_strategy, join_strategy, end_strategy, circle_strategy);
         if (result.empty())
         {
           ROS_ERROR("[InitSafetyArea]: Deflated safety area is empty! This probably shouldn't happen!");
           return;
         }
-        
         if (result.size() > 1)
           ROS_WARN("[InitSafetyArea]: Deflated safety area breaks into multiple pieces! This probably shouldn't happen! Using the first piece...");
-        
-        polygon poly = result.at(0);
+        poly = result.at(0);
         m_operation_area_ring = poly.outer();
+
+        // cut the polygon from left and right
+        // WARNING: prasarny nasleduji
+        const vec2_t left_normal = m_safety_area_left_cut_plane_normal.normalized();
+        const vec2_t left_dir(left_normal.y(), -left_normal.x());
+        const vec2_t left_pos = m_safety_area_left_cut_plane_offset*left_normal;
+        const vec2_t left_pt1 = left_pos + 1000.0*left_dir;
+        const vec2_t left_pt2 = left_pos - 1000.0*left_dir;
+        const point left_pt1b(left_pt1.x(), left_pt1.y());
+        const point left_pt2b(left_pt2.x(), left_pt2.y());
+
+        const vec2_t right_normal = m_safety_area_right_cut_plane_normal.normalized();
+        const vec2_t right_dir(right_normal.y(), -right_normal.x());
+        const vec2_t right_pos = m_safety_area_right_cut_plane_offset*right_normal;
+        const vec2_t right_pt1 = right_pos + 1000.0*right_dir;
+        const vec2_t right_pt2 = right_pos - 1000.0*right_dir;
+        const point right_pt1b(right_pt1.x(), right_pt1.y());
+        const point right_pt2b(right_pt2.x(), right_pt2.y());
+
+        ring mask_ring;
+        mask_ring.push_back(left_pt1b);
+        mask_ring.push_back(right_pt1b);
+        mask_ring.push_back(right_pt2b);
+        mask_ring.push_back(left_pt2b);
+        boost::geometry::correct(mask_ring);
+
+        result.clear();
+        boost::geometry::intersection(m_operation_area_ring, mask_ring, result);
+        if (result.empty())
+        {
+          ROS_ERROR("[InitSafetyArea]: Cutted safety area is empty! This probably shouldn't happen!");
+          return;
+        }
+        if (result.size() > 1)
+          ROS_WARN("[InitSafetyArea]: Cutted safety area breaks into multiple pieces! This probably shouldn't happen! Using the first piece...");
+        poly = result.at(0);
+        m_operation_area_ring = poly.outer();
+
+        // apply the safety area offset
+        point offset(m_safety_area_offset.x(), m_safety_area_offset.y());
+        for (auto& pt : m_operation_area_ring)
+          boost::geometry::add_point(pt, offset);
         
-        box bbox;
         boost::geometry::envelope(m_operation_area_ring, bbox);
         m_arena_bbox_size_x = std::ceil(std::abs(bbox.max_corner().x() - bbox.min_corner().x()));
         m_arena_bbox_size_y = std::ceil(std::abs(bbox.max_corner().y() - bbox.min_corner().y()));
@@ -1892,6 +1942,11 @@ namespace uav_detect
     ring m_operation_area_ring;
     double m_operation_area_min_z;
     double m_operation_area_max_z;
+    Eigen::Vector2d m_safety_area_left_cut_plane_normal;
+    double m_safety_area_left_cut_plane_offset;
+    Eigen::Vector2d m_safety_area_right_cut_plane_normal;
+    double m_safety_area_right_cut_plane_offset;
+    Eigen::Vector2d m_safety_area_offset;
 
     std::map<cluster_class_t, std::pair<double&, double&>> m_cov_coeffs;
     double m_cov_coeff_vel;
