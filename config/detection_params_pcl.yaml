@@ -36,14 +36,14 @@ safety_area:
   offset: [3.0, 3.0]
   deflation: 4.5 # metres
   height:
-    min: 6.5 # metres
+    min: 3.5 # metres
     max: 18 # metres
   left_cut_plane:
     normal: [-5.0, 2.0]
-    offset: 5.0
+    offset:  999.0
   right_cut_plane:
     normal: [-5.0, 2.0]
-    offset: -25
+    offset: -999.0
 
 # points inside the box, defined by *uav_exclude_box*, relative to the sensor, are discarded
 # this is used to filter out the MAV itself from the pointcloud

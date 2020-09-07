@@ -13,8 +13,8 @@
   <arg unless="$(arg debug)" name="launch_prefix" value=""/>
   <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch"/>
 
-  <arg if="$(eval arg('WORLD_FILE') == '' and arg('WORLD_NAME') != '')" name="world_file" value="$(find mrs_general)/config/world_$(env WORLD_NAME).yaml" />
-  <arg if="$(eval arg('WORLD_FILE') == '' and arg('WORLD_NAME') == '' and arg('RUN_TYPE') == 'simulation')" name="world_file" value="$(find mrs_general)/config/world_simulation.yaml" />
+  <arg if="$(eval arg('WORLD_FILE') == '' and arg('WORLD_NAME') != '')" name="world_file" value="$(find mrs_uav_general)/config/worlds/world_$(env WORLD_NAME).yaml" />
+  <arg if="$(eval arg('WORLD_FILE') == '' and arg('WORLD_NAME') == '' and arg('RUN_TYPE') == 'simulation')" name="world_file" value="$(find mrs_uav_general)/config/worlds/world_simulation.yaml" />
   <arg if="$(eval arg('WORLD_FILE') != '')" name="world_file" value="$(arg WORLD_FILE)" />
 
   <arg name="ignore_mask" default="$(optenv IGNORE_MASK false)" />
@@ -38,7 +38,7 @@
       <rosparam file="$(arg world_file)" command="load" />
     
       <!-- Subscribers -->
-      <remap from="~pc" to="/points_raw" />
+      <remap from="~pc" to="os1_cloud_node/points" />
       <remap from="~gt_ball_speed" to="balloon_filter/gt_ball_speed$(arg suf)" />
       <!-- <remap from="~pc" to="/$(arg uav_name)/os1_cloud_node/points" /> -->
 

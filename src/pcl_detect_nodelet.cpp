@@ -143,51 +143,51 @@ namespace uav_detect
       mrs_lib::ParamLoader pl(nh, m_node_name);
       // LOAD STATIC PARAMETERS
       NODELET_INFO("Loading static parameters:");
-      const auto uav_name = pl.load_param2<std::string>("uav_name");
-      pl.load_param("world_frame_id", m_world_frame_id);
+      const auto uav_name = pl.loadParam2<std::string>("uav_name");
+      pl.loadParam("world_frame_id", m_world_frame_id);
 
-      pl.load_param("max_speed_error", m_max_speed_error);
+      pl.loadParam("max_speed_error", m_max_speed_error);
 
-      pl.load_param("linefit/neighborhood", m_linefit_neighborhood);
-      pl.load_param("linefit/point_max_age", m_linefit_point_max_age);
+      pl.loadParam("linefit/neighborhood", m_linefit_neighborhood);
+      pl.loadParam("linefit/point_max_age", m_linefit_point_max_age);
 
-      pl.load_param("classification/max_detection_height", m_classif_max_detection_height);
-      pl.load_param("classification/max_detection_width", m_classif_max_detection_width);
-      pl.load_param("classification/max_mav_height", m_classif_max_mav_height);
-      pl.load_param("classification/ball_wire_length", m_classif_ball_wire_length);
-      pl.load_param("classification/close_distance", m_classif_close_dist);
-      pl.load_param("classification/mav_width", m_classif_mav_width);
-      pl.load_param("classification/ball_width", m_classif_ball_width);
+      pl.loadParam("classification/max_detection_height", m_classif_max_detection_height);
+      pl.loadParam("classification/max_detection_width", m_classif_max_detection_width);
+      pl.loadParam("classification/max_mav_height", m_classif_max_mav_height);
+      pl.loadParam("classification/ball_wire_length", m_classif_ball_wire_length);
+      pl.loadParam("classification/close_distance", m_classif_close_dist);
+      pl.loadParam("classification/mav_width", m_classif_mav_width);
+      pl.loadParam("classification/ball_width", m_classif_ball_width);
 
-      pl.load_param("plane_fit/min_points", m_plane_fit_min_points);
-      pl.load_param("plane_fit/ransac_threshold", m_plane_fit_ransac_threshold);
+      pl.loadParam("plane_fit/min_points", m_plane_fit_min_points);
+      pl.loadParam("plane_fit/ransac_threshold", m_plane_fit_ransac_threshold);
 
-      pl.load_param("exclude_box/offset/x", m_exclude_box_offset_x);
-      pl.load_param("exclude_box/offset/y", m_exclude_box_offset_y);
-      pl.load_param("exclude_box/offset/z", m_exclude_box_offset_z);
-      pl.load_param("exclude_box/size/x", m_exclude_box_size_x);
-      pl.load_param("exclude_box/size/y", m_exclude_box_size_y);
-      pl.load_param("exclude_box/size/z", m_exclude_box_size_z);
+      pl.loadParam("exclude_box/offset/x", m_exclude_box_offset_x);
+      pl.loadParam("exclude_box/offset/y", m_exclude_box_offset_y);
+      pl.loadParam("exclude_box/offset/z", m_exclude_box_offset_z);
+      pl.loadParam("exclude_box/size/x", m_exclude_box_size_x);
+      pl.loadParam("exclude_box/size/y", m_exclude_box_size_y);
+      pl.loadParam("exclude_box/size/z", m_exclude_box_size_z);
 
       /* load safety area //{ */
 
-      pl.load_param("safety_area/deflation", m_safety_area_deflation);
-      pl.load_param("safety_area/height/min", m_operation_area_min_z);
-      pl.load_param("safety_area/height/max", m_operation_area_max_z);
-      m_safety_area_frame = pl.load_param2<std::string>("safety_area/frame_name");
-      m_safety_area_border_points = pl.load_matrix_dynamic2("safety_area/safety_area", -1, 2);
-      pl.load_matrix_static<2, 1>("safety_area/left_cut_plane/normal", m_safety_area_left_cut_plane_normal);
-      pl.load_param("safety_area/left_cut_plane/offset", m_safety_area_left_cut_plane_offset);
-      pl.load_matrix_static<2, 1>("safety_area/right_cut_plane/normal", m_safety_area_right_cut_plane_normal);
-      pl.load_param("safety_area/right_cut_plane/offset", m_safety_area_right_cut_plane_offset);
-      pl.load_matrix_static<2, 1>("safety_area/offset", m_safety_area_offset);
+      pl.loadParam("safety_area/deflation", m_safety_area_deflation);
+      pl.loadParam("safety_area/height/min", m_operation_area_min_z);
+      pl.loadParam("safety_area/height/max", m_operation_area_max_z);
+      m_safety_area_frame = pl.loadParam2<std::string>("safety_area/frame_name");
+      m_safety_area_border_points = pl.loadMatrixDynamic2("safety_area/safety_area", -1, 2);
+      pl.loadMatrixStatic<2, 1>("safety_area/left_cut_plane/normal", m_safety_area_left_cut_plane_normal);
+      pl.loadParam("safety_area/left_cut_plane/offset", m_safety_area_left_cut_plane_offset);
+      pl.loadMatrixStatic<2, 1>("safety_area/right_cut_plane/normal", m_safety_area_right_cut_plane_normal);
+      pl.loadParam("safety_area/right_cut_plane/offset", m_safety_area_right_cut_plane_offset);
+      pl.loadMatrixStatic<2, 1>("safety_area/offset", m_safety_area_offset);
 
       m_safety_area_init_timer = nh.createTimer(ros::Duration(1.0), &PCLDetector::init_safety_area, this);
 
       //}
       
       // CHECK LOADING STATUS
-      if (!pl.loaded_successfully())
+      if (!pl.loadedSuccessfully())
       {
         NODELET_ERROR("Some compulsory parameters were not loaded successfully, ending the node");
         ros::shutdown();
@@ -198,9 +198,13 @@ namespace uav_detect
       // Initialize transform listener
       m_tf_listener_ptr = std::make_unique<tf2_ros::TransformListener>(m_tf_buffer);
       // Initialize subscribers
-      mrs_lib::SubscribeMgr smgr(nh, m_node_name);
-      m_sh_pc = smgr.create_handler<pc_XYZ_t>("pc", ros::Duration(5.0));
-      m_sh_ball_speed = smgr.create_handler<std_msgs::Float64>("gt_ball_speed", ros::Duration(5.0));
+      mrs_lib::SubscribeHandlerOptions shopts;
+      shopts.nh = nh;
+      shopts.node_name = m_node_name;
+      shopts.no_message_timeout = ros::Duration(5.0);
+
+      mrs_lib::construct_object(m_sh_pc, shopts, "pc");
+      mrs_lib::construct_object(m_sh_ball_speed, shopts, "gt_ball_speed");
       // Initialize publishers
       /* m_detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); */
       /* m_detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1); */
@@ -260,9 +264,9 @@ namespace uav_detect
       // publish the lidar FOV marker (only once)
       /*  //{ */
       
-      if (m_sh_pc->has_data() && !m_sh_pc->used_data())
+      if (m_sh_pc.hasMsg() && !m_sh_pc.usedMsg())
       {
-        const auto msg_ptr = m_sh_pc->peek_data();
+        const auto msg_ptr = m_sh_pc.peekMsg();
         std_msgs::Header header;
         header.frame_id = msg_ptr->header.frame_id;
         header.stamp = ros::Time::now();
@@ -300,13 +304,13 @@ namespace uav_detect
       
       //}
 
-      if (m_sh_pc->new_data())
+      if (m_sh_pc.newMsg())
       {
         const ros::WallTime start_t = ros::WallTime::now();
 
         NODELET_INFO_STREAM("[MainLoop]: Processing new data --------------------------------------------------------- ");
 
-        pc_XYZ_t::ConstPtr cloud = m_sh_pc->get_data();
+        pc_XYZ_t::ConstPtr cloud = m_sh_pc.getMsg();
         ros::Time msg_stamp;
         pcl_conversions::fromPCL(cloud->header.stamp, msg_stamp);
         std::string cloud_frame_id = cloud->header.frame_id;  // cut off the first forward slash
@@ -388,7 +392,7 @@ namespace uav_detect
           std::vector<pcl::PointIndices> cluster_indices;
           pcl::EuclideanClusterExtraction<pt_XYZ_t> ec;
           ec.setClusterTolerance(m_classif_max_detection_height);
-          ec.setMinClusterSize(1);
+          ec.setMinClusterSize(m_min_cluster_size);
           ec.setMaxClusterSize(25000);
           ec.setInputCloud(cloud_filtered);
           ec.extract(cluster_indices);
@@ -1096,12 +1100,12 @@ namespace uav_detect
       }
       mean_vel /= mean_vel_weight;
 
-      if (!m_sh_ball_speed->has_data())
+      if (!m_sh_ball_speed.hasMsg())
       {
         ROS_WARN("[EstimateVelocity]: Haven't received expected ball speed information - cannot confirm detection! Skipping.");
         return std::nullopt;
       }
-      const auto ball_speed = m_sh_ball_speed->get_data()->data;
+      const auto ball_speed = m_sh_ball_speed.getMsg()->data;
       // check if the estimated speed makes sense
       const double est_speed = mean_vel.norm();
       if (std::abs(est_speed - ball_speed) > m_max_speed_error)
@@ -1875,8 +1879,8 @@ namespace uav_detect
     std::unique_ptr<drmgr_t> m_drmgr_ptr;
     tf2_ros::Buffer m_tf_buffer;
     std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
-    mrs_lib::SubscribeHandlerPtr<pc_XYZ_t> m_sh_pc;
-    mrs_lib::SubscribeHandlerPtr<std_msgs::Float64> m_sh_ball_speed;
+    mrs_lib::SubscribeHandler<pc_XYZ_t> m_sh_pc;
+    mrs_lib::SubscribeHandler<std_msgs::Float64> m_sh_ball_speed;
 
     ros::Publisher m_pub_map3d;
     ros::Publisher m_pub_map3d_bounds;
