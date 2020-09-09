@@ -35,6 +35,7 @@
 #include <pcl/sample_consensus/sac_model_line.h>
 
 #include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/point_cloud2_iterator.h>
 #include <sensor_msgs/RegionOfInterest.h>
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
@@ -99,12 +100,21 @@ namespace uav_detect
 
     /* ball_det_t //{ */
     
+    enum cluster_class_t
+    {
+      mav,
+      ball,
+      mav_with_ball,
+      unknown
+    };
+
     struct ball_det_t
     {
       using cov_t = Eigen::Matrix3f;
       pt_XYZ_t pos_stamped;
       pc_XYZ_t::Ptr cloud;
       cov_t cov;
+      cluster_class_t cclass;
     };
     
     //}
@@ -495,6 +505,29 @@ namespace uav_detect
             set_rot_cov(rot_cov, msg.pose.covariance);
           }
           m_pub_detection.publish(msg);
+
+          if (m_pub_detections_pc.getNumSubscribers() > 0)
+          {
+            sensor_msgs::PointCloud2 pc;
+            sensor_msgs::PointCloud2Modifier pc2mod(pc);
+            pc2mod.setPointCloud2Fields(4,
+                "x", 1, sensor_msgs::PointField::FLOAT32,
+                "y", 1, sensor_msgs::PointField::FLOAT32,
+                "z", 1, sensor_msgs::PointField::FLOAT32,
+                "class", 1, sensor_msgs::PointField::INT32
+                );
+            pc2mod.resize(1);
+            sensor_msgs::PointCloud2Iterator<float> iter_x(pc, "x");
+            sensor_msgs::PointCloud2Iterator<float> iter_y(pc, "y");
+            sensor_msgs::PointCloud2Iterator<float> iter_z(pc, "z");
+            sensor_msgs::PointCloud2Iterator<int32_t> iter_class(pc, "class");
+            *iter_x = ballpos.x;
+            *iter_y = ballpos.y;
+            *iter_z = ballpos.z;
+            *iter_class = detection.cclass;
+            pc.header = header;
+            m_pub_detections_pc.publish(pc);
+          }
         }
 
         // find and publish the most probable pose the ball will pass through again from the frequency map
@@ -512,11 +545,6 @@ namespace uav_detect
           m_pub_filtered_input_pc.publish(cloud_filtered);
         if (m_pub_map3d.getNumSubscribers() > 0)
           m_pub_map3d.publish(map3d_visualization(header));
-        if (m_pub_detections_pc.getNumSubscribers() > 0)
-        {
-          m_global_cloud->header.stamp = cloud->header.stamp;
-          m_pub_detections_pc.publish(m_global_cloud);
-        }
 
         const double delay = (ros::Time::now() - msg_stamp).toSec();
         NODELET_INFO_STREAM("[MainLoop]: Done processing data with delay " << delay << "s ---------------------------------------------- ");
@@ -740,14 +768,6 @@ namespace uav_detect
   //}
 
     /* find_ball_position() method //{ */
-    enum cluster_class_t
-    {
-      mav,
-      ball,
-      mav_with_ball,
-      unknown
-    };
-
     ball_det_t::cov_t create_covariance(const cluster_class_t cclass)
     {
       if (m_cov_coeffs.find(cclass) == std::end(m_cov_coeffs))
@@ -868,7 +888,7 @@ namespace uav_detect
             for (const auto& pt : cluster->points)
               if (pt.z < min_z_pt.z)
                 min_z_pt = pt;
-            ballpos_result_opt = {min_z_pt, cluster, covariance};
+            ballpos_result_opt = {min_z_pt, cluster, covariance, cclass};
             ballpos_n_pts = cluster->size();
           }
           break;
@@ -880,7 +900,7 @@ namespace uav_detect
               if (pt.z > max_z_pt.z)
                 max_z_pt = pt;
             // subtract length of the wire from the MAV position
-            ballpos_result_opt = {{max_z_pt.x, max_z_pt.y, max_z_pt.z - m_classif_ball_wire_length}, cluster, covariance};
+            ballpos_result_opt = {{max_z_pt.x, max_z_pt.y, max_z_pt.z - m_classif_ball_wire_length}, cluster, covariance, cclass};
             ballpos_n_pts = cluster->size();
           }
           break;
