@@ -506,7 +506,6 @@ namespace uav_detect
           }
           m_pub_detection.publish(msg);
 
-          if (m_pub_detections_pc.getNumSubscribers() > 0)
           {
             sensor_msgs::PointCloud2 pc;
             sensor_msgs::PointCloud2Modifier pc2mod(pc);
@@ -528,6 +527,20 @@ namespace uav_detect
             pc.header = header;
             m_pub_detections_pc.publish(pc);
           }
+        }
+        else // no detection - publish an empty message
+        {
+          sensor_msgs::PointCloud2 pc;
+          sensor_msgs::PointCloud2Modifier pc2mod(pc);
+          pc2mod.setPointCloud2Fields(4,
+              "x", 1, sensor_msgs::PointField::FLOAT32,
+              "y", 1, sensor_msgs::PointField::FLOAT32,
+              "z", 1, sensor_msgs::PointField::FLOAT32,
+              "class", 1, sensor_msgs::PointField::INT32
+              );
+          pc2mod.resize(0);
+          pc.header = header;
+          m_pub_detections_pc.publish(pc);
         }
 
         // find and publish the most probable pose the ball will pass through again from the frequency map
