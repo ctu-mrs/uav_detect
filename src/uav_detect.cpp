@@ -75,36 +75,36 @@ int main(int argc, char **argv)
   bool double_detection;
 
   // UAV name
-  uav_name = pl.load_param2<string>("uav_name");
+  uav_name = pl.loadParam2<string>("uav_name");
   // Data file of the neural network
-  data_file = pl.load_param2<string>("data_file");
+  data_file = pl.loadParam2<string>("data_file");
   // Names file of the neural network
-  names_file = pl.load_param2<string>("names_file");
+  names_file = pl.loadParam2<string>("names_file");
   // Configuration file of the neural network
-  cfg_file = pl.load_param2<string>("cfg_file");
+  cfg_file = pl.loadParam2<string>("cfg_file");
   // Weights file of the neural network
-  weights_file = pl.load_param2<string>("weights_file");
+  weights_file = pl.loadParam2<string>("weights_file");
   // Detection threshold
-  threshold = pl.load_param2<double>("threshold", 0.1f);
+  threshold = pl.loadParam2<double>("threshold", 0.1f);
   // Detection hier threshold
-  hier_threshold = pl.load_param2<double>("hier_threshold", 0.1f);
+  hier_threshold = pl.loadParam2<double>("hier_threshold", 0.1f);
   // Whether to use only subsquare from the image
   /* only_subsquare = pl.load_param2<bool>("only_subsquare", true); */
-  double_detection = pl.load_param2<bool>("double_detection", true);
-  int ocl_platform_id = pl.load_param2<int>("ocl_platform_id", 0);
+  double_detection = pl.loadParam2<bool>("double_detection", true);
+  int ocl_platform_id = pl.loadParam2<int>("ocl_platform_id", 0);
   if (ocl_platform_id < 0)
     ocl_platform_id = 0;
-  int ocl_device_id = pl.load_param2<int>("ocl_device_id", 0);
+  int ocl_device_id = pl.loadParam2<int>("ocl_device_id", 0);
   if (ocl_device_id < 0)
     ocl_device_id = 0;
 
-  const double MAV_width = pl.load_param2<double>("MAV_width");;
+  const double MAV_width = pl.loadParam2<double>("MAV_width");;
 
   sensor_msgs::RegionOfInterest roi;
-  roi.x_offset = pl.load_param2<int>("roi_x_offset", 0);
-  roi.y_offset = pl.load_param2<int>("roi_y_offset", 0);
-  roi.width = pl.load_param2<int>("roi_width", -1);
-  roi.height = pl.load_param2<int>("roi_height", -1);
+  roi.x_offset = pl.loadParam2<int>("roi_x_offset", 0);
+  roi.y_offset = pl.loadParam2<int>("roi_y_offset", 0);
+  roi.width = pl.loadParam2<int>("roi_width", -1);
+  roi.height = pl.loadParam2<int>("roi_height", -1);
   /* bool use_roi = roi.width > 0 && roi.height > 0; */
   /* cout << (use_roi ? "" : "not ") << "using ROI" << endl; */
 

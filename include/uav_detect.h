@@ -13,7 +13,7 @@
 #include <cnn_detect/Detection.h>
 #include <cnn_detect/Detections.h>
 
-#include <mrs_lib/ParamLoader.h>
+#include <mrs_lib/param_loader.h>
 
 #include <iomanip>
 
