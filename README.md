@@ -10,8 +10,8 @@ Another common requirement is the [`mrs_lib`](https://github.com/ctu-mrs/mrs_lib
 This project is part of the [MRS UAV system](https://github.com/ctu-mrs/mrs_uav_system) (which is documented at [ctu-mrs.github.io](https://ctu-mrs.github.io) and in the paper [3]).
 For more information about the different methods, checkout the respective git branch.
 
-[1]: M. Vrba, D. Heřt and M. Saska, "Onboard Marker-Less Detection and Localization of Non-Cooperating Drones for Their Safe Interception by an Autonomous Aerial System," in IEEE Robotics and Automation Letters, vol. 4, no. 4, pp. 3402-3409, Oct. 2019, doi: 10.1109/LRA.2019.2927130.
-
-[2]: M. Vrba and M. Saska, "Marker-Less Micro Aerial Vehicle Detection and Localization Using Convolutional Neural Networks," in IEEE Robotics and Automation Letters, vol. 5, no. 2, pp. 2459-2466, April 2020, doi: 10.1109/LRA.2020.2972819.
-
-[3]: T. Báča, M. Petrlík, M. Vrba, V. Spurný, R. Pěnička, D. Heřt and M. Saska, "The MRS UAV System: Pushing the Frontiers of Reproducible Research, Real-world Deployment, and Education with Autonomous Unmanned Aerial Vehicles", eprint arXiv: 2008.08050, August 2020 (https://arxiv.org/abs/2008.08050).
+----
+References:
+ * [1]: M. Vrba, D. Heřt and M. Saska, "Onboard Marker-Less Detection and Localization of Non-Cooperating Drones for Their Safe Interception by an Autonomous Aerial System," in IEEE Robotics and Automation Letters, vol. 4, no. 4, pp. 3402-3409, Oct. 2019, doi: 10.1109/LRA.2019.2927130.
+ * [2]: M. Vrba and M. Saska, "Marker-Less Micro Aerial Vehicle Detection and Localization Using Convolutional Neural Networks," in IEEE Robotics and Automation Letters, vol. 5, no. 2, pp. 2459-2466, April 2020, doi: 10.1109/LRA.2020.2972819.
+ * [3]: T. Báča, M. Petrlík, M. Vrba, V. Spurný, R. Pěnička, D. Heřt and M. Saska, "The MRS UAV System: Pushing the Frontiers of Reproducible Research, Real-world Deployment, and Education with Autonomous Unmanned Aerial Vehicles", eprint arXiv: 2008.08050, August 2020 (https://arxiv.org/abs/2008.08050).
