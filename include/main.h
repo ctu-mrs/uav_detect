@@ -28,8 +28,8 @@
 #include <uav_detect/Detection.h>
 #include <uav_detect/Detections.h>
 #include <uav_detect/ImagePixel.h>
-#include <mrs_lib/ParamLoader.h>
-#include <mrs_lib/DynamicReconfigureMgr.h>
+#include <mrs_lib/param_loader.h>
+#include <mrs_lib/dynamic_reconfigure_mgr.h>
 #include <mrs_lib/subscribe_handler.h>
 
 #endif //  MAIN_H

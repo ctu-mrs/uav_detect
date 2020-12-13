@@ -48,7 +48,6 @@ min_known_pixels_ratio: 0.5
 
 # further filtration
 min_dist_between: 10.0
-max_area_diff: 10000
 min_repeatability: 4
 
 threshold_step: 1000

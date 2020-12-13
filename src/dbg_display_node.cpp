@@ -24,8 +24,8 @@ int main(int argc, char** argv)
   ros::NodeHandle nh = ros::NodeHandle("~");
 
   mrs_lib::ParamLoader pl(nh);
-  std::string path_to_mask = pl.load_param2<std::string>("path_to_mask", std::string());
-  int unknown_pixel_value = pl.load_param2<int>("unknown_pixel_value", 0);
+  std::string path_to_mask = pl.loadParam2<std::string>("path_to_mask", std::string());
+  int unknown_pixel_value = pl.loadParam2<int>("unknown_pixel_value", 0);
 
   cv::Mat mask_im_inv;
   if (path_to_mask.empty())
@@ -47,18 +47,12 @@ int main(int argc, char** argv)
 
   /** Create publishers and subscribers //{**/
   // Initialize other subs and pubs
-  mrs_lib::SubscribeHandlerPtr<sensor_msgs::Image> sh_dm;
-  mrs_lib::SubscribeHandlerPtr<sensor_msgs::Image> sh_dmp;
-  mrs_lib::SubscribeHandlerPtr<sensor_msgs::Image> sh_img;
-  mrs_lib::SubscribeHandlerPtr<uav_detect::BlobDetections> sh_blobs;
-
-  mrs_lib::SubscribeMgr smgr(nh);
-  const bool subs_time_consistent = false;
-
-  sh_dm = smgr.create_handler<sensor_msgs::Image, subs_time_consistent>("depthmap", ros::Duration(5.0));
-  sh_dmp = smgr.create_handler<sensor_msgs::Image, subs_time_consistent>("processed_depthmap", ros::Duration(5.0));
-  sh_img = smgr.create_handler<sensor_msgs::Image, subs_time_consistent>("rgb_img", ros::Duration(5.0));
-  sh_blobs = smgr.create_handler<uav_detect::BlobDetections, subs_time_consistent>("blob_detections", ros::Duration(5.0));
+  mrs_lib::SubscribeHandlerOptions shopts;
+  shopts.no_message_timeout = ros::Duration(5.0);
+  auto sh_dm = mrs_lib::SubscribeHandler<sensor_msgs::Image>(shopts, "depthmap");
+  auto sh_dmp = mrs_lib::SubscribeHandler<sensor_msgs::Image>(shopts, "processed_depthmap");
+  auto sh_img = mrs_lib::SubscribeHandler<sensor_msgs::Image>(shopts, "rgb_img");
+  auto sh_blobs = mrs_lib::SubscribeHandler<uav_detect::BlobDetections>(shopts, "blob_detections");
 
   //}
 
@@ -92,24 +86,24 @@ int main(int argc, char** argv)
   {
     ros::spinOnce();
   
-    if (sh_dm->new_data())
-      add_to_buffer(sh_dm->get_data(), dm_buffer);
-    if (sh_dmp->new_data())
-      add_to_buffer(sh_dmp->get_data(), dmp_buffer);
-    if (sh_img->new_data())
-      add_to_buffer(sh_img->get_data(), img_buffer);
+    if (sh_dm.newMsg())
+      add_to_buffer(sh_dm.getMsg(), dm_buffer);
+    if (sh_dmp.newMsg())
+      add_to_buffer(sh_dmp.getMsg(), dmp_buffer);
+    if (sh_img.newMsg())
+      add_to_buffer(sh_img.getMsg(), img_buffer);
 
-    bool has_data = (sh_dm->has_data() || sh_dmp->has_data() || sh_img->has_data()) && sh_blobs->has_data();
+    bool has_data = (sh_dm.hasMsg() || sh_dmp.hasMsg() || sh_img.hasMsg()) && sh_blobs.hasMsg();
 
     if (has_data)
     {
       if (!paused || !cur_detections_initialized)
       {
-        cur_detections = *(sh_blobs->get_data());
+        cur_detections = *(sh_blobs.getMsg());
         cur_detections_initialized = true;
       }
 
-      if (show_raw && sh_dm->has_data() && (!paused || source_img.empty()))
+      if (show_raw && sh_dm.hasMsg() && (!paused || source_img.empty()))
       {
         sensor_msgs::ImageConstPtr img_ros = find_closest(cur_detections.header.stamp, dm_buffer);
         source_img = (cv_bridge::toCvCopy(img_ros, string("16UC1")))->image;
@@ -126,7 +120,7 @@ int main(int argc, char** argv)
         raw_window_exists = false;
       }
 
-      if (show_proc && sh_dmp->has_data() && (!paused || processed_img.empty()))
+      if (show_proc && sh_dmp.hasMsg() && (!paused || processed_img.empty()))
       {
         sensor_msgs::ImageConstPtr img_ros = find_closest(cur_detections.header.stamp, dmp_buffer);
         processed_img_raw = cv_bridge::toCvCopy(img_ros, string("16UC1"))->image;
@@ -146,7 +140,7 @@ int main(int argc, char** argv)
       }
 
       cv::Mat rgb_im;
-      if (show_rgb && sh_img->has_data() && (!paused || rgb_im.empty()))
+      if (show_rgb && sh_img.hasMsg() && (!paused || rgb_im.empty()))
       {
         sensor_msgs::ImageConstPtr img_ros = find_closest(cur_detections.header.stamp, img_buffer);
         rgb_im = cv_bridge::toCvCopy(img_ros, sensor_msgs::image_encodings::BGR8)->image;

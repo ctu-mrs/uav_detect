@@ -35,16 +35,16 @@ namespace uav_detect
       mrs_lib::ParamLoader pl(nh, m_node_name);
       // LOAD STATIC PARAMETERS
       ROS_INFO("Loading static parameters:");
-      pl.load_param("unknown_pixel_value", m_unknown_pixel_value, 0);
-      m_roi.x_offset = pl.load_param2<int>("roi/x_offset", 0);
-      m_roi.y_offset = pl.load_param2<int>("roi/y_offset", 0);
-      m_roi.width = pl.load_param2<int>("roi/width", 0);
-      m_roi.height = pl.load_param2<int>("roi/height", 0);
-      std::string path_to_mask = pl.load_param2<std::string>("path_to_mask", std::string());
+      pl.loadParam("unknown_pixel_value", m_unknown_pixel_value, 0);
+      m_roi.x_offset = pl.loadParam2<int>("roi/x_offset", 0);
+      m_roi.y_offset = pl.loadParam2<int>("roi/y_offset", 0);
+      m_roi.width = pl.loadParam2<int>("roi/width", 0);
+      m_roi.height = pl.loadParam2<int>("roi/height", 0);
+      std::string path_to_mask = pl.loadParam2<std::string>("path_to_mask", std::string());
 
       // LOAD DYNAMIC PARAMETERS
       // CHECK LOADING STATUS
-      if (!pl.loaded_successfully())
+      if (!pl.loadedSuccessfully())
       {
         ROS_ERROR("Some compulsory parameters were not loaded successfully, ending the node");
         ros::shutdown();
@@ -55,9 +55,9 @@ namespace uav_detect
 
       /* Create publishers and subscribers //{ */
       // Initialize subscribers
-      mrs_lib::SubscribeMgr smgr(nh, m_node_name);
-      const bool subs_time_consistent = false;
-      m_depthmap_sh = smgr.create_handler<sensor_msgs::Image, subs_time_consistent>("depthmap", ros::Duration(5.0));
+      mrs_lib::SubscribeHandlerOptions shopts;
+      shopts.no_message_timeout = ros::Duration(5.0);
+      mrs_lib::construct_object(m_depthmap_sh, shopts, "depthmap");
       // Initialize publishers
       m_detections_pub = nh.advertise<uav_detect::Detections>("detections", 10); 
       m_detected_blobs_pub = nh.advertise<uav_detect::BlobDetections>("blob_detections", 1);
@@ -104,11 +104,11 @@ namespace uav_detect
     /* main_loop() method //{ */
     void main_loop([[maybe_unused]] const ros::TimerEvent& evt)
     {
-      if (m_depthmap_sh->new_data())
+      if (m_depthmap_sh.newMsg())
       {
         ros::Time start_t = ros::Time::now();
 
-        cv_bridge::CvImage source_msg = *cv_bridge::toCvCopy(m_depthmap_sh->get_data(), string("16UC1"));
+        cv_bridge::CvImage source_msg = *cv_bridge::toCvCopy(m_depthmap_sh.getMsg(), string("16UC1"));
 
         /* Apply ROI //{ */
         if (m_roi.y_offset + m_roi.height > unsigned(source_msg.image.rows) || m_roi.height == 0)
@@ -315,7 +315,7 @@ namespace uav_detect
 
     /* ROS related variables (subscribers, timers etc.) //{ */
     std::unique_ptr<drmgr_t> m_drmgr_ptr;
-    mrs_lib::SubscribeHandlerPtr<sensor_msgs::Image> m_depthmap_sh;
+    mrs_lib::SubscribeHandler<sensor_msgs::Image> m_depthmap_sh;
     ros::Publisher m_detections_pub;
     ros::Publisher m_detected_blobs_pub;
     ros::Publisher m_processed_depthmap_pub;

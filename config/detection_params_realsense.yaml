@@ -22,7 +22,6 @@ medianblur_size: 0
 filter_by_area: true
 min_area: 100
 max_area: 100000
-max_area_diff: 10000
 
 filter_by_circularity: false
 min_circularity: 0.3
