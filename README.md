@@ -4,7 +4,7 @@ Implementation of a drone detection method using a CNN, used in the papers [1] a
 
 *Note:* The code in this branch is old, messy and not well documented.
 Since the time it was written, many new and better CNNs for object detection were developed than the deprecated version of tiny-YOLO [3] used in this work.
-Consider this repository just an example implementation - for real deployment, you'll be better off using some of the more recent CNN frameworks and architectures, such as TensorFlow and the CenterNet.
+Consider this repository just an example implementation - for real deployment, you'll be better off using some of the more recent CNN frameworks and architectures, such as TensorFlow and the CenterNet [4].
 
 ## Requirements:
  - ROS Melodic
