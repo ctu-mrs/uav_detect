@@ -1,8 +1,8 @@
-# points of the input pointcloud, closer than this size, are discarded
-filtering_leaf_size: 0.5 # meters
+# if an estimated speed of a detection candidate is higher than this, it is discarded
+max_speed_error: 3.8 # meters per second
 
-max_speed_error: 3.8 # metres per second
-
+# these coefficients are used to construct the covariance matrix of the detections
+# according to its class
 cov_coeffs:
   xy:
     mav:              0.1
@@ -13,12 +13,14 @@ cov_coeffs:
     ball:             0.05
     mav_with_ball:    0.03
   xyz:
-    velocity: 0.4 # radians
+    velocity: 0.4 # meters per second
 
+# parameters of the linefitting algorithm for velocity estimation
 linefit:
   neighborhood: 5 # metres
   point_max_age: 3.0 # seconds per neighborhood size
 
+# parameters of the cluster classification algorithm
 classification:
   max_detection_height: 2.5 # metres
   max_mav_height: 1.0 # metres
@@ -28,10 +30,8 @@ classification:
   mav_width: 0.450 # metres
   ball_width: 0.11 # metres
 
-plane_fit:
-  min_points: 80
-  ransac_threshold: 1.0 # metres
-
+# the safety area is loaded from a ROS message and then deflated by the specified amount
+# and optionally cut by a left/right plane to obtain the operational area
 safety_area:
   offset: [3.0, 3.0]
   deflation: 4.5 # metres
@@ -56,5 +56,3 @@ exclude_box:
     x: 1.7 # meters
     y: 1.7 # meters
     z: 1 # meters
-
-keep_pc_organized: true

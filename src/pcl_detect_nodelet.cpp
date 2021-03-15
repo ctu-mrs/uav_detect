@@ -169,9 +169,6 @@ namespace uav_detect
       pl.loadParam("classification/mav_width", m_classif_mav_width);
       pl.loadParam("classification/ball_width", m_classif_ball_width);
 
-      pl.loadParam("plane_fit/min_points", m_plane_fit_min_points);
-      pl.loadParam("plane_fit/ransac_threshold", m_plane_fit_ransac_threshold);
-
       pl.loadParam("exclude_box/offset/x", m_exclude_box_offset_x);
       pl.loadParam("exclude_box/offset/y", m_exclude_box_offset_y);
       pl.loadParam("exclude_box/offset/z", m_exclude_box_offset_z);
@@ -1962,9 +1959,6 @@ namespace uav_detect
     float m_classif_close_dist;
     float m_classif_mav_width;
     float m_classif_ball_width;
-
-    int m_plane_fit_min_points;
-    float m_plane_fit_ransac_threshold;
 
     double m_exclude_box_offset_x;
     double m_exclude_box_offset_y;
