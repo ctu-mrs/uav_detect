@@ -328,6 +328,7 @@ namespace uav_detect
         /* filter input cloud and transform it to world //{ */
 
         pc_XYZ_t::Ptr cloud_filtered = boost::make_shared<pc_XYZ_t>(*cloud);
+        cloud_filtered->header = cloud->header;
         vec3_t tf_trans;
         {
           /* filter by cropping points inside a box, relative to the sensor //{ */
@@ -1234,6 +1235,7 @@ namespace uav_detect
     void filter_points(pc_XYZ_t::Ptr cloud)
     {
       pc_XYZ_t::Ptr cloud_out = boost::make_shared<pc_XYZ_t>();
+      cloud_out->header = cloud->header;
       cloud_out->reserve(cloud->size() / 100);
       for (size_t it = 0; it < cloud->size(); it++)
       {
