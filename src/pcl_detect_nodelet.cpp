@@ -233,6 +233,7 @@ namespace uav_detect
       /* initialize transformer //{ */
 
       m_transformer = mrs_lib::Transformer(m_node_name, uav_name);
+      m_transformer.setLookupTimeout(ros::Duration(0.1));
 
       //}
 
@@ -614,7 +615,7 @@ namespace uav_detect
             pt.x = vec.x();
             pt.y = vec.y();
             pt.z = 0.0;
-            auto tfd = m_transformer.transformHeaderless(tf, pt);
+            auto tfd = m_transformer.transform(pt, tf);
             if (!tfd.has_value())
             {
               ROS_ERROR("Safety area could not be transformed!");
